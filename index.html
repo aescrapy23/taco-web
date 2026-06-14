@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v20 - BOTON CASA (menu in-game): opciones, vestuario, cambiar jugador y salir, sin frenar la partida";
+const VERSION = "v21 - CIUDAD EN CUADRAS: manzanas de edificios, avenidas con carriles, plazas y cruces peatonales";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -330,10 +330,15 @@ function genLevel() {
   grid = new Array(cols * rows).fill(0);
   for (let x = 0; x < cols; x++) { grid[x] = 1; grid[(rows - 1) * cols + x] = 1; }
   for (let y = 0; y < rows; y++) { grid[y * cols] = 1; grid[y * cols + cols - 1] = 1; }
-  const clusters = 4 + level;
-  for (let c = 0; c < clusters; c++) {
-    const bx = randi(2, cols - 3), by = randi(2, rows - 3), bw = randi(1, 4), bh = randi(1, 3);
-    for (let y = by; y < Math.min(by + bh, rows - 2); y++) for (let x = bx; x < Math.min(bx + bw, cols - 2); x++) grid[y * cols + x] = 1;
+  // CIUDAD EN CUADRAS: manzanas de edificios separadas por avenidas (calles de 2-4 celdas).
+  // Algunas manzanas se dejan vacias = plazas abiertas para el combate.
+  const P = 7; // periodo de manzana (manzana + avenida)
+  for (let by = 1; by + 2 < rows - 1; by += P) {
+    for (let bx = 1; bx + 2 < cols - 1; bx += P) {
+      if (Math.random() < 0.2) continue; // plaza / parque (sin edificio)
+      const bw = randi(3, 6), bh = randi(3, 6); // tamano de la manzana
+      for (let y = by; y < Math.min(by + bh, rows - 2); y++) for (let x = bx; x < Math.min(bx + bw, cols - 2); x++) grid[y * cols + x] = 1;
+    }
   }
   const sx = Math.floor(cols / 2), sy = Math.floor(rows / 2);
   for (let y = sy - 1; y <= sy + 1; y++) for (let x = sx - 1; x <= sx + 1; x++) if (x > 0 && y > 0 && x < cols - 1 && y < rows - 1) grid[y * cols + x] = 0;
@@ -941,11 +946,20 @@ function buildDungeonCache() {
   for (let y = 1; y < rows; y++) { g.beginPath(); g.moveTo(0, y * TS); g.lineTo(Wd, y * TS); g.stroke(); }
   // manchas/relieve del piso (textura)
   for (let i = 0; i < 70; i++) { const rx = Math.random() * Wd, ry = Math.random() * Hd, rr = 12 + Math.random() * 42; g.fillStyle = Math.random() < 0.5 ? "rgba(0,0,0,0.05)" : hexA(theme.stud, 0.04); g.beginPath(); g.arc(rx, ry, rr, 0, 7); g.fill(); }
-  // ---- CALLES: lineas de carril pintadas en tramos abiertos rectos ----
+  // ---- AVENIDAS: detecta filas/columnas mayormente abiertas = calles ----
+  const rowAve = [], colAve = [];
+  for (let y = 1; y < rows - 1; y++) { let o = 0; for (let x = 1; x < cols - 1; x++) if (!solid(x, y)) o++; rowAve[y] = o > (cols - 2) * 0.7; }
+  for (let x = 1; x < cols - 1; x++) { let o = 0; for (let y = 1; y < rows - 1; y++) if (!solid(x, y)) o++; colAve[x] = o > (rows - 2) * 0.7; }
+  // lineas de carril punteadas en el centro de cada avenida
   g.setLineDash([16, 14]); g.lineCap = "butt"; g.strokeStyle = hexA(theme.stud, 0.5); g.lineWidth = 3;
-  for (let gy = 3; gy < rows; gy += 6) { let xs = -1; for (let x = 0; x <= cols; x++) { const open = x < cols && !solid(x, gy); if (open && xs < 0) xs = x; if ((!open || x === cols) && xs >= 0) { if (x - xs >= 3) { const yy = (gy + 0.5) * TS; g.beginPath(); g.moveTo(xs * TS + 8, yy); g.lineTo(x * TS - 8, yy); g.stroke(); } xs = -1; } } }
-  for (let gx = 3; gx < cols; gx += 6) { let ys = -1; for (let y = 0; y <= rows; y++) { const open = y < rows && !solid(gx, y); if (open && ys < 0) ys = y; if ((!open || y === rows) && ys >= 0) { if (y - ys >= 3) { const xx = (gx + 0.5) * TS; g.beginPath(); g.moveTo(xx, ys * TS + 8); g.lineTo(xx, y * TS - 8); g.stroke(); } ys = -1; } } }
+  for (let y = 1; y < rows - 1; y++) if (rowAve[y]) { const yy = (y + 0.5) * TS; let xs = -1; for (let x = 0; x <= cols; x++) { const open = x < cols && !solid(x, y); if (open && xs < 0) xs = x; if ((!open || x === cols) && xs >= 0) { if (x - xs >= 4) { g.beginPath(); g.moveTo(xs * TS + 8, yy); g.lineTo(x * TS - 8, yy); g.stroke(); } xs = -1; } } }
+  for (let x = 1; x < cols - 1; x++) if (colAve[x]) { const xx = (x + 0.5) * TS; let ys = -1; for (let y = 0; y <= rows; y++) { const open = y < rows && !solid(x, y); if (open && ys < 0) ys = y; if ((!open || y === rows) && ys >= 0) { if (y - ys >= 4) { g.beginPath(); g.moveTo(xx, ys * TS + 8); g.lineTo(xx, y * TS - 8); g.stroke(); } ys = -1; } } }
   g.setLineDash([]);
+  // cruces peatonales (cebra) en las intersecciones de avenidas
+  g.fillStyle = "rgba(255,255,255,0.4)";
+  for (let y = 1; y < rows - 1; y++) for (let x = 1; x < cols - 1; x++) if (rowAve[y] && colAve[x] && !solid(x, y)) {
+    for (let k = 0; k < 4; k++) { g.fillRect(x * TS + 5 + k * 12, y * TS + 3, 6, 8); g.fillRect(x * TS + 5 + k * 12, y * TS + TS - 11, 6, 8); }
+  }
   // ---- ACERA: cordon claro donde la calle toca un edificio ----
   g.fillStyle = hexA(theme.stud, 0.16);
   for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) if (!solid(x, y)) {

@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v13 - VESTUARIO Mundial 2026 (skins) + PERFIL (nombre/edad -> nivel) + MUNDOS";
+const VERSION = "v14 - 40 selecciones Mundial 2026 + vestuario con scroll (UX pro)";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -123,25 +123,63 @@ const WEAPONS = [
   { name: "RAFAGA", cd: 0.08, speed: 780, pellets: 1, spread: 7, life: 0.7, r: 5, dmg: 1 },
 ];
 
-// VESTUARIO Mundial 2026: camisetas (c1 cuerpo, c2 franja, band vincha). Se compran con el banco de monedas.
+// VESTUARIO Mundial 2026: camisetas de selecciones (c1 cuerpo, c2 franja, band vincha). Banco de monedas.
 const OUTFITS = [
   { name: "CLASICO", cost: 0 },
-  { name: "MEXICO", c1: "#1f8a4c", c2: "#ffffff", band: "#d62828", cost: 12 },
-  { name: "USA", c1: "#2540a0", c2: "#ffffff", band: "#d62828", cost: 12 },
-  { name: "CANADA", c1: "#d62828", c2: "#ffffff", band: "#ffffff", cost: 12 },
-  { name: "ARGENTINA", c1: "#74c0e8", c2: "#ffffff", band: "#f5cd46", cost: 20 },
-  { name: "BRASIL", c1: "#f5d000", c2: "#1f8a4c", band: "#2540a0", cost: 20 },
-  { name: "ESPANA", c1: "#d62828", c2: "#f5cd46", band: "#d62828", cost: 28 },
-  { name: "FRANCIA", c1: "#2540a0", c2: "#ffffff", band: "#d62828", cost: 28 },
-  { name: "PORTUGAL", c1: "#c81e3a", c2: "#1f6b3a", band: "#f5cd46", cost: 28 },
-  { name: "ALEMANIA", c1: "#222222", c2: "#ffffff", band: "#f5cd46", cost: 35 },
-  { name: "ORO", c1: "#f5cd46", c2: "#ffe896", band: "#caa23a", cost: 50 },
+  // Anfitriones (baratos)
+  { name: "MEXICO", c1: "#1f8a4c", c2: "#ffffff", band: "#d62828", cost: 10 },
+  { name: "USA", c1: "#1e3a8a", c2: "#ffffff", band: "#d62828", cost: 10 },
+  { name: "CANADA", c1: "#d62828", c2: "#ffffff", band: "#ffffff", cost: 10 },
+  // Sudamerica
+  { name: "ARGENTINA", c1: "#74c0e8", c2: "#ffffff", band: "#f5cd46", cost: 18 },
+  { name: "BRASIL", c1: "#f5d000", c2: "#1f8a4c", band: "#2540a0", cost: 18 },
+  { name: "URUGUAY", c1: "#5aa9e6", c2: "#ffffff", band: "#111111", cost: 22 },
+  { name: "COLOMBIA", c1: "#f5d000", c2: "#1e3a8a", band: "#d62828", cost: 22 },
+  { name: "CHILE", c1: "#d62828", c2: "#1e3a8a", band: "#ffffff", cost: 22 },
+  { name: "ECUADOR", c1: "#f5d000", c2: "#1e3a8a", band: "#d62828", cost: 24 },
+  { name: "PERU", c1: "#ffffff", c2: "#d62828", band: "#d62828", cost: 24 },
+  { name: "PARAGUAY", c1: "#d62828", c2: "#1e3a8a", band: "#ffffff", cost: 26 },
+  // Europa
+  { name: "ESPANA", c1: "#d62828", c2: "#f5cd46", band: "#1a1a1a", cost: 24 },
+  { name: "FRANCIA", c1: "#1e3a8a", c2: "#ffffff", band: "#d62828", cost: 24 },
+  { name: "PORTUGAL", c1: "#c81e3a", c2: "#1f6b3a", band: "#f5cd46", cost: 24 },
+  { name: "ALEMANIA", c1: "#1a1a1a", c2: "#ffffff", band: "#f5cd46", cost: 24 },
+  { name: "INGLATERRA", c1: "#ffffff", c2: "#1e3a8a", band: "#d62828", cost: 24 },
+  { name: "ITALIA", c1: "#2c6fd6", c2: "#ffffff", band: "#1a1a1a", cost: 26 },
+  { name: "PAISES BAJOS", c1: "#ee7711", c2: "#ffffff", band: "#1a1a1a", cost: 26 },
+  { name: "BELGICA", c1: "#c0392b", c2: "#f5d000", band: "#1a1a1a", cost: 26 },
+  { name: "CROACIA", c1: "#d62828", c2: "#ffffff", band: "#1e3a8a", cost: 28 },
+  { name: "SUIZA", c1: "#d62828", c2: "#ffffff", band: "#ffffff", cost: 28 },
+  { name: "POLONIA", c1: "#ffffff", c2: "#d62828", band: "#d62828", cost: 30 },
+  { name: "DINAMARCA", c1: "#c0392b", c2: "#ffffff", band: "#ffffff", cost: 30 },
+  { name: "SUECIA", c1: "#f5d000", c2: "#1e3a8a", band: "#1e3a8a", cost: 30 },
+  { name: "NORUEGA", c1: "#c0392b", c2: "#1e3a8a", band: "#ffffff", cost: 30 },
+  // Africa
+  { name: "MARRUECOS", c1: "#c0392b", c2: "#1f6b3a", band: "#1f6b3a", cost: 26 },
+  { name: "SENEGAL", c1: "#1f8a4c", c2: "#ffffff", band: "#f5d000", cost: 28 },
+  { name: "NIGERIA", c1: "#1f8a4c", c2: "#ffffff", band: "#1f8a4c", cost: 28 },
+  { name: "GHANA", c1: "#ffffff", c2: "#1f8a4c", band: "#d62828", cost: 30 },
+  { name: "EGIPTO", c1: "#c0392b", c2: "#ffffff", band: "#1a1a1a", cost: 30 },
+  { name: "COSTA DE MARFIL", c1: "#ee7711", c2: "#ffffff", band: "#1f6b3a", cost: 32 },
+  // Asia / Oceania / Concacaf
+  { name: "JAPON", c1: "#1e3a8a", c2: "#ffffff", band: "#d62828", cost: 28 },
+  { name: "COREA", c1: "#c0392b", c2: "#1e3a8a", band: "#1a1a1a", cost: 30 },
+  { name: "AUSTRALIA", c1: "#f5d000", c2: "#1f8a4c", band: "#1f8a4c", cost: 30 },
+  { name: "ARABIA SAUDI", c1: "#1f8a4c", c2: "#ffffff", band: "#ffffff", cost: 32 },
+  { name: "QATAR", c1: "#7a1030", c2: "#ffffff", band: "#ffffff", cost: 32 },
+  { name: "COSTA RICA", c1: "#c0392b", c2: "#1e3a8a", band: "#ffffff", cost: 30 },
+  { name: "PANAMA", c1: "#c0392b", c2: "#1e3a8a", band: "#ffffff", cost: 32 },
+  // Especiales
+  { name: "ARCOIRIS", c1: "#ff4d4d", c2: "#4dd2ff", band: "#f5d000", cost: 45 },
+  { name: "ORO MUNDIAL", c1: "#f5cd46", c2: "#ffe896", band: "#caa23a", cost: 60 },
 ];
 let bank = +(localStorage.getItem("catacomb_bank") || 0);
 let outfit = +(localStorage.getItem("catacomb_outfit") || 0);
 let unlocked = {}; try { unlocked = JSON.parse(localStorage.getItem("catacomb_unlocked") || "{}"); } catch (e) { unlocked = {}; }
 unlocked[0] = true;
 function saveWardrobe() { try { localStorage.setItem("catacomb_bank", bank); localStorage.setItem("catacomb_outfit", outfit); localStorage.setItem("catacomb_unlocked", JSON.stringify(unlocked)); } catch (e) {} }
+let wbScroll = 0, wbDrag = null;
+function openWb() { wbScroll = 0; state = "wardrobe"; }
 
 // ===== Aprendizaje ELITE: multi-idioma por niveles (Ingles CEFR/TOEFL + Chino HSK), palabras y FRASES =====
 // item EN: [es, en]   |   item ZH: [es, hanzi, pinyin]
@@ -317,7 +355,7 @@ const keys = {};
 let mouse = { x: 0, y: 0, down: false };
 addEventListener("keydown", e => {
   const k = e.key.toLowerCase(); keys[k] = true; audioInit();
-  if (state === "title") { if (k === "v") state = "wardrobe"; else startOrRestart(); return; }
+  if (state === "title") { if (k === "v") openWb(); else startOrRestart(); return; }
   if (state === "over") { startOrRestart(); return; }
   if (state === "wardrobe") { if (k === "escape") state = "title"; return; }
   if (state === "quiz") { if (k >= "1" && k <= "3") answerQuiz(+k - 1); return; }
@@ -330,7 +368,7 @@ addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 canvas.addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
 canvas.addEventListener("mousedown", e => {
   mouse.down = true; audioInit();
-  if (state === "title") { const r = titleWbRect(); if (e.clientX >= r.x && e.clientX <= r.x + r.w && e.clientY >= r.y && e.clientY <= r.y + r.h) { state = "wardrobe"; mouse.down = false; return; } startOrRestart(); return; }
+  if (state === "title") { const r = titleWbRect(); if (e.clientX >= r.x && e.clientX <= r.x + r.w && e.clientY >= r.y && e.clientY <= r.y + r.h) { openWb(); mouse.down = false; return; } startOrRestart(); return; }
   if (state === "over") { startOrRestart(); return; }
   if (state === "wardrobe") { wbTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "shop") { shopTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -339,14 +377,15 @@ canvas.addEventListener("mousedown", e => {
 });
 addEventListener("mouseup", () => { mouse.down = false; });
 canvas.addEventListener("contextmenu", e => e.preventDefault());
+canvas.addEventListener("wheel", e => { if (state === "wardrobe") { wbScroll = clamp(wbScroll + e.deltaY, 0, wbMaxScroll()); e.preventDefault(); } }, { passive: false });
 
 const stickL = { id: null, bx: 0, by: 0, x: 0, y: 0 };
 const stickR = { id: null, bx: 0, by: 0, x: 0, y: 0 };
 function onTouchStart(e) {
   e.preventDefault(); audioInit();
-  if (state === "title") { for (const tch of e.changedTouches) { const r = titleWbRect(); if (tch.clientX >= r.x && tch.clientX <= r.x + r.w && tch.clientY >= r.y && tch.clientY <= r.y + r.h) { state = "wardrobe"; return; } } startOrRestart(); return; }
+  if (state === "title") { for (const tch of e.changedTouches) { const r = titleWbRect(); if (tch.clientX >= r.x && tch.clientX <= r.x + r.w && tch.clientY >= r.y && tch.clientY <= r.y + r.h) { openWb(); return; } } startOrRestart(); return; }
   if (state === "over") { startOrRestart(); return; }
-  if (state === "wardrobe") { for (const tch of e.changedTouches) wbTapAt(tch.clientX, tch.clientY); return; }
+  if (state === "wardrobe") { const tch = e.changedTouches[0]; if (tch) wbDrag = { id: tch.identifier, y0: tch.clientY, x0: tch.clientX, s0: wbScroll, moved: 0 }; return; }
   if (state === "shop") { for (const tch of e.changedTouches) shopTapAt(tch.clientX, tch.clientY); return; }
   for (const tch of e.changedTouches) {
     const x = tch.clientX, y = tch.clientY;
@@ -359,6 +398,7 @@ function onTouchStart(e) {
 }
 function onTouchMove(e) {
   e.preventDefault();
+  if (state === "wardrobe" && wbDrag) { for (const tch of e.changedTouches) if (tch.identifier === wbDrag.id) { const dy = tch.clientY - wbDrag.y0; wbDrag.moved = Math.max(wbDrag.moved, Math.abs(dy) + Math.abs(tch.clientX - wbDrag.x0)); wbScroll = clamp(wbDrag.s0 - dy, 0, wbMaxScroll()); } return; }
   for (const tch of e.changedTouches) {
     if (tch.identifier === stickL.id) { stickL.x = tch.clientX; stickL.y = tch.clientY; }
     else if (tch.identifier === stickR.id) { stickR.x = tch.clientX; stickR.y = tch.clientY; }
@@ -366,6 +406,7 @@ function onTouchMove(e) {
 }
 function onTouchEnd(e) {
   e.preventDefault();
+  if (state === "wardrobe" && wbDrag) { for (const tch of e.changedTouches) if (tch.identifier === wbDrag.id) { if (wbDrag.moved < 10) wbTapAt(wbDrag.x0, wbDrag.y0); wbDrag = null; } return; }
   for (const tch of e.changedTouches) {
     if (tch.identifier === stickL.id) stickL.id = null;
     else if (tch.identifier === stickR.id) stickR.id = null;
@@ -461,18 +502,22 @@ function shopTapAt(px, py) {
   const c = shopCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) { shopLock = true; state = "play"; }
 }
 
-// ---- Vestuario (Mundial 2026) ----
-function wbRect() { const w = Math.min(540, W - 24), h = Math.min(450, H - 40); return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
-function wbCell(i) { const p = wbRect(); const C = 3, cw = (p.w - 36) / C, ch = 72, r = Math.floor(i / C), c = i % C; return { x: p.x + 18 + c * cw, y: p.y + 90 + r * (ch + 6), w: cw - 8, h: ch }; }
-function wbCloseRect() { const p = wbRect(); return { x: p.x + p.w / 2 - 70, y: p.y + p.h - 48, w: 140, h: 36 }; }
+// ---- Vestuario (Mundial 2026) - grilla con scroll ----
+const WB_C = 3, WB_CH = 76, WB_GAP = 8;
+function wbRect() { const w = Math.min(560, W - 20), h = Math.min(560, H - 24); return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
+function wbView() { const p = wbRect(); return { p, top: p.y + 90, bot: p.y + p.h - 58, x0: p.x + 16, cw: (p.w - 32) / WB_C }; }
+function wbMaxScroll() { const v = wbView(); const rows = Math.ceil(OUTFITS.length / WB_C); return Math.max(0, rows * (WB_CH + WB_GAP) - (v.bot - v.top)); }
+function wbCard(i) { const v = wbView(), r = Math.floor(i / WB_C), c = i % WB_C; return { x: v.x0 + c * v.cw, y: v.top + r * (WB_CH + WB_GAP) - wbScroll, w: v.cw - 8, h: WB_CH }; }
+function wbCloseRect() { const p = wbRect(); return { x: p.x + p.w / 2 - 80, y: p.y + p.h - 46, w: 160, h: 36 }; }
 function wbTapAt(px, py) {
-  for (let i = 0; i < OUTFITS.length; i++) { const r = wbCell(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
+  const cl = wbCloseRect(); if (px >= cl.x && px <= cl.x + cl.w && py >= cl.y && py <= cl.y + cl.h) { state = "title"; return; }
+  const v = wbView(); if (py < v.top || py > v.bot) return;
+  for (let i = 0; i < OUTFITS.length; i++) { const r = wbCard(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
     if (unlocked[i]) { outfit = i; saveWardrobe(); sRight(); }
     else if (bank >= OUTFITS[i].cost) { bank -= OUTFITS[i].cost; unlocked[i] = true; outfit = i; saveWardrobe(); sPower(); }
     else sWrong();
     return;
   } }
-  const c = wbCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) state = "title";
 }
 function drawOutfitMini(cx, cy, sz, idx) {
   const O = OUTFITS[idx], w = sz, h = sz * 0.62; ctx.save(); ctx.translate(cx, cy);
@@ -482,19 +527,24 @@ function drawOutfitMini(cx, cy, sz, idx) {
   ctx.restore();
 }
 function drawWardrobe() {
-  ctx.fillStyle = "rgba(0,0,0,0.66)"; ctx.fillRect(0, 0, W, H);
-  const p = wbRect();
-  ctx.shadowColor = "#f5cd46"; ctx.shadowBlur = 18; ctx.fillStyle = "#171826"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#f5cd46"; ctx.lineWidth = 3; ctx.stroke();
-  text("VESTUARIO  ·  MUNDIAL 2026", W / 2, p.y + 36, 19, "#f5cd46", "center");
-  text("Banco: " + bank + " monedas  (ganas jugando y aprendiendo)", W / 2, p.y + 64, 13, "#ffe896", "center");
+  ctx.fillStyle = "rgba(0,0,0,0.72)"; ctx.fillRect(0, 0, W, H);
+  const p = wbRect(), v = wbView();
+  ctx.shadowColor = "#f5cd46"; ctx.shadowBlur = 18; ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#f5cd46"; ctx.lineWidth = 3; ctx.stroke();
+  text("VESTUARIO  ·  MUNDIAL 2026", W / 2, p.y + 34, 19, "#f5cd46", "center");
+  text("Banco " + bank + " mon   ·   desliza para ver mas   ·   " + Object.keys(unlocked).length + "/" + OUTFITS.length, W / 2, p.y + 60, 12, "#ffe896", "center");
+  ctx.save(); ctx.beginPath(); ctx.rect(p.x + 2, v.top - 4, p.w - 4, v.bot - v.top + 8); ctx.clip();
   for (let i = 0; i < OUTFITS.length; i++) {
-    const r = wbCell(i), O = OUTFITS[i], owned = unlocked[i], sel = outfit === i;
-    ctx.fillStyle = sel ? "#2f3550" : "#23273a"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill();
-    ctx.strokeStyle = sel ? "#f5cd46" : "#3a3f55"; ctx.lineWidth = sel ? 3 : 2; ctx.stroke();
-    drawOutfitMini(r.x + r.w / 2, r.y + 32, 30, i);
-    text(O.name, r.x + r.w / 2, r.y + 52, 11, "#fff", "center");
-    text(owned ? (sel ? "EN USO" : "USAR") : (bank >= O.cost ? O.cost + " mon" : "FALTAN " + (O.cost - bank)), r.x + r.w / 2, r.y + 67, 10, owned ? (sel ? "#60d050" : "#cfd3e0") : (bank >= O.cost ? "#f5cd46" : "#a66"), "center");
+    const r = wbCard(i); if (r.y + r.h < v.top - 6 || r.y > v.bot + 6) continue;
+    const O = OUTFITS[i], owned = unlocked[i], sel = outfit === i, afford = bank >= O.cost;
+    ctx.fillStyle = sel ? "#2e3658" : owned ? "#242a3e" : "#1c2030"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill();
+    ctx.strokeStyle = sel ? "#f5cd46" : owned ? "#46506e" : "#33384a"; ctx.lineWidth = sel ? 3 : 1.5; ctx.stroke();
+    ctx.globalAlpha = owned || afford ? 1 : 0.5; drawOutfitMini(r.x + r.w / 2, r.y + 32, 30, i); ctx.globalAlpha = 1;
+    text(O.name, r.x + r.w / 2, r.y + 53, fitFont(O.name, r.w - 8, 11), "#fff", "center");
+    text(owned ? (sel ? "EN USO" : "USAR") : (afford ? O.cost + " mon" : "faltan " + (O.cost - bank)), r.x + r.w / 2, r.y + 68, 10, sel ? "#62e074" : owned ? "#cfd3e0" : afford ? "#f5cd46" : "#9a6a6a", "center");
   }
+  ctx.restore();
+  const ms = wbMaxScroll();
+  if (ms > 0) { const vh = v.bot - v.top, th = Math.max(26, vh * vh / (vh + ms)), ty = v.top + (wbScroll / ms) * (vh - th); ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.beginPath(); ctx.roundRect(p.x + p.w - 9, ty, 4, th, 2); ctx.fill(); }
   const c = wbCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 10); ctx.fill(); text("VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 6, 16, "#ff9bb0", "center");
 }
 function titleWbRect() { return { x: W / 2 - 120, y: H / 2 + 140, w: 240, h: 42 }; }

@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v25 - VEHICULOS (patines/patineta/scooter/bici): se compran con monedas y suben la velocidad del taco";
+const VERSION = "v26 - CIUDAD DECORADA: tiendas con toldo+cartel, faroles, arboles y canteros de flores en las veredas";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -373,7 +373,8 @@ function genLevel() {
       if (bx <= sx + 2 && x1 >= sx - 2 && by <= sy + 2 && y1 >= sy - 2) continue;
       for (let y = by; y < y1; y++) for (let x = bx; x < x1; x++) grid[y * cols + x] = 1;
       const tint = mixHex(shadeHex(theme.wall, 0.55 + Math.random() * 0.3), "#6b7280", 0.35 + Math.random() * 0.25);
-      cityBlocks.push({ x: bx, y: by, w: x1 - bx, h: y1 - by, tint, seed: randi(0, 9999) });
+      const isShop = Math.random() < 0.5;
+      cityBlocks.push({ x: bx, y: by, w: x1 - bx, h: y1 - by, tint, seed: randi(0, 9999), shop: isShop, awn: ["#d64545", "#3a8a4a", "#3a6ad6", "#e0a020", "#c050a0"][randi(0, 5)] });
     }
   }
   for (let y = sy - 1; y <= sy + 1; y++) for (let x = sx - 1; x <= sx + 1; x++) if (x > 0 && y > 0 && x < cols - 1 && y < rows - 1) grid[y * cols + x] = 0;
@@ -1065,6 +1066,14 @@ function draw3DBuilding(g, b) {
     g.fillStyle = rnd() < 0.55 ? "#ffe7a0" : shadeHex(roof, 0.28);
     g.fillRect(px + 6 + c * (pw - 12) / wc + 2, py + ph + 5 + r * (EH - 6) / wr, ww, wh);
   }
+  // TIENDA: toldo a rayas + vidriera + cartel en la planta baja
+  if (b.shop) {
+    const ay = py + ph; const stripes = Math.max(3, Math.round(pw / 16));
+    g.fillStyle = "rgba(0,0,0,0.3)"; g.fillRect(px, ay - 9, pw, 9); // cartel
+    g.fillStyle = "#ffe7a0"; for (let i = 0; i < Math.round(pw / 18); i++) g.fillRect(px + 6 + i * 18, ay - 7, 9, 5); // letras del cartel (luz)
+    for (let i = 0; i < stripes; i++) { g.fillStyle = i % 2 ? b.awn : "#f3ece0"; g.fillRect(px + i * pw / stripes, ay, pw / stripes + 1, 8); }
+    g.fillStyle = "rgba(0,0,0,0.18)"; g.fillRect(px, ay + 7, pw, 2);
+  }
   // AZOTEA (techo) con parapeto y borde
   g.fillStyle = roof; g.beginPath(); g.roundRect(px, py, pw, ph, 4); g.fill();
   g.fillStyle = shadeHex(roof, 1.14); g.fillRect(px, py, pw, 4);
@@ -1074,6 +1083,41 @@ function draw3DBuilding(g, b) {
   const units = Math.max(1, Math.floor((pw * ph) / (TS * TS * 2.2)));
   for (let i = 0; i < units; i++) { const ux = px + 10 + rnd() * (pw - 32), uy = py + 10 + rnd() * (ph - 26); g.fillStyle = shadeHex(roof, 0.72); g.fillRect(ux, uy, 16, 12); g.fillStyle = shadeHex(roof, 0.92); g.fillRect(ux + 2, uy + 2, 12, 3); }
   g.fillStyle = shadeHex(roof, 0.8); g.fillRect(px + pw - 22, py + 8, 13, 13); // acceso azotea
+}
+// ---- Decoracion de calle (se hornea en el cache) ----
+function decoLamp(g, x, y) {
+  g.fillStyle = "rgba(0,0,0,0.25)"; g.beginPath(); g.ellipse(x, y + 2, 5, 2, 0, 0, 7); g.fill();
+  g.strokeStyle = "#3a3f4a"; g.lineWidth = 3; g.lineCap = "round"; g.beginPath(); g.moveTo(x, y); g.lineTo(x, y - 26); g.stroke();
+  g.fillStyle = "#2a2f38"; g.fillRect(x - 7, y - 31, 14, 5);
+  g.fillStyle = "rgba(255,235,150,0.18)"; g.beginPath(); g.arc(x, y - 29, 14, 0, 7); g.fill();
+  g.fillStyle = "#fff3b0"; g.beginPath(); g.arc(x, y - 29, 4.2, 0, 7); g.fill();
+}
+function decoTree(g, x, y) {
+  g.fillStyle = "rgba(0,0,0,0.28)"; g.beginPath(); g.ellipse(x, y + 3, 13, 4, 0, 0, 7); g.fill();
+  g.fillStyle = "#5a3a1a"; g.fillRect(x - 3, y - 10, 6, 14);
+  g.fillStyle = "#236a2c"; g.beginPath(); g.arc(x, y - 16, 15, 0, 7); g.fill();
+  g.fillStyle = "#33933f"; g.beginPath(); g.arc(x - 6, y - 22, 10, 0, 7); g.fill();
+  g.fillStyle = "#54c45e"; g.beginPath(); g.arc(x - 9, y - 26, 6, 0, 7); g.fill();
+  g.fillStyle = "rgba(255,255,255,0.15)"; g.beginPath(); g.arc(x - 10, y - 28, 3, 0, 7); g.fill();
+}
+const FLOWER_COLS = ["#ff5c8a", "#ffd84a", "#ff7a3c", "#c060e0", "#ff4d4d", "#5ad0ff"];
+function decoFlowers(g, x, y) {
+  g.fillStyle = "#5a4632"; g.fillRect(x - 13, y - 3, 26, 8); g.fillStyle = "#7a5e40"; g.fillRect(x - 13, y - 3, 26, 2);
+  for (let i = 0; i < 5; i++) { const fx = x - 10 + i * 5, fy = y - 6 - (i % 2) * 3; g.fillStyle = FLOWER_COLS[(i * 2 + (x | 0)) % FLOWER_COLS.length]; for (let k = 0; k < 5; k++) { const a = k / 5 * 6.28; g.beginPath(); g.arc(fx + Math.cos(a) * 2.4, fy + Math.sin(a) * 2.4, 2, 0, 7); g.fill(); } g.fillStyle = "#fff3a0"; g.beginPath(); g.arc(fx, fy, 1.4, 0, 7); g.fill(); }
+}
+function decoFlowerPatch(g, x, y) {
+  for (let i = 0; i < 6; i++) { const fx = x + rand(-16, 16), fy = y + rand(-12, 12); g.fillStyle = FLOWER_COLS[(i + (x | 0)) % FLOWER_COLS.length]; for (let k = 0; k < 5; k++) { const a = k / 5 * 6.28; g.beginPath(); g.arc(fx + Math.cos(a) * 2.2, fy + Math.sin(a) * 2.2, 1.8, 0, 7); g.fill(); } g.fillStyle = "#fff3a0"; g.beginPath(); g.arc(fx, fy, 1.2, 0, 7); g.fill(); }
+}
+function decorateCity(g) {
+  for (const b of cityBlocks) {
+    const px = b.x * TS, py = b.y * TS, pw = b.w * TS, ph = b.h * TS;
+    decoLamp(g, px - 2, py + ph + 8); decoLamp(g, px + pw + 2, py + ph + 8);
+    let tg = b.seed % 2;
+    for (let x = px + TS * 0.7; x < px + pw - TS * 0.4; x += TS * 1.5) { (tg ? decoTree : decoFlowers)(g, x, py + ph + 10); tg = !tg; }
+    for (let x = px + TS * 0.9; x < px + pw - TS * 0.6; x += TS * 2.0) decoFlowers(g, x, py - 9);
+  }
+  // canteros de flores sueltos en plazas
+  for (let i = 0; i < 10; i++) { const tx = randi(2, cols - 2), ty = randi(2, rows - 2); if (!solid(tx, ty) && !solid(tx + 1, ty) && !solid(tx - 1, ty)) decoFlowerPatch(g, (tx + 0.5) * TS, (ty + 0.5) * TS); }
 }
 function buildDungeonCache() {
   dcanvas.width = cols * TS; dcanvas.height = rows * TS;
@@ -1097,6 +1141,8 @@ function buildDungeonCache() {
   // ---- EDIFICIOS 3D (painter: los de arriba primero) ----
   const sorted = cityBlocks.slice().sort((a, b) => a.y - b.y);
   for (const b of sorted) draw3DBuilding(g, b);
+  // ---- DECORACION: faroles, arboles, flores, tiendas ----
+  decorateCity(g);
   // ---- MARCO de la ciudad (borde) ----
   g.fillStyle = shadeHex(theme.wall, 0.4);
   g.fillRect(0, 0, Wd, TS); g.fillRect(0, Hd - TS, Wd, TS); g.fillRect(0, 0, TS, Hd); g.fillRect(Wd - TS, 0, TS, Hd);

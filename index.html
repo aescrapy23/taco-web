@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v14 - 40 selecciones Mundial 2026 + vestuario con scroll (UX pro)";
+const VERSION = "v15 - mundos vivos (gente/autos/props) + MISIONES + armas desbloqueables + skins por avanzar";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -116,12 +116,17 @@ const PALETTES = [
 ];
 let theme = PALETTES[0];
 
-// Armas: nombre, cadencia, velocidad, perdigones, abanico, vida, radio
+// Armas: nombre, cadencia, velocidad, perdigones, abanico, vida, radio, dmg, unlock(mundo)
 const WEAPONS = [
-  { name: "SALSA", cd: 0.17, speed: 640, pellets: 1, spread: 0, life: 0.9, r: 7, dmg: 1 },
-  { name: "ESCOPETA", cd: 0.52, speed: 560, pellets: 5, spread: 32, life: 0.45, r: 6, dmg: 1 },
-  { name: "RAFAGA", cd: 0.08, speed: 780, pellets: 1, spread: 7, life: 0.7, r: 5, dmg: 1 },
+  { name: "SALSA", cd: 0.17, speed: 640, pellets: 1, spread: 0, life: 0.9, r: 7, dmg: 1, unlock: 1 },
+  { name: "ESCOPETA", cd: 0.52, speed: 560, pellets: 5, spread: 32, life: 0.45, r: 6, dmg: 1, unlock: 3 },
+  { name: "RAFAGA", cd: 0.08, speed: 780, pellets: 1, spread: 7, life: 0.7, r: 5, dmg: 1, unlock: 5 },
+  { name: "LASER", cd: 0.11, speed: 1150, pellets: 1, spread: 0, life: 1.1, r: 9, dmg: 3, unlock: 8 },
+  { name: "PLASMA", cd: 0.30, speed: 720, pellets: 3, spread: 14, life: 0.9, r: 8, dmg: 2, unlock: 11 },
 ];
+let maxWorld = +(localStorage.getItem("catacomb_maxworld") || 1);
+function weaponUnlocked(i) { return (WEAPONS[i].unlock || 1) <= maxWorld; }
+function nextWeapon() { let i = weapon; for (let k = 0; k < WEAPONS.length; k++) { i = (i + 1) % WEAPONS.length; if (weaponUnlocked(i)) { weapon = i; return; } } }
 
 // VESTUARIO Mundial 2026: camisetas de selecciones (c1 cuerpo, c2 franja, band vincha). Banco de monedas.
 const OUTFITS = [
@@ -240,6 +245,7 @@ let level = 1, score = 0, best = +(localStorage.getItem("catacomb_best") || 0), 
 const MAXHP = 100;
 const player = { x: 0, y: 0, r: 18, vx: 0, vy: 0, hp: MAXHP, inv: 0, aimx: 1, aimy: 0, fire: 0 };
 let gems = [], enemies = [], bullets = [], parts = [], heals = [], powerDrops = [], eshots = [], portal = null;
+let peds = [], cars = [], props = [], mission = null; // mundo vivo (gente, autos, casas) + mision
 let pShield = 0, pTriple = 0, pRapid = 0, weapon = 0;
 let shop = null, shopLock = false, coins = 0; // tienda + monedas (divisa)
 let dashT = 0, dashCD = 0, dashDir = { x: 1, y: 0 }, lastMoveX = 1, lastMoveY = 0, lastLeftTap = 0; // esquive
@@ -255,6 +261,25 @@ function buildAmbient() {
   const vy = dim === 3 ? -1 : (dim === 1 || dim === 4) ? 1 : 0; // volcan sube, bosque/hielo caen
   for (let i = 0; i < 56; i++) ambient.push({ x: rand(0, W), y: rand(0, H), vx: rand(-9, 9), vy: vy * rand(12, 30) + rand(-6, 6), r: rand(1.5, 4.5), tw: rand(0, 6.28) });
 }
+
+// Mundo vivo: props decorativos + gente caminando + autos (segun el mundo)
+const WORLD_PROP = ["cristal", "arbol", "runa", "roca", "pino", "edificio", "nube", "cristal"];
+const PEDCOLS = ["#e24a3c", "#2c6fd6", "#39a85a", "#f5cd46", "#e0479a", "#ee7711", "#9a52e0", "#dddddd"];
+const CARCOLS = ["#d62828", "#1e3a8a", "#f5d000", "#dddddd", "#1a1a1a", "#39a85a"];
+function buildWorld() {
+  const dim = (level - 1) % PALETTES.length, ptype = WORLD_PROP[dim];
+  props = []; for (let i = 0; i < 10 + level; i++) { const c = freeCell(); props.push({ x: c.x, y: c.y, type: ptype, s: rand(0.85, 1.35) }); }
+  peds = []; const npc = 6 + Math.min(level, 8); for (let i = 0; i < npc; i++) { const c = freeCell(); const a = Math.random() * 6.28; peds.push({ x: c.x, y: c.y, vx: Math.cos(a) * 42, vy: Math.sin(a) * 42, r: 9, col: PEDCOLS[randi(0, PEDCOLS.length)], wp: rand(0, 6.28), rescued: false }); }
+  cars = []; const ncars = dim === 5 ? 4 : 2; for (let i = 0; i < ncars; i++) { const c = freeCell(); const horiz = Math.random() < 0.5, sp = rand(80, 120); cars.push({ x: c.x, y: c.y, vx: horiz ? (Math.random() < 0.5 ? -sp : sp) : 0, vy: horiz ? 0 : (Math.random() < 0.5 ? -sp : sp), r: 13, col: CARCOLS[randi(0, CARCOLS.length)] }); }
+}
+function buildMission() {
+  const r = level % 3;
+  if (level <= 1 || r === 1) mission = { type: 0, text: "Junta todas las gemas", target: gems.length, prog: 0 };
+  else if (r === 2) { const n = 3 + Math.floor(level / 2); mission = { type: 1, text: "Derrota " + n + " enemigos", target: n, prog: 0 }; }
+  else mission = { type: 2, text: "Rescata 3 personas (tocalas)", target: 3, prog: 0 };
+}
+function missionDone() { return mission && (mission.type === 0 ? gems.length === 0 : mission.prog >= mission.target); }
+function missionStr() { if (!mission) return ""; if (mission.type === 0) return (mission.target - gems.length) + "/" + mission.target + " gemas"; return mission.prog + "/" + mission.target; }
 let bannerT = 0, rings = []; // cartel de dimension + ondas de choque (ELITE)
 function floatText(x, y, txt, col) { floaters.push({ x, y, txt, col, life: 1.0 }); }
 function flash(col, dur) { flashCol = col; flashT = dur; flashMax = dur; }
@@ -290,7 +315,7 @@ function genLevel() {
   for (let y = sy - 1; y <= sy + 1; y++) for (let x = sx - 1; x <= sx + 1; x++) if (x > 0 && y > 0 && x < cols - 1 && y < rows - 1) grid[y * cols + x] = 0;
 
   player.x = (sx + 0.5) * TS; player.y = (sy + 0.5) * TS; player.vx = player.vy = 0;
-  gems = []; enemies = []; bullets = []; parts = []; heals = []; powerDrops = []; eshots = []; rings = []; portal = null;
+  gems = []; enemies = []; bullets = []; parts = []; heals = []; powerDrops = []; eshots = []; rings = []; peds = []; cars = []; props = []; portal = null;
   const ng = 4 + level;
   for (let i = 0; i < ng; i++) { const p = freeCell(); gems.push({ x: p.x, y: p.y }); }
   const ne = 2 + level;
@@ -299,7 +324,14 @@ function genLevel() {
   shop = farFree(player.x, player.y); shopLock = false; // TIENDA del nivel
   buildDungeonCache();
   buildAmbient();
-  bannerT = 2.4; // cartel de la dimension
+  buildWorld();
+  buildMission();
+  maxWorld = Math.max(maxWorld, level); try { localStorage.setItem("catacomb_maxworld", maxWorld); } catch (e) {}
+  // recompensa: 1 skin gratis cada 2 mundos
+  const freeSkins = Math.min(Math.floor(maxWorld / 2), OUTFITS.length - 1); let newSkin = false;
+  for (let i = 1; i <= freeSkins; i++) if (!unlocked[i]) { unlocked[i] = true; newSkin = true; }
+  if (newSkin) { saveWardrobe(); floatText(player.x, player.y - 54, "NUEVO SKIN! (vestuario)", "#f5cd46"); }
+  bannerT = 2.4; // cartel del mundo
 }
 
 function spawnEnemy(boss) {
@@ -345,7 +377,7 @@ function cycleLang() { lang = LANGS[(LANGS.indexOf(lang) + 1) % LANGS.length]; t
 function doButton(id) {
   if (id === "mute") { mute = !mute; if (!mute) sGem(); }
   else if (id === "pause") { paused = !paused; }
-  else if (id === "weapon") { weapon = (weapon + 1) % WEAPONS.length; sShoot(); }
+  else if (id === "weapon") { nextWeapon(); sShoot(); }
   else if (id === "lang") { cycleLang(); sRight(); }
   else if (id === "dash") doDash();
 }
@@ -360,7 +392,7 @@ addEventListener("keydown", e => {
   if (state === "wardrobe") { if (k === "escape") state = "title"; return; }
   if (state === "quiz") { if (k >= "1" && k <= "3") answerQuiz(+k - 1); return; }
   if (state === "shop") { if (k === "escape" || k === "enter") { shopLock = true; state = "play"; } return; }
-  if (k === "1") weapon = 0; if (k === "2") weapon = 1; if (k === "3") weapon = 2;
+  if (k === "1" && weaponUnlocked(0)) weapon = 0; if (k === "2" && weaponUnlocked(1)) weapon = 1; if (k === "3" && weaponUnlocked(2)) weapon = 2;
   if (k === "p") paused = !paused; if (k === "m") { mute = !mute; } if (k === "l") cycleLang();
   if (k === " " || k === "shift") doDash();
 });
@@ -589,7 +621,22 @@ function update(dt) {
   if (inp.firing && player.fire <= 0) fire(inp.ax, inp.ay);
 
   for (let i = gems.length - 1; i >= 0; i--) if (len(gems[i].x - player.x, gems[i].y - player.y) < player.r + 14) { addParts(gems[i].x, gems[i].y, 10, "#5eead4", 150); floatText(gems[i].x, gems[i].y, "+10", "#5eead4"); gems.splice(i, 1); score += 10; coins += 1; sGem(); }
-  if (gems.length === 0 && !portal) portal = farFree(player.x, player.y);
+  // gente caminando (mundo vivo) + rescate (mision)
+  for (const p of peds) {
+    p.wp += dt * 7;
+    if (p.rescued) continue;
+    if (!isFloor(p.x + p.vx * dt + Math.sign(p.vx) * p.r, p.y)) p.vx *= -1;
+    if (!isFloor(p.x, p.y + p.vy * dt + Math.sign(p.vy) * p.r)) p.vy *= -1;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    if (Math.random() < 0.008) { const a = Math.random() * 6.28; p.vx = Math.cos(a) * 42; p.vy = Math.sin(a) * 42; }
+    if (mission.type === 2 && len(p.x - player.x, p.y - player.y) < player.r + p.r + 4) { p.rescued = true; p.vx = p.vy = 0; mission.prog++; coins += 2; floatText(p.x, p.y, "RESCATADO!", "#9be7c0"); addParts(p.x, p.y, 12, "#9be7c0", 180); sGem(); }
+  }
+  for (const c of cars) {
+    if (!isFloor(c.x + c.vx * dt + Math.sign(c.vx) * c.r, c.y + c.vy * dt + Math.sign(c.vy) * c.r)) { c.vx *= -1; c.vy *= -1; }
+    c.x += c.vx * dt; c.y += c.vy * dt;
+  }
+
+  if (missionDone() && !portal) portal = farFree(player.x, player.y);
   if (portal && len(portal.x - player.x, portal.y - player.y) < player.r + 22) { openQuiz(); return; }
 
   for (let i = heals.length - 1; i >= 0; i--) if (len(heals[i].x - player.x, heals[i].y - player.y) < player.r + 14) { player.hp = Math.min(MAXHP, player.hp + 25); addParts(heals[i].x, heals[i].y, 10, "#60d050", 150); floatText(heals[i].x, heals[i].y, "+VIDA", "#60d050"); heals.splice(i, 1); sGem(); }
@@ -626,6 +673,7 @@ function update(dt) {
         if (e.hp <= 0) {
           combo++; comboT = 2.6; const mult = 1 + Math.min(Math.floor(combo / 3), 4);
           const gain = e.bounty * mult; score += gain; coins += e.boss ? 15 : 2;
+          if (mission && mission.type === 1) mission.prog++;
           floatText(e.x, e.y, "+" + gain + (mult > 1 ? " x" + mult : ""), e.boss ? "#ce82ff" : "#ffb060");
           addParts(e.x, e.y, e.boss ? 60 : 22, "#ffa040", e.boss ? 420 : 280); shake = Math.min(shake + (e.boss ? 12 : 5), 16);
           addRing(e.x, e.y, e.boss ? "#ce82ff" : "#ffb060", e.boss ? 220 : 72);
@@ -700,6 +748,33 @@ function drawDungeon() {
   if (dcanvas.width > 0) ctx.drawImage(dcanvas, 0, 0, cols * TS, rows * TS);
 }
 
+function drawProp(pr) {
+  const x = pr.x, y = pr.y, s = 18 * pr.s;
+  if (pr.type === "arbol") { ctx.fillStyle = "#5a3a1a"; ctx.fillRect(x - 2, y, 4, s * 0.5); ctx.fillStyle = "#2f8a3a"; ctx.beginPath(); ctx.arc(x, y - s * 0.2, s * 0.5, 0, 7); ctx.fill(); ctx.fillStyle = "#3aa84a"; ctx.beginPath(); ctx.arc(x - s * 0.2, y - s * 0.35, s * 0.3, 0, 7); ctx.fill(); }
+  else if (pr.type === "edificio") { ctx.fillStyle = "#39415a"; ctx.fillRect(x - s * 0.4, y - s * 0.9, s * 0.8, s * 1.4); ctx.fillStyle = "#ffe27a"; for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) ctx.fillRect(x - s * 0.26 + c * s * 0.3, y - s * 0.78 + r * s * 0.32, s * 0.12, s * 0.18); }
+  else if (pr.type === "pino") { ctx.fillStyle = "#6a4a2a"; ctx.fillRect(x - 2, y, 4, s * 0.4); ctx.fillStyle = "#eaf2f7"; ctx.beginPath(); ctx.moveTo(x, y - s * 0.6); ctx.lineTo(x - s * 0.4, y + s * 0.12); ctx.lineTo(x + s * 0.4, y + s * 0.12); ctx.closePath(); ctx.fill(); }
+  else if (pr.type === "nube") { ctx.fillStyle = "rgba(255,255,255,0.45)"; ctx.beginPath(); ctx.arc(x, y, s * 0.4, 0, 7); ctx.arc(x + s * 0.32, y, s * 0.3, 0, 7); ctx.arc(x - s * 0.32, y, s * 0.3, 0, 7); ctx.fill(); }
+  else { const col = pr.type === "cristal" ? "#7fb0e0" : pr.type === "runa" ? "#b48cff" : "#7a7a82"; ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x, y - s * 0.55); ctx.lineTo(x - s * 0.32, y + s * 0.3); ctx.lineTo(x + s * 0.32, y + s * 0.3); ctx.closePath(); ctx.fill(); ctx.fillStyle = shade(col, 1.3); ctx.beginPath(); ctx.moveTo(x, y - s * 0.55); ctx.lineTo(x, y + s * 0.3); ctx.lineTo(x + s * 0.32, y + s * 0.3); ctx.closePath(); ctx.fill(); }
+}
+function drawPed(p) {
+  const x = p.x, y = p.y, wlk = Math.sin(p.wp), col = p.rescued ? "#60d050" : p.col;
+  ctx.strokeStyle = "#3a3030"; ctx.lineWidth = 3; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(x - 2, y + 3); ctx.lineTo(x - 2 + wlk * 3, y + 9); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + 2, y + 3); ctx.lineTo(x + 2 - wlk * 3, y + 9); ctx.stroke();
+  ctx.fillStyle = col; ctx.beginPath(); ctx.roundRect(x - 4, y - 4, 8, 9, 3); ctx.fill();
+  ctx.fillStyle = "#f0c39a"; ctx.beginPath(); ctx.arc(x, y - 7, 4, 0, 7); ctx.fill();
+  if (p.rescued) { ctx.fillStyle = "#60d050"; ctx.fillRect(x - 1, y - 16, 2, 5); ctx.fillRect(x - 3, y - 14, 6, 2); }
+}
+function drawCar(c) {
+  const horiz = Math.abs(c.vx) >= Math.abs(c.vy);
+  ctx.save(); ctx.translate(c.x, c.y); if (!horiz) ctx.rotate(Math.PI / 2);
+  ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.beginPath(); ctx.ellipse(0, 11, 17, 5, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = "#111"; ctx.fillRect(-14, 6, 6, 5); ctx.fillRect(8, 6, 6, 5); ctx.fillRect(-14, -11, 6, 5); ctx.fillRect(8, -11, 6, 5);
+  ctx.fillStyle = c.col; ctx.beginPath(); ctx.roundRect(-16, -9, 32, 18, 5); ctx.fill();
+  ctx.fillStyle = "rgba(180,220,255,0.85)"; ctx.beginPath(); ctx.roundRect(-7, -6, 14, 12, 3); ctx.fill();
+  ctx.fillStyle = "#ffe896"; const fx = c.vx >= 0 ? 14 : -16; ctx.fillRect(fx, -6, 2, 3); ctx.fillRect(fx, 3, 2, 3);
+  ctx.restore();
+}
 function drawGem(x, y) { const s = 11 + Math.sin(t * 5) * 1.5; ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4); ctx.shadowColor = "#5eead4"; ctx.shadowBlur = 14; ctx.fillStyle = "#5eead4"; ctx.fillRect(-s, -s, s * 2, s * 2); ctx.shadowBlur = 0; ctx.fillStyle = "#bff7ec"; ctx.fillRect(-s * 0.4, -s * 0.4, s * 0.8, s * 0.8); ctx.restore(); }
 function drawHeal(x, y) { ctx.fillStyle = "#60d050"; ctx.beginPath(); ctx.arc(x, y, 11, 0, 7); ctx.fill(); ctx.fillStyle = "#fff"; ctx.fillRect(x - 6, y - 2, 12, 4); ctx.fillRect(x - 2, y - 6, 4, 12); }
 function drawPower(x, y, kind) {
@@ -810,6 +885,7 @@ function drawHUD() {
   const boss = enemies.find(e => e.boss);
   if (boss) { const w = Math.min(420, W - 120); text("JEFE", W / 2, H - 62 - bt, 16, "#ce82ff", "center"); bar(W / 2 - w / 2, H - 52 - bt, w, 14, boss.hp / boss.maxhp, "#ce50aa"); }
   if (portal) text("PORTAL ABIERTO - ANDA AL REMOLINO", W / 2, H - 26 - bt, 13, "#b480ff", "center");
+  else if (mission) text("MISION: " + mission.text + "   " + missionStr(), W / 2, H - 26 - bt, 13, "#f5cd46", "center");
 }
 
 // Panel del quiz (portal de idiomas) - ELITE
@@ -862,6 +938,7 @@ function render() {
   drawDungeon();
   for (const a of ambient) { ctx.globalAlpha = 0.2 + 0.28 * (0.5 + 0.5 * Math.sin(t * 2 + a.tw)); ctx.fillStyle = theme.stud; ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, 7); ctx.fill(); }
   ctx.globalAlpha = 1;
+  for (const pr of props) drawProp(pr);
   for (const g of gems) drawGem(g.x, g.y);
   for (const h of heals) drawHeal(h.x, h.y);
   for (const pd of powerDrops) drawPower(pd.x, pd.y, pd.kind);
@@ -869,6 +946,8 @@ function render() {
   if (portal) drawPortal(portal.x, portal.y);
   for (const b of bullets) { ctx.fillStyle = "#ff8c32"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill(); ctx.fillStyle = "#ffe896"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.5, 0, 7); ctx.fill(); }
   for (const s of eshots) { ctx.fillStyle = "#78d2eb"; ctx.beginPath(); ctx.arc(s.x, s.y, 8, 0, 7); ctx.fill(); ctx.fillStyle = "#dff4ff"; ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, 7); ctx.fill(); }
+  for (const c of cars) drawCar(c);
+  for (const p of peds) drawPed(p);
   for (const e of enemies) { drawBlock(ctx, e.x - e.r, e.y - e.r, e.r * 2, e.flash > 0 ? "#ffffff" : e.col); if (e.hp < e.maxhp && !e.boss) bar(e.x - e.r, e.y - e.r - 8, e.r * 2, 4, e.hp / e.maxhp, "#60d050"); }
   for (const rg of rings) { ctx.globalAlpha = clamp(rg.life, 0, 1) * 0.7; ctx.strokeStyle = rg.col; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(rg.x, rg.y, rg.r, 0, 7); ctx.stroke(); }
   ctx.globalAlpha = 1;
@@ -889,7 +968,7 @@ function render() {
 
   if (state === "play" || state === "quiz" || state === "shop") { drawHUD(); }
   if (state === "play") { drawMinimap(); drawStick(stickL, "rgba(94,234,212,0.5)"); drawStick(stickR, "rgba(255,150,60,0.6)"); drawButtons(); }
-  if (bannerT > 0 && (state === "play" || state === "quiz")) { const a = clamp(bannerT / 0.6, 0, 1) * clamp((2.4 - bannerT) / 0.3, 0, 1); ctx.globalAlpha = a; text("MUNDO " + level, W / 2, H * 0.3, Math.min(46, W / 9), "#fff", "center"); text(theme.name, W / 2, H * 0.3 + 38, Math.min(32, W / 11), hexA(theme.stud, 1), "center"); text("junta las gemas y cruza el portal", W / 2, H * 0.3 + 70, 14, "#9a9ab0", "center"); ctx.globalAlpha = 1; }
+  if (bannerT > 0 && (state === "play" || state === "quiz")) { const a = clamp(bannerT / 0.6, 0, 1) * clamp((2.4 - bannerT) / 0.3, 0, 1); ctx.globalAlpha = a; text("MUNDO " + level, W / 2, H * 0.3, Math.min(46, W / 9), "#fff", "center"); text(theme.name, W / 2, H * 0.3 + 38, Math.min(32, W / 11), hexA(theme.stud, 1), "center"); text("MISION: " + (mission ? mission.text : "junta las gemas"), W / 2, H * 0.3 + 70, 14, "#f5cd46", "center"); ctx.globalAlpha = 1; }
   if (state === "quiz") drawQuiz();
   if (state === "shop") drawShop();
   if (state === "wardrobe") drawWardrobe();

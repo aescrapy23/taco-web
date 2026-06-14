@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>Catacomb - el taco en la catacumba</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #0c0c12; overflow: hidden;
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif; -webkit-user-select: none; user-select: none; }
+  #c { display: block; touch-action: none; }
+  #hint { position: fixed; left: 0; right: 0; bottom: env(safe-area-inset-bottom, 8px);
+    text-align: center; color: #6a6a82; font-size: 12px; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hint">Catacomb web build</div>
+<script>
+"use strict";
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+let W = 0, H = 0, DPR = 1;
+const TS = 56;            // tamaño de baldosa
+let cols = 0, rows = 0;
+let grid = [];            // 0 = piso, 1 = pared
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.floor(W * DPR); canvas.height = Math.floor(H * DPR);
+  canvas.style.width = W + "px"; canvas.style.height = H + "px";
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener("resize", resize);
+resize();
+
+// ---------- Utilidades ----------
+const rand = (a, b) => a + Math.random() * (b - a);
+const randi = (a, b) => Math.floor(rand(a, b));
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const len = (x, y) => Math.hypot(x, y);
+function shade(hex, f) {
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  r = clamp(Math.round(r * f), 0, 255); g = clamp(Math.round(g * f), 0, 255); b = clamp(Math.round(b * f), 0, 255);
+  return "rgb(" + r + "," + g + "," + b + ")";
+}
+
+// ---------- Audio sintetizado (se activa con el primer toque) ----------
+let actx = null;
+function audioInit() { if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } if (actx && actx.state === "suspended") actx.resume(); }
+function beep(freq, dur, type, vol) {
+  if (!actx) return;
+  try {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type || "square"; o.frequency.value = freq;
+    g.gain.value = vol || 0.05;
+    o.connect(g); g.connect(actx.destination);
+    const t = actx.currentTime;
+    g.gain.setValueAtTime(g.gain.value, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.start(t); o.stop(t + dur);
+  } catch (e) {}
+}
+const sGem = () => beep(880, 0.12, "sine", 0.06);
+const sShoot = () => beep(520, 0.06, "square", 0.03);
+const sHit = () => beep(160, 0.12, "sawtooth", 0.06);
+const sKill = () => { beep(440, 0.08, "square", 0.05); setTimeout(() => beep(660, 0.1, "square", 0.05), 60); };
+const sHurt = () => beep(120, 0.22, "sawtooth", 0.08);
+const sLevel = () => { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.12, "triangle", 0.05), i * 70)); };
+
+// ---------- Estado ----------
+const PALETTES = [
+  { wall: "#404a5c", floor: "#1e1f2a", stud: "#2a2c38" },
+  { wall: "#3c6042", floor: "#1c261e", stud: "#28382c" },
+  { wall: "#62466e", floor: "#241e2c", stud: "#362a3c" },
+  { wall: "#70523a", floor: "#28201c", stud: "#3a2e26" },
+  { wall: "#405c70", floor: "#1c222c", stud: "#28343c" },
+];
+let theme = PALETTES[0];
+
+let state = "title";  // title | play | over
+let level = 1, score = 0, best = +(localStorage.getItem("catacomb_best") || 0);
+const MAXHP = 100;
+const player = { x: 0, y: 0, r: 18, vx: 0, vy: 0, hp: MAXHP, inv: 0, aimx: 1, aimy: 0, fire: 0 };
+let gems = [], enemies = [], bullets = [], parts = [], heals = [], portal = null;
+let shake = 0, t = 0;
+
+function solid(tx, ty) {
+  if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) return true;
+  return grid[ty * cols + tx] === 1;
+}
+function isFloor(px, py) {
+  return !solid(Math.floor(px / TS), Math.floor(py / TS));
+}
+function freeCell() {
+  for (let i = 0; i < 400; i++) {
+    const tx = randi(1, cols - 1), ty = randi(1, rows - 1);
+    if (!solid(tx, ty)) return { x: (tx + 0.5) * TS, y: (ty + 0.5) * TS };
+  }
+  return { x: W / 2, y: H / 2 };
+}
+function farFree(fx, fy) {
+  let best = null, bd = -1;
+  for (let i = 0; i < 300; i++) {
+    const tx = randi(1, cols - 1), ty = randi(1, rows - 1);
+    if (solid(tx, ty)) continue;
+    const cx = (tx + 0.5) * TS, cy = (ty + 0.5) * TS;
+    const d = (cx - fx) * (cx - fx) + (cy - fy) * (cy - fy);
+    if (d > bd) { bd = d; best = { x: cx, y: cy }; }
+  }
+  return best || freeCell();
+}
+
+// ---------- Generación de nivel ----------
+function genLevel() {
+  theme = PALETTES[(level - 1) % PALETTES.length];
+  cols = Math.max(10, Math.floor(W / TS));
+  rows = Math.max(8, Math.floor(H / TS));
+  grid = new Array(cols * rows).fill(0);
+  // bordes
+  for (let x = 0; x < cols; x++) { grid[x] = 1; grid[(rows - 1) * cols + x] = 1; }
+  for (let y = 0; y < rows; y++) { grid[y * cols] = 1; grid[y * cols + cols - 1] = 1; }
+  // clusters de bloques (cobertura tipo Roblox)
+  const clusters = 4 + level;
+  for (let c = 0; c < clusters; c++) {
+    const bx = randi(2, cols - 3), by = randi(2, rows - 3);
+    const bw = randi(1, 4), bh = randi(1, 3);
+    for (let y = by; y < Math.min(by + bh, rows - 2); y++)
+      for (let x = bx; x < Math.min(bx + bw, cols - 2); x++)
+        grid[y * cols + x] = 1;
+  }
+  // despejar el centro para el spawn
+  const sx = Math.floor(cols / 2), sy = Math.floor(rows / 2);
+  for (let y = sy - 1; y <= sy + 1; y++) for (let x = sx - 1; x <= sx + 1; x++)
+    if (x > 0 && y > 0 && x < cols - 1 && y < rows - 1) grid[y * cols + x] = 0;
+
+  player.x = (sx + 0.5) * TS; player.y = (sy + 0.5) * TS;
+  player.vx = player.vy = 0;
+
+  gems = []; enemies = []; bullets = []; parts = []; heals = []; portal = null;
+  const ng = 4 + level;
+  for (let i = 0; i < ng; i++) { const p = freeCell(); gems.push({ x: p.x, y: p.y }); }
+  const ne = 2 + level;
+  for (let i = 0; i < ne; i++) spawnEnemy();
+}
+
+function spawnEnemy() {
+  let p;
+  for (let i = 0; i < 30; i++) { p = freeCell(); if (len(p.x - player.x, p.y - player.y) > 220) break; }
+  const roll = Math.random();
+  let kind = roll < 0.6 ? "chaser" : "tank";
+  const e = { x: p.x, y: p.y, vx: 0, vy: 0, kind };
+  if (kind === "tank") { e.r = 26; e.hp = 6; e.speed = 55 + level * 3; e.col = "#9698a4"; e.bounty = 60; e.dmg = 16; }
+  else { e.r = 16; e.hp = 3; e.speed = 95 + level * 6; e.col = "#e24a3c"; e.bounty = 30; e.dmg = 10; }
+  e.maxhp = e.hp; e.flash = 0;
+  enemies.push(e);
+}
+
+// ---------- Colisión por baldosas (mover por ejes) ----------
+function moveAxis(e, dx, dy) {
+  e.x += dx; e.y += dy;
+  const r = e.r;
+  const x0 = Math.floor((e.x - r) / TS), x1 = Math.floor((e.x + r) / TS);
+  const y0 = Math.floor((e.y - r) / TS), y1 = Math.floor((e.y + r) / TS);
+  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+    if (!solid(tx, ty)) continue;
+    if (dx > 0) e.x = tx * TS - r - 0.01;
+    else if (dx < 0) e.x = (tx + 1) * TS + r + 0.01;
+    if (dy > 0) e.y = ty * TS - r - 0.01;
+    else if (dy < 0) e.y = (ty + 1) * TS + r + 0.01;
+  }
+}
+
+// ---------- Input ----------
+const keys = {};
+let mouse = { x: 0, y: 0, down: false };
+addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; audioInit(); if (state !== "play") startOrRestart(); });
+addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+canvas.addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+canvas.addEventListener("mousedown", e => { mouse.down = true; audioInit(); if (state !== "play") startOrRestart(); });
+addEventListener("mouseup", () => { mouse.down = false; });
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+
+// Touch twin-stick
+const stickL = { id: null, bx: 0, by: 0, x: 0, y: 0 };
+const stickR = { id: null, bx: 0, by: 0, x: 0, y: 0, fire: false };
+function onTouchStart(e) {
+  e.preventDefault(); audioInit();
+  if (state !== "play") { startOrRestart(); return; }
+  for (const tch of e.changedTouches) {
+    const x = tch.clientX, y = tch.clientY;
+    if (x < W / 2 && stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = x; stickL.by = stickL.y = y; }
+    else if (x >= W / 2 && stickR.id === null) { stickR.id = tch.identifier; stickR.bx = stickR.x = x; stickR.by = stickR.y = y; stickR.fire = true; }
+  }
+}
+function onTouchMove(e) {
+  e.preventDefault();
+  for (const tch of e.changedTouches) {
+    if (tch.identifier === stickL.id) { stickL.x = tch.clientX; stickL.y = tch.clientY; }
+    else if (tch.identifier === stickR.id) { stickR.x = tch.clientX; stickR.y = tch.clientY; }
+  }
+}
+function onTouchEnd(e) {
+  e.preventDefault();
+  for (const tch of e.changedTouches) {
+    if (tch.identifier === stickL.id) stickL.id = null;
+    else if (tch.identifier === stickR.id) { stickR.id = null; stickR.fire = false; }
+  }
+}
+canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+canvas.addEventListener("touchmove", onTouchMove, { passive: false });
+canvas.addEventListener("touchend", onTouchEnd, { passive: false });
+canvas.addEventListener("touchcancel", onTouchEnd, { passive: false });
+
+function readInput() {
+  // movimiento
+  let mx = 0, my = 0;
+  if (keys["a"] || keys["arrowleft"]) mx -= 1;
+  if (keys["d"] || keys["arrowright"]) mx += 1;
+  if (keys["w"] || keys["arrowup"]) my -= 1;
+  if (keys["s"] || keys["arrowdown"]) my += 1;
+  if (stickL.id !== null) {
+    const dx = stickL.x - stickL.bx, dy = stickL.y - stickL.by, d = len(dx, dy);
+    if (d > 8) { const m = Math.min(d, 60) / 60; mx = dx / d * m; my = dy / d * m; }
+  }
+  const ml = len(mx, my); if (ml > 1) { mx /= ml; my /= ml; }
+  // apuntado + disparo
+  let ax = 0, ay = 0, firing = false;
+  if (stickR.id !== null) {
+    const dx = stickR.x - stickR.bx, dy = stickR.y - stickR.by, d = len(dx, dy);
+    if (d > 10) { ax = dx / d; ay = dy / d; } else { ax = player.aimx; ay = player.aimy; }
+    firing = true;
+  } else if (mouse.down) {
+    const dx = mouse.x - player.x, dy = mouse.y - player.y, d = len(dx, dy);
+    if (d > 1) { ax = dx / d; ay = dy / d; firing = true; }
+  }
+  return { mx, my, ax, ay, firing };
+}
+
+// ---------- Bucle / lógica ----------
+function startOrRestart() {
+  if (state === "title" || state === "over") {
+    level = 1; score = 0; player.hp = MAXHP;
+    genLevel(); state = "play"; sLevel();
+  }
+}
+
+function nextLevel() {
+  level++; score += 100; player.hp = Math.min(MAXHP, player.hp + 30);
+  genLevel(); sLevel();
+}
+
+function addParts(x, y, n, col, spd) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, s = spd * (0.3 + Math.random());
+    parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.5, max: 0.5, col, r: 2 + Math.random() * 3 });
+  }
+}
+
+function fire(ax, ay) {
+  bullets.push({ x: player.x + ax * 20, y: player.y + ay * 20, vx: ax * 620, vy: ay * 620, life: 0.9, dmg: 1, r: 7 });
+  player.aimx = ax; player.aimy = ay; player.fire = 0.16;
+  addParts(player.x + ax * 20, player.y + ay * 20, 3, "#ffaa3c", 60);
+  sShoot();
+}
+
+function hurt(d) {
+  if (player.inv > 0) return;
+  player.hp -= d; player.inv = 0.7; shake = Math.min(shake + 8, 14); sHurt();
+  addParts(player.x, player.y, 14, "#eb5040", 200);
+  if (player.hp <= 0) {
+    player.hp = 0;
+    best = Math.max(best, score); localStorage.setItem("catacomb_best", best);
+    state = "over";
+  }
+}
+
+function update(dt) {
+  t += dt;
+  if (shake > 0) shake = Math.max(0, shake - dt * 30);
+  if (state !== "play") return;
+
+  const inp = readInput();
+  // jugador
+  const SP = 240;
+  moveAxis(player, inp.mx * SP * dt, 0);
+  moveAxis(player, 0, inp.my * SP * dt);
+  if (player.inv > 0) player.inv -= dt;
+  // disparo
+  player.fire -= dt;
+  if (inp.firing && player.fire <= 0) fire(inp.ax, inp.ay);
+
+  // gemas
+  for (let i = gems.length - 1; i >= 0; i--) {
+    if (len(gems[i].x - player.x, gems[i].y - player.y) < player.r + 14) {
+      addParts(gems[i].x, gems[i].y, 10, "#5eead4", 150);
+      gems.splice(i, 1); score += 10; sGem();
+    }
+  }
+  if (gems.length === 0 && !portal) portal = farFree(player.x, player.y);
+  if (portal && len(portal.x - player.x, portal.y - player.y) < player.r + 22) { nextLevel(); return; }
+
+  // curaciones
+  for (let i = heals.length - 1; i >= 0; i--) {
+    if (len(heals[i].x - player.x, heals[i].y - player.y) < player.r + 14) {
+      player.hp = Math.min(MAXHP, player.hp + 25); addParts(heals[i].x, heals[i].y, 10, "#60d050", 150);
+      heals.splice(i, 1); sGem();
+    }
+  }
+
+  // enemigos
+  for (const e of enemies) {
+    const dx = player.x - e.x, dy = player.y - e.y, d = len(dx, dy) || 1;
+    moveAxis(e, dx / d * e.speed * dt, 0);
+    moveAxis(e, 0, dy / d * e.speed * dt);
+    if (e.flash > 0) e.flash -= dt;
+    if (d < e.r + player.r) hurt(e.dmg);
+  }
+
+  // balas
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.life -= dt; b.x += b.vx * dt; b.y += b.vy * dt;
+    let dead = b.life <= 0 || !isFloor(b.x, b.y);
+    if (!dead) {
+      for (let j = enemies.length - 1; j >= 0; j--) {
+        const e = enemies[j];
+        if (len(e.x - b.x, e.y - b.y) < e.r + b.r) {
+          e.hp -= b.dmg; e.flash = 0.12; addParts(b.x, b.y, 5, "#ff7a40", 140); sHit();
+          if (e.hp <= 0) {
+            score += e.bounty; addParts(e.x, e.y, 22, "#ffa040", 280); shake = Math.min(shake + 5, 14); sKill();
+            if (Math.random() < 0.3) heals.push({ x: e.x, y: e.y });
+            enemies.splice(j, 1);
+          }
+          dead = true; break;
+        }
+      }
+    }
+    if (dead) bullets.splice(i, 1);
+  }
+
+  // partículas
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.92; p.vy *= 0.92;
+    if (p.life <= 0) parts.splice(i, 1);
+  }
+}
+
+// ---------- Render ----------
+function drawBlock(px, py, s, col) {
+  const b = Math.max(2, s / 11);
+  ctx.fillStyle = col; ctx.fillRect(px, py, s, s);
+  ctx.fillStyle = shade(col, 1.3); ctx.fillRect(px, py, s, b); ctx.fillRect(px, py, b, s);
+  ctx.fillStyle = shade(col, 0.6); ctx.fillRect(px, py + s - b, s, b); ctx.fillRect(px + s - b, py, b, s);
+  ctx.fillStyle = shade(col, 1.15);
+  ctx.beginPath(); ctx.arc(px + s / 2, py + s / 2, s * 0.22, 0, 7); ctx.fill();
+}
+
+function drawDungeon() {
+  // piso
+  ctx.fillStyle = theme.floor; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = theme.stud;
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    if (!solid(x, y)) ctx.fillRect(x * TS + TS / 2 - 2, y * TS + TS / 2 - 2, 4, 4);
+  }
+  // paredes
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    if (solid(x, y)) drawBlock(x * TS, y * TS, TS, theme.wall);
+  }
+}
+
+function drawGem(x, y) {
+  const s = 11 + Math.sin(t * 5) * 1.5;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4);
+  ctx.fillStyle = "#5eead4"; ctx.fillRect(-s, -s, s * 2, s * 2);
+  ctx.fillStyle = "#bff7ec"; ctx.fillRect(-s * 0.4, -s * 0.4, s * 0.8, s * 0.8);
+  ctx.restore();
+}
+function drawHeal(x, y) {
+  ctx.fillStyle = "#60d050";
+  ctx.beginPath(); ctx.arc(x, y, 11, 0, 7); ctx.fill();
+  ctx.fillStyle = "#fff"; ctx.fillRect(x - 6, y - 2, 12, 4); ctx.fillRect(x - 2, y - 6, 4, 12);
+}
+function drawPortal(x, y) {
+  const r = 22 + Math.sin(t * 4) * 3;
+  for (let i = 3; i >= 0; i--) {
+    ctx.fillStyle = "rgba(180,128,255," + (0.18 + i * 0.12) + ")";
+    ctx.beginPath(); ctx.arc(x, y, r - i * 4, 0, 7); ctx.fill();
+  }
+  ctx.fillStyle = "#0c0c12"; ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill();
+}
+
+function drawTaco(x, y, size) {
+  const sp = len(player.vx, player.vy);
+  ctx.save(); ctx.translate(x, y);
+  const w = size, h = size * 0.62;
+  // tortilla (media luna)
+  ctx.fillStyle = "#f5b938";
+  ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.5, 0, Math.PI, false); ctx.fill();
+  ctx.fillStyle = "#d08a26";
+  ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.5, 0.15, Math.PI - 0.15, false);
+  ctx.arc(0, -h * 0.1, w * 0.42, Math.PI - 0.15, 0.15, true); ctx.fill();
+  // relleno
+  ctx.fillStyle = "#e2342a"; ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.36, Math.PI + 0.2, -0.2, false); ctx.fill();
+  ctx.fillStyle = "#ffd650"; ctx.beginPath(); ctx.arc(-w * 0.12, -h * 0.18, w * 0.13, 0, 7); ctx.fill();
+  // lechuga arriba
+  ctx.fillStyle = "#60d040";
+  for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.arc(i * w * 0.16, -h * 0.34, w * 0.11, Math.PI, 0, false); ctx.fill(); }
+  // carita
+  ctx.fillStyle = "#3a2410";
+  ctx.beginPath(); ctx.arc(-w * 0.12, -h * 0.02, 2.4, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(w * 0.12, -h * 0.02, 2.4, 0, 7); ctx.fill();
+  ctx.strokeStyle = "#3a2410"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, h * 0.02, w * 0.14, 0.15, Math.PI - 0.15, false); ctx.stroke();
+  ctx.restore();
+}
+
+function bar(x, y, w, h, ratio, col) {
+  ctx.fillStyle = "rgba(8,10,16,0.9)"; ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+  ctx.fillStyle = "#222630"; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = col; ctx.fillRect(x, y, w * clamp(ratio, 0, 1), h);
+}
+
+function drawStick(s, col) {
+  if (s.id === null) return;
+  ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(s.bx, s.by, 56, 0, 7); ctx.stroke();
+  const dx = s.x - s.bx, dy = s.y - s.by, d = len(dx, dy), m = Math.min(d, 56);
+  const kx = d > 0 ? s.bx + dx / d * m : s.bx, ky = d > 0 ? s.by + dy / d * m : s.by;
+  ctx.fillStyle = col; ctx.beginPath(); ctx.arc(kx, ky, 26, 0, 7); ctx.fill();
+}
+
+function text(s, x, y, size, col, align) {
+  ctx.fillStyle = col; ctx.font = "700 " + size + "px -apple-system, Segoe UI, sans-serif";
+  ctx.textAlign = align || "left"; ctx.textBaseline = "alphabetic"; ctx.fillText(s, x, y);
+}
+
+function drawHUD() {
+  text(score, W / 2, 44, 34, "#fff", "center");
+  text("RECORD " + best, W / 2, 64, 14, "#9a9ab0", "center");
+  text("NIVEL " + level, W - 16, 30, 16, "#b480ff", "right");
+  // gemas
+  ctx.save(); ctx.translate(28, 26); ctx.rotate(Math.PI / 4); ctx.fillStyle = "#5eead4"; ctx.fillRect(-8, -8, 16, 16); ctx.restore();
+  text((((4 + level) - gems.length)) + " / " + (4 + level), 44, 32, 18, "#fff", "left");
+  // vida
+  bar(16, 50, 200, 14, player.hp / MAXHP, player.hp > 50 ? "#eb5046" : player.hp > 25 ? "#f0aa3c" : "#dc322d");
+  text("VIDA", 16, 46, 12, "#e88", "left");
+  if (portal) text("PORTAL ABIERTO - ANDA AL REMOLINO", W / 2, H - 24, 14, "#b480ff", "center");
+}
+
+function render() {
+  ctx.save();
+  if (shake > 0) ctx.translate(rand(-shake, shake), rand(-shake, shake));
+  drawDungeon();
+  for (const g of gems) drawGem(g.x, g.y);
+  for (const h of heals) drawHeal(h.x, h.y);
+  if (portal) drawPortal(portal.x, portal.y);
+  // balas
+  for (const b of bullets) {
+    ctx.fillStyle = "#ff8c32"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill();
+    ctx.fillStyle = "#ffe896"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.5, 0, 7); ctx.fill();
+  }
+  // enemigos
+  for (const e of enemies) {
+    drawBlock(e.x - e.r, e.y - e.r, e.r * 2, e.flash > 0 ? "#ffffff" : e.col);
+    if (e.hp < e.maxhp) bar(e.x - e.r, e.y - e.r - 8, e.r * 2, 4, e.hp / e.maxhp, "#60d050");
+  }
+  // jugador (parpadea con i-frames)
+  if (!(player.inv > 0 && Math.floor(t * 20) % 2)) drawTaco(player.x, player.y, player.r * 2.4);
+  // partículas
+  for (const p of parts) { ctx.globalAlpha = clamp(p.life / p.max, 0, 1); ctx.fillStyle = p.col; ctx.fillRect(p.x - p.r / 2, p.y - p.r / 2, p.r, p.r); }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  if (state === "play") { drawHUD(); drawStick(stickL, "rgba(94,234,212,0.5)"); drawStick(stickR, "rgba(255,150,60,0.6)"); }
+  if (state === "title") {
+    ctx.fillStyle = "rgba(8,8,16,0.6)"; ctx.fillRect(0, 0, W, H);
+    text("CATACOMB", W / 2, H / 2 - 40, Math.min(72, W / 7), "#f5cd46", "center");
+    text("el taco en la catacumba", W / 2, H / 2, 18, "#96c8eb", "center");
+    text("TOCA PARA JUGAR", W / 2, H / 2 + 60, 22, "#f5cd46", "center");
+    text("izquierda: mover  -  derecha: apuntar y disparar", W / 2, H / 2 + 96, 14, "#8a8aa0", "center");
+  }
+  if (state === "over") {
+    ctx.fillStyle = "rgba(6,6,12,0.78)"; ctx.fillRect(0, 0, W, H);
+    text("GAME OVER", W / 2, H / 2 - 30, Math.min(64, W / 8), "#eb5040", "center");
+    text("PUNTAJE  " + score, W / 2, H / 2 + 24, 28, "#fff", "center");
+    text("RECORD  " + best, W / 2, H / 2 + 58, 18, "#9a9ab0", "center");
+    text("TOCA PARA REINTENTAR", W / 2, H / 2 + 104, 20, "#f5cd46", "center");
+  }
+}
+
+// ---------- Game loop ----------
+let last = performance.now();
+function frame(now) {
+  let dt = (now - last) / 1000; last = now;
+  if (dt > 0.05) dt = 0.05;
+  update(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

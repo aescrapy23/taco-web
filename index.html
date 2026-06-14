@@ -22,7 +22,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v9 - tiradores + ambiente + estela + dominio";
+const VERSION = "v10 - tienda + minimapa + dash + orientacion + 4D + tiradores 7+";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -108,6 +108,8 @@ const PALETTES = [
   { name: "VOLCAN",  wall: "#e0653a", floor: "#2a1610", stud: "#ff9060" },
   { name: "HIELO",   wall: "#3ec0d8", floor: "#10222a", stud: "#7fe6f5" },
   { name: "NEON",    wall: "#e0479a", floor: "#220f1c", stud: "#ff86c4" },
+  { name: "CIELO",   wall: "#5aa0f0", floor: "#16202e", stud: "#9cc8ff" },
+  { name: "ABISMO",  wall: "#7a4ad6", floor: "#16101f", stud: "#a98cf0" },
 ];
 let theme = PALETTES[0];
 
@@ -166,11 +168,20 @@ const MAXHP = 100;
 const player = { x: 0, y: 0, r: 18, vx: 0, vy: 0, hp: MAXHP, inv: 0, aimx: 1, aimy: 0, fire: 0 };
 let gems = [], enemies = [], bullets = [], parts = [], heals = [], powerDrops = [], eshots = [], portal = null;
 let pShield = 0, pTriple = 0, pRapid = 0, weapon = 0;
+let shop = null, shopLock = false, coins = 0; // tienda + monedas (divisa)
+let dashT = 0, dashCD = 0, dashDir = { x: 1, y: 0 }, lastMoveX = 1, lastMoveY = 0, lastLeftTap = 0; // esquive
 let shake = 0, t = 0;
 let quiz = null; // {prompt, options[], correct, sel, fb}
 // Juice 4D: texto flotante, combo de bajas, destello de pantalla
 let floaters = [], combo = 0, comboT = 0, flashT = 0, flashMax = 0.001, flashCol = "255,255,255";
-let walkPhase = 0, playerMoving = false; // animacion del taco humanoide
+let walkPhase = 0, playerMoving = false, playerFace = 1; // animacion + orientacion del taco
+let ambient = []; // particulas de ambiente por dimension (4D)
+function buildAmbient() {
+  ambient = [];
+  const dim = (level - 1) % PALETTES.length;
+  const vy = dim === 3 ? -1 : (dim === 1 || dim === 4) ? 1 : 0; // volcan sube, bosque/hielo caen
+  for (let i = 0; i < 56; i++) ambient.push({ x: rand(0, W), y: rand(0, H), vx: rand(-9, 9), vy: vy * rand(12, 30) + rand(-6, 6), r: rand(1.5, 4.5), tw: rand(0, 6.28) });
+}
 function floatText(x, y, txt, col) { floaters.push({ x, y, txt, col, life: 1.0 }); }
 function flash(col, dur) { flashCol = col; flashT = dur; flashMax = dur; }
 
@@ -210,7 +221,9 @@ function genLevel() {
   const ne = 2 + level;
   for (let i = 0; i < ne; i++) spawnEnemy(false);
   if (level % 5 === 0) spawnEnemy(true); // jefe cada 5 niveles
+  shop = farFree(player.x, player.y); shopLock = false; // TIENDA del nivel
   buildDungeonCache();
+  buildAmbient();
 }
 
 function spawnEnemy(boss) {
@@ -220,11 +233,14 @@ function spawnEnemy(boss) {
     enemies.push({ x: p.x, y: p.y, vx: 0, vy: 0, r: 40, hp: 18 + level * 2, maxhp: 18 + level * 2, speed: 50 + level * 2, col: "#ba40d0", bounty: 500, dmg: 22, flash: 0, boss: true });
     return;
   }
-  const roll = Math.random();
+  // Dificultad progresiva (neural): tanque desde nivel 3, TIRADOR recién desde nivel 7.
+  const r = Math.random();
+  const pShooter = level >= 7 ? 0.10 + Math.min(level - 7, 8) * 0.025 : 0; // crece de a poco tras el 7
+  const pTank = level >= 3 ? 0.20 + Math.min(level, 10) * 0.015 : 0;
   let e;
-  if (roll < 0.48) e = { x: p.x, y: p.y, vx: 0, vy: 0, r: 16, hp: 3, speed: 95 + level * 6, col: "#e24a3c", bounty: 30, dmg: 10 };           // perseguidor
-  else if (roll < 0.74) e = { x: p.x, y: p.y, vx: 0, vy: 0, r: 26, hp: 6, speed: 55 + level * 3, col: "#9698a4", bounty: 60, dmg: 16 };       // tanque
-  else e = { x: p.x, y: p.y, vx: 0, vy: 0, r: 16, hp: 3, speed: 70 + level * 3, col: "#78d2eb", bounty: 80, dmg: 12, shoot: Math.random() * 1.7 }; // tirador (kiting + dispara)
+  if (r < pShooter) e = { x: p.x, y: p.y, vx: 0, vy: 0, r: 16, hp: 3, speed: 70 + level * 3, col: "#78d2eb", bounty: 80, dmg: 12, shoot: Math.random() * 1.7 };
+  else if (r < pShooter + pTank) e = { x: p.x, y: p.y, vx: 0, vy: 0, r: 26, hp: 5 + Math.floor(level / 2), speed: 55 + level * 3, col: "#9698a4", bounty: 60, dmg: 16 };
+  else e = { x: p.x, y: p.y, vx: 0, vy: 0, r: 16, hp: 2 + Math.floor(level / 3), speed: 90 + level * 6, col: "#e24a3c", bounty: 30, dmg: 10 };
   e.maxhp = e.hp; e.flash = 0; e.boss = false;
   enemies.push(e);
 }
@@ -246,7 +262,7 @@ function buttons() {
   let x = W - m; const arr = [];
   const add = (id, w) => { x -= w; arr.push({ id, x, y, w, h: s }); x -= 8; };
   add("mute", s); add("pause", s); add("weapon", Math.max(66, Math.round(s * 1.5))); add("lang", s);
-  return arr;
+  return arr; // el DASH es por doble-toque en la zona de mover (sin boton)
 }
 function btnAt(px, py) { for (const b of buttons()) if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) return b.id; return null; }
 function cycleLang() { lang = LANGS[(LANGS.indexOf(lang) + 1) % LANGS.length]; try { localStorage.setItem("catacomb_lang", lang); } catch (e) {} }
@@ -255,6 +271,7 @@ function doButton(id) {
   else if (id === "pause") { paused = !paused; }
   else if (id === "weapon") { weapon = (weapon + 1) % WEAPONS.length; sShoot(); }
   else if (id === "lang") { cycleLang(); sRight(); }
+  else if (id === "dash") doDash();
 }
 
 // ---------- Input ----------
@@ -264,14 +281,17 @@ addEventListener("keydown", e => {
   const k = e.key.toLowerCase(); keys[k] = true; audioInit();
   if (state === "title" || state === "over") { startOrRestart(); return; }
   if (state === "quiz") { if (k >= "1" && k <= "3") answerQuiz(+k - 1); return; }
+  if (state === "shop") { if (k === "escape" || k === "enter") { shopLock = true; state = "play"; } return; }
   if (k === "1") weapon = 0; if (k === "2") weapon = 1; if (k === "3") weapon = 2;
   if (k === "p") paused = !paused; if (k === "m") { mute = !mute; } if (k === "l") cycleLang();
+  if (k === " " || k === "shift") doDash();
 });
 addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 canvas.addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
 canvas.addEventListener("mousedown", e => {
   mouse.down = true; audioInit();
   if (state === "title" || state === "over") { startOrRestart(); return; }
+  if (state === "shop") { shopTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "quiz") { const o = quizOptAt(e.clientX, e.clientY); if (o >= 0) answerQuiz(o); return; }
   const b = btnAt(e.clientX, e.clientY); if (b) { doButton(b); mouse.down = false; }
 });
@@ -283,12 +303,13 @@ const stickR = { id: null, bx: 0, by: 0, x: 0, y: 0 };
 function onTouchStart(e) {
   e.preventDefault(); audioInit();
   if (state === "title" || state === "over") { startOrRestart(); return; }
+  if (state === "shop") { for (const tch of e.changedTouches) shopTapAt(tch.clientX, tch.clientY); return; }
   for (const tch of e.changedTouches) {
     const x = tch.clientX, y = tch.clientY;
     if (state === "quiz") { const o = quizOptAt(x, y); if (o >= 0) answerQuiz(o); continue; }
     const b = btnAt(x, y); if (b) { doButton(b); continue; }
     if (paused) continue;
-    if (x < W / 2 && stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = x; stickL.by = stickL.y = y; }
+    if (x < W / 2 && stickL.id === null) { const now = performance.now(); if (now - lastLeftTap < 320) doDash(); lastLeftTap = now; stickL.id = tch.identifier; stickL.bx = stickL.x = x; stickL.by = stickL.y = y; }
     else if (x >= W / 2 && stickR.id === null) { stickR.id = tch.identifier; stickR.bx = stickR.x = x; stickR.by = stickR.y = y; }
   }
 }
@@ -326,7 +347,7 @@ function readInput() {
 }
 
 // ---------- Flujo ----------
-function startOrRestart() { level = 1; score = 0; words = 0; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; genLevel(); state = "play"; sLevel(); }
+function startOrRestart() { level = 1; score = 0; words = 0; coins = 5; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; dashT = 0; dashCD = 0; genLevel(); state = "play"; sLevel(); }
 
 function openQuiz() {
   const { L, item } = pickItem();
@@ -369,6 +390,33 @@ function applyPower(kind) { if (kind === 0) pShield = 7; else if (kind === 1) pT
 const powerCol = k => k === 0 ? "#5eead4" : k === 1 ? "#ff963c" : "#f5cd46";
 const powerName = k => k === 0 ? "ESCUDO" : k === 1 ? "TRIPLE" : "RAPIDO";
 
+function doDash() {
+  if (dashCD > 0 || state !== "play" || paused) return;
+  let dx = lastMoveX, dy = lastMoveY;
+  if (Math.abs(dx) + Math.abs(dy) < 0.1) { dx = player.aimx; dy = player.aimy; }
+  const d = len(dx, dy) || 1; dashDir = { x: dx / d, y: dy / d };
+  dashT = 0.16; dashCD = 0.9; player.inv = Math.max(player.inv, 0.35);
+  addParts(player.x, player.y, 14, "#5eead4", 280); shake = Math.min(shake + 3, 14); sShoot();
+}
+
+// ---- Tienda ----
+function shopItems() {
+  return [
+    { name: "CURAR VIDA", cost: 4, buy: () => { player.hp = MAXHP; } },
+    { name: "ESCUDO", cost: 5, buy: () => { pShield = 9; } },
+    { name: "SALSA TRIPLE", cost: 5, buy: () => { pTriple = 11; } },
+    { name: "DISPARO RAPIDO", cost: 5, buy: () => { pRapid = 11; } },
+  ];
+}
+function shopRect() { const w = Math.min(520, W - 32), h = Math.min(386, H - 60); return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
+function shopBtnRect(i) { const p = shopRect(); return { x: p.x + 26, y: p.y + 104 + i * 60, w: p.w - 52, h: 50 }; }
+function shopCloseRect() { const p = shopRect(); return { x: p.x + p.w / 2 - 70, y: p.y + p.h - 54, w: 140, h: 40 }; }
+function shopTapAt(px, py) {
+  const it = shopItems();
+  for (let i = 0; i < it.length; i++) { const r = shopBtnRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { if (coins >= it[i].cost) { coins -= it[i].cost; it[i].buy(); sPower(); floatText(player.x, player.y - 30, it[i].name + "!", "#ffd84a"); } else sWrong(); return; } }
+  const c = shopCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) { shopLock = true; state = "play"; }
+}
+
 function hurt(d) {
   if (player.inv > 0 || pShield > 0) return;
   player.hp -= d; player.inv = 0.7; shake = Math.min(shake + 8, 14); flash("235,80,64", 0.22); sHurt(); addParts(player.x, player.y, 14, "#eb5040", 200);
@@ -380,6 +428,7 @@ function update(dt) {
   if (shake > 0) shake = Math.max(0, shake - dt * 30);
   if (flashT > 0) flashT -= dt;
   for (let i = floaters.length - 1; i >= 0; i--) { const f = floaters[i]; f.life -= dt * 1.1; f.y -= 26 * dt; if (f.life <= 0) floaters.splice(i, 1); }
+  for (const a of ambient) { a.x += a.vx * dt; a.y += a.vy * dt; if (a.x < -10) a.x = W + 10; else if (a.x > W + 10) a.x = -10; if (a.y < -10) a.y = H + 10; else if (a.y > H + 10) a.y = -10; }
 
   if (state === "quiz") {
     if (quiz && quiz.sel >= 0) { quiz.fb -= dt; if (quiz.fb <= 0) nextLevel(); }
@@ -392,13 +441,20 @@ function update(dt) {
   moveAxis(player, inp.mx * SP * dt, 0); moveAxis(player, 0, inp.my * SP * dt);
   playerMoving = (Math.abs(inp.mx) + Math.abs(inp.my)) > 0.12;
   walkPhase += dt * (playerMoving ? 13 : 2.5);
+  if (Math.abs(inp.mx) > 0.06) playerFace = inp.mx > 0 ? 1 : -1; // mira a donde se mueve
+  if (playerMoving) { lastMoveX = inp.mx; lastMoveY = inp.my; }
+  // esquive / dash
+  if (dashCD > 0) dashCD -= dt;
+  if (dashT > 0) { dashT -= dt; moveAxis(player, dashDir.x * 880 * dt, 0); moveAxis(player, 0, dashDir.y * 880 * dt); }
+  // tienda
+  if (shop) { const near = len(shop.x - player.x, shop.y - player.y) < player.r + 28; if (near && !shopLock) { state = "shop"; return; } if (!near) shopLock = false; }
   if (player.inv > 0) player.inv -= dt;
   pShield = Math.max(0, pShield - dt); pTriple = Math.max(0, pTriple - dt); pRapid = Math.max(0, pRapid - dt);
   if (comboT > 0) { comboT -= dt; if (comboT <= 0) combo = 0; }
   player.fire -= dt;
   if (inp.firing && player.fire <= 0) fire(inp.ax, inp.ay);
 
-  for (let i = gems.length - 1; i >= 0; i--) if (len(gems[i].x - player.x, gems[i].y - player.y) < player.r + 14) { addParts(gems[i].x, gems[i].y, 10, "#5eead4", 150); floatText(gems[i].x, gems[i].y, "+10", "#5eead4"); gems.splice(i, 1); score += 10; sGem(); }
+  for (let i = gems.length - 1; i >= 0; i--) if (len(gems[i].x - player.x, gems[i].y - player.y) < player.r + 14) { addParts(gems[i].x, gems[i].y, 10, "#5eead4", 150); floatText(gems[i].x, gems[i].y, "+10", "#5eead4"); gems.splice(i, 1); score += 10; coins += 1; sGem(); }
   if (gems.length === 0 && !portal) portal = farFree(player.x, player.y);
   if (portal && len(portal.x - player.x, portal.y - player.y) < player.r + 22) { openQuiz(); return; }
 
@@ -435,7 +491,7 @@ function update(dt) {
         e.hp -= b.dmg; e.flash = 0.12; addParts(b.x, b.y, 5, "#ff7a40", 140); sHit();
         if (e.hp <= 0) {
           combo++; comboT = 2.6; const mult = 1 + Math.min(Math.floor(combo / 3), 4);
-          const gain = e.bounty * mult; score += gain;
+          const gain = e.bounty * mult; score += gain; coins += e.boss ? 15 : 2;
           floatText(e.x, e.y, "+" + gain + (mult > 1 ? " x" + mult : ""), e.boss ? "#ce82ff" : "#ffb060");
           addParts(e.x, e.y, e.boss ? 60 : 22, "#ffa040", e.boss ? 420 : 280); shake = Math.min(shake + (e.boss ? 12 : 5), 16);
           if (e.boss) flash("206,130,255", 0.25); sKill();
@@ -450,6 +506,38 @@ function update(dt) {
   }
 
   for (let i = parts.length - 1; i >= 0; i--) { const p = parts[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.92; p.vy *= 0.92; if (p.life <= 0) parts.splice(i, 1); }
+}
+
+function drawMinimap() {
+  if (!cols) return;
+  const mw = Math.min(150, W * 0.24), cell = mw / cols, mh = cell * rows;
+  const ox = W - mw - 10, oy = H - mh - 12 - safeB;
+  ctx.fillStyle = "rgba(8,10,16,0.66)"; ctx.fillRect(ox - 3, oy - 3, mw + 6, mh + 6);
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) { ctx.fillStyle = solid(x, y) ? hexA(theme.wall, 0.85) : "rgba(255,255,255,0.05)"; ctx.fillRect(ox + x * cell, oy + y * cell, Math.ceil(cell), Math.ceil(cell)); }
+  const dot = (wx, wy, col, sz) => { ctx.fillStyle = col; ctx.fillRect(ox + (wx / TS) * cell - sz, oy + (wy / TS) * cell - sz, sz * 2, sz * 2); };
+  for (const g of gems) dot(g.x, g.y, "#5eead4", 1.5);
+  if (shop) dot(shop.x, shop.y, "#ffd84a", 2.5);
+  if (portal) dot(portal.x, portal.y, "#b480ff", 2.6);
+  for (const e of enemies) dot(e.x, e.y, e.boss ? "#ce82ff" : e.shoot !== undefined ? "#78d2eb" : "#e24a3c", 1.8);
+  dot(player.x, player.y, "#fff", 2.6);
+}
+function drawShop() {
+  ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, W, H);
+  const p = shopRect();
+  ctx.shadowColor = "#ffd84a"; ctx.shadowBlur = 18; ctx.fillStyle = "#1a1726"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 3; ctx.stroke();
+  text("TIENDA DEL TACO", W / 2, p.y + 42, 22, "#ffd84a", "center");
+  text("Monedas: " + coins, W / 2, p.y + 74, 16, "#ffe896", "center");
+  const it = shopItems();
+  for (let i = 0; i < it.length; i++) {
+    const r = shopBtnRect(i), ok = coins >= it[i].cost;
+    ctx.fillStyle = ok ? "#2a2e40" : "#241f28"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 11); ctx.fill();
+    ctx.strokeStyle = ok ? "#5a607a" : "#3a3340"; ctx.lineWidth = 2; ctx.stroke();
+    text(it[i].name, r.x + 18, r.y + r.h / 2 + 6, 18, ok ? "#fff" : "#888", "left");
+    text(it[i].cost + " mon", r.x + r.w - 16, r.y + r.h / 2 + 6, 15, ok ? "#ffd84a" : "#766", "right");
+  }
+  const c = shopCloseRect();
+  ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 10); ctx.fill();
+  text("SALIR", c.x + c.w / 2, c.y + c.h / 2 + 6, 17, "#ff9bb0", "center");
 }
 
 // ---------- Render ----------
@@ -477,7 +565,7 @@ function drawDungeon() {
   if (dcanvas.width > 0) ctx.drawImage(dcanvas, 0, 0, cols * TS, rows * TS);
 }
 
-function drawGem(x, y) { const s = 11 + Math.sin(t * 5) * 1.5; ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4); ctx.fillStyle = "#5eead4"; ctx.fillRect(-s, -s, s * 2, s * 2); ctx.fillStyle = "#bff7ec"; ctx.fillRect(-s * 0.4, -s * 0.4, s * 0.8, s * 0.8); ctx.restore(); }
+function drawGem(x, y) { const s = 11 + Math.sin(t * 5) * 1.5; ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4); ctx.shadowColor = "#5eead4"; ctx.shadowBlur = 14; ctx.fillStyle = "#5eead4"; ctx.fillRect(-s, -s, s * 2, s * 2); ctx.shadowBlur = 0; ctx.fillStyle = "#bff7ec"; ctx.fillRect(-s * 0.4, -s * 0.4, s * 0.8, s * 0.8); ctx.restore(); }
 function drawHeal(x, y) { ctx.fillStyle = "#60d050"; ctx.beginPath(); ctx.arc(x, y, 11, 0, 7); ctx.fill(); ctx.fillStyle = "#fff"; ctx.fillRect(x - 6, y - 2, 12, 4); ctx.fillRect(x - 2, y - 6, 4, 12); }
 function drawPower(x, y, kind) {
   const col = powerCol(kind), bob = Math.sin(t * 6) * 2.5; y += bob;
@@ -488,7 +576,17 @@ function drawPower(x, y, kind) {
   else if (kind === 1) { for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.arc(x + i * 5, y, 1.8, 0, 7); ctx.fill(); } }
   else { ctx.fillRect(x - 2, y - 6, 3, 7); ctx.fillRect(x + 1, y - 1, 3, 7); }
 }
-function drawPortal(x, y) { const r = 22 + Math.sin(t * 4) * 3; for (let i = 3; i >= 0; i--) { ctx.fillStyle = "rgba(180,128,255," + (0.18 + i * 0.12) + ")"; ctx.beginPath(); ctx.arc(x, y, r - i * 4, 0, 7); ctx.fill(); } ctx.fillStyle = "#0c0c12"; ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill(); }
+function drawPortal(x, y) {
+  const r = 24 + Math.sin(t * 4) * 3;
+  ctx.save(); ctx.shadowColor = "#b480ff"; ctx.shadowBlur = 22;
+  for (let i = 3; i >= 0; i--) { ctx.fillStyle = "rgba(180,128,255," + (0.18 + i * 0.12) + ")"; ctx.beginPath(); ctx.arc(x, y, r - i * 4, 0, 7); ctx.fill(); }
+  ctx.shadowBlur = 0;
+  // brazos giratorios (remolino 4D)
+  ctx.strokeStyle = "rgba(220,190,255,0.8)"; ctx.lineWidth = 3;
+  for (let k = 0; k < 3; k++) { const a = t * 3 + k * 2.094; ctx.beginPath(); ctx.arc(x, y, r * 0.7, a, a + 1.4); ctx.stroke(); }
+  ctx.fillStyle = "#0c0c12"; ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill();
+  ctx.restore();
+}
 
 function drawLimb(x, y, dx, dy, col, r) { ctx.strokeStyle = col; ctx.lineWidth = r * 1.5; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx, y + dy); ctx.stroke(); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x + dx, y + dy, r, 0, 7); ctx.fill(); }
 function drawTaco(x, y, size, lvl) {
@@ -498,7 +596,8 @@ function drawTaco(x, y, size, lvl) {
   const s = size * grow, w = s, h = s * 0.62;
   const wlk = Math.sin(walkPhase), sw = playerMoving ? wlk : 0;
   const bob = playerMoving ? Math.abs(wlk) * s * 0.05 : Math.sin(t * 3) * s * 0.025;
-  ctx.save(); ctx.translate(x, y + bob);
+  const lean = playerMoving ? wlk * 0.06 : 0; // se inclina al caminar
+  ctx.save(); ctx.translate(x, y + bob); ctx.rotate(lean); ctx.scale(playerFace, 1);
   // aura de evolucion
   if (stage >= 2) { ctx.globalAlpha = 0.12 + 0.08 * Math.sin(t * 5); ctx.fillStyle = stage >= 3 ? "#ffd84a" : "#b48cff"; ctx.beginPath(); ctx.arc(0, 0, s, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
   // sombra
@@ -548,7 +647,8 @@ function drawButtons() {
     if (b.id === "mute") { lbl = mute ? "MUTE" : "SON"; col = mute ? "#888" : "#dfe2ea"; }
     else if (b.id === "pause") { lbl = paused ? ">" : "II"; }
     else if (b.id === "weapon") { lbl = WEAPONS[weapon].name; col = "#ffb060"; }
-    else { lbl = lang; col = lang === "ZH" ? "#f08cbe" : "#7fd6ff"; }
+    else if (b.id === "lang") { lbl = lang; col = lang === "ZH" ? "#f08cbe" : "#7fd6ff"; }
+    else { lbl = dashCD > 0 ? "..." : "DASH"; col = dashCD > 0 ? "#667" : "#5eead4"; }
     const fs = fitFont(lbl, b.w - 8, b.id === "pause" ? 18 : 13);
     text(lbl, b.x + b.w / 2, b.y + b.h / 2 + fs * 0.36, fs, col, "center");
   }
@@ -559,7 +659,7 @@ function drawHUD() {
   text(score, W / 2, 40 + tp, 30, "#fff", "center");
   text("RECORD " + best, W / 2, 60 + tp, 13, "#9a9ab0", "center");
   if (combo >= 2) text("COMBO x" + (1 + Math.min(Math.floor(combo / 3), 4)) + "  (" + combo + ")", W / 2, 84 + tp, 17, "#ff9b3c", "center");
-  text("DIM " + level + "  " + theme.name + "   ·   ING " + words, 16, 26 + tp, 14, "#7fd6ff", "left");
+  text("DIM " + level + " " + theme.name + "  ·  ING " + words + "  ·  MON " + coins, 16, 26 + tp, 14, "#7fd6ff", "left");
   bar(16, 36 + tp, 180, 14, player.hp / MAXHP, player.hp > 50 ? "#eb5046" : player.hp > 25 ? "#f0aa3c" : "#dc322d");
   let cx = 16;
   [[0, pShield, 7], [1, pTriple, 9], [2, pRapid, 9]].forEach(([k, v, mx]) => { if (v > 0) { const w = 78; bar(cx, 60 + tp, w, 16, v / mx, powerCol(k)); text(powerName(k), cx + 4, 73 + tp, 11, "#0c0c12", "left"); cx += w + 8; } });
@@ -616,9 +716,12 @@ function render() {
   ctx.save();
   if (shake > 0) ctx.translate(rand(-shake, shake), rand(-shake, shake));
   drawDungeon();
+  for (const a of ambient) { ctx.globalAlpha = 0.2 + 0.28 * (0.5 + 0.5 * Math.sin(t * 2 + a.tw)); ctx.fillStyle = theme.stud; ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, 7); ctx.fill(); }
+  ctx.globalAlpha = 1;
   for (const g of gems) drawGem(g.x, g.y);
   for (const h of heals) drawHeal(h.x, h.y);
   for (const pd of powerDrops) drawPower(pd.x, pd.y, pd.kind);
+  if (shop) { const yb = Math.sin(t * 4) * 2; ctx.fillStyle = "#caa23a"; ctx.fillRect(shop.x - 14, shop.y - 14 + yb, 28, 26); ctx.fillStyle = "#3a2a08"; ctx.fillRect(shop.x - 14, shop.y - 14 + yb, 28, 7); text("$", shop.x, shop.y + 6 + yb, 18, "#3a2408", "center"); }
   if (portal) drawPortal(portal.x, portal.y);
   for (const b of bullets) { ctx.fillStyle = "#ff8c32"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill(); ctx.fillStyle = "#ffe896"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.5, 0, 7); ctx.fill(); }
   for (const s of eshots) { ctx.fillStyle = "#78d2eb"; ctx.beginPath(); ctx.arc(s.x, s.y, 8, 0, 7); ctx.fill(); ctx.fillStyle = "#dff4ff"; ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, 7); ctx.fill(); }
@@ -635,9 +738,10 @@ function render() {
   ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
   if (flashT > 0) { ctx.fillStyle = "rgba(" + flashCol + "," + (0.4 * flashT / flashMax) + ")"; ctx.fillRect(0, 0, W, H); }
 
-  if (state === "play" || state === "quiz") { drawHUD(); }
-  if (state === "play") { drawStick(stickL, "rgba(94,234,212,0.5)"); drawStick(stickR, "rgba(255,150,60,0.6)"); drawButtons(); }
+  if (state === "play" || state === "quiz" || state === "shop") { drawHUD(); }
+  if (state === "play") { drawMinimap(); drawStick(stickL, "rgba(94,234,212,0.5)"); drawStick(stickR, "rgba(255,150,60,0.6)"); drawButtons(); }
   if (state === "quiz") drawQuiz();
+  if (state === "shop") drawShop();
   if (paused && state === "play") { ctx.fillStyle = "rgba(6,6,12,0.6)"; ctx.fillRect(0, 0, W, H); text("PAUSA", W / 2, H / 2, 48, "#f5cd46", "center"); text("toca II para seguir", W / 2, H / 2 + 40, 16, "#9a9ab0", "center"); drawButtons(); }
   if (state === "title") {
     ctx.fillStyle = "rgba(8,8,16,0.62)"; ctx.fillRect(0, 0, W, H);
@@ -645,8 +749,8 @@ function render() {
     text("CATACOMB", W / 2, H / 2 - 50, Math.min(72, W / 7), "#f5cd46", "center");
     text("el taco en la catacumba", W / 2, H / 2 - 8, 18, "#96c8eb", "center");
     text("TOCA PARA JUGAR", W / 2, H / 2 + 52, 22, "#f5cd46", "center");
-    text("izq: mover   der: apuntar y disparar", W / 2, H / 2 + 88, 14, "#8a8aa0", "center");
-    text("viaja por DIMENSIONES, crece y aprende INGLES y CHINO (frases)", W / 2, H / 2 + 112, 13, "#7a7a90", "center");
+    text("izq: mover (doble-toque = esquive) · der: apuntar/disparar", W / 2, H / 2 + 88, 14, "#8a8aa0", "center");
+    text("dimensiones, tiendas, minimapa · aprende INGLES y CHINO (frases)", W / 2, H / 2 + 112, 13, "#7a7a90", "center");
     text("build " + VERSION, W / 2, H - 14 - safeB, 11, "#586", "center");
   }
   if (state === "over") {

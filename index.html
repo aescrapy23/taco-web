@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v24 - TIENDA pulida (iconos/monedas) + PREVIEW grande 'disena tu taco' en vestuario + taco arranca bebe y crece";
+const VERSION = "v25 - VEHICULOS (patines/patineta/scooter/bici): se compran con monedas y suben la velocidad del taco";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -191,8 +191,16 @@ const ACCS = [
   { name: "NADA" }, { name: "GORRO RANA" }, { name: "GAFAS DE SOL" }, { name: "MONIO" },
   { name: "SOMBRERO" }, { name: "AUDIFONOS" }, { name: "FLOR" }, { name: "ANTIFAZ" }, { name: "GORRA" },
 ];
-let face = 0, acc = 1, uFace = { 0: true }, uAcc = { 0: true, 1: true };
-function saveCosmetics() { lset("face", face); lset("acc", acc); lset("uface", JSON.stringify(uFace)); lset("uacc", JSON.stringify(uAcc)); }
+// Vehiculos (mounts): se PAGAN con monedas del banco y suben la velocidad del taco
+const MOUNTS = [
+  { name: "A PIE", speed: 1, cost: 0 },
+  { name: "PATINES", speed: 1.35, cost: 20 },
+  { name: "PATINETA", speed: 1.5, cost: 35 },
+  { name: "SCOOTER", speed: 1.7, cost: 55 },
+  { name: "BICI", speed: 1.9, cost: 85 },
+];
+let face = 0, acc = 1, mount = 0, uFace = { 0: true }, uAcc = { 0: true, 1: true }, uMount = { 0: true };
+function saveCosmetics() { lset("face", face); lset("acc", acc); lset("mount", mount); lset("uface", JSON.stringify(uFace)); lset("uacc", JSON.stringify(uAcc)); lset("umount", JSON.stringify(uMount)); }
 let wbScroll = 0, wbDrag = null;
 let uiBack = "title"; // a donde vuelve "VOLVER" (title o menu del juego)
 function openWb(back) { uiBack = back || "title"; wbScroll = 0; state = "wardrobe"; }
@@ -242,10 +250,11 @@ function loadPlayerData() {
   try { lstats = JSON.parse(lget("lstats") || "{}"); } catch (e) { lstats = {}; }
   try { profile = JSON.parse(lget("profile") || "null"); } catch (e) { profile = null; }
   outfit = clamp(outfit, 0, OUTFITS.length - 1);
-  face = +(lget("face") || 0); acc = lget("acc") == null ? 1 : +lget("acc");
+  face = +(lget("face") || 0); acc = lget("acc") == null ? 1 : +lget("acc"); mount = +(lget("mount") || 0);
   try { uFace = JSON.parse(lget("uface") || "{}"); } catch (e) { uFace = {}; } uFace[0] = true;
   try { uAcc = JSON.parse(lget("uacc") || "{}"); } catch (e) { uAcc = {}; } uAcc[0] = true; uAcc[1] = true;
-  face = clamp(face, 0, FACES.length - 1); acc = clamp(acc, 0, ACCS.length - 1);
+  try { uMount = JSON.parse(lget("umount") || "{}"); } catch (e) { uMount = {}; } uMount[0] = true;
+  face = clamp(face, 0, FACES.length - 1); acc = clamp(acc, 0, ACCS.length - 1); mount = clamp(mount, 0, MOUNTS.length - 1);
 }
 function switchPlayer(name) { curPlayer = name; savePlayers(); loadPlayerData(); }
 function createPlayer() {
@@ -256,7 +265,7 @@ function createPlayer() {
   if (players.indexOf(nm) < 0) players.push(nm);
   curPlayer = nm; savePlayers();
   best = 0; bank = 0; outfit = 0; maxWorld = 1; unlocked = { 0: true }; lstats = {}; lang = "EN";
-  face = 0; acc = 1; uFace = { 0: true }; uAcc = { 0: true, 1: true };
+  face = 0; acc = 1; mount = 0; uFace = { 0: true }; uAcc = { 0: true, 1: true }; uMount = { 0: true };
   profile = { name: nm, age: age, eng: ageToTier(age, LESSONS.EN.levels.length - 1), zh: ageToTier(Math.max(6, age - 3), LESSONS.ZH.levels.length - 1) };
   lset("best", 0); lset("bank", 0); lset("outfit", 0); lset("maxworld", 1); lset("unlocked", JSON.stringify(unlocked)); lset("lstats", "{}"); lset("lang", "EN"); lset("profile", JSON.stringify(profile));
   saveCosmetics();
@@ -265,7 +274,7 @@ function createPlayer() {
 function deletePlayer(name) {
   const i = players.indexOf(name); if (i < 0) return;
   players.splice(i, 1);
-  try { ["best", "bank", "outfit", "maxworld", "lang", "unlocked", "lstats", "profile", "face", "acc", "uface", "uacc"].forEach(k => localStorage.removeItem("pl_" + name + "_" + k)); } catch (e) {}
+  try { ["best", "bank", "outfit", "maxworld", "lang", "unlocked", "lstats", "profile", "face", "acc", "mount", "uface", "uacc", "umount"].forEach(k => localStorage.removeItem("pl_" + name + "_" + k)); } catch (e) {}
   if (curPlayer === name) { curPlayer = players[0] || ""; if (curPlayer) loadPlayerData(); else profile = null; }
   savePlayers();
 }
@@ -687,25 +696,26 @@ function shopTapAt(px, py) {
 }
 
 // ---- Vestuario: 3 pestanas (EQUIPOS Mundial / CARAS / ACCESORIOS) ----
-const WB_C = 3, WB_CH = 76, WB_GAP = 8, WB_TABS = ["EQUIPOS", "CARAS", "ACCESORIOS"];
+const WB_C = 3, WB_CH = 76, WB_GAP = 8, WB_TABS = ["EQUIPOS", "CARAS", "ACCESORIOS", "VEHICULOS"];
 let wbTab = 0;
-function wbList() { return wbTab === 1 ? FACES : wbTab === 2 ? ACCS : OUTFITS; }
+function wbList() { return wbTab === 1 ? FACES : wbTab === 2 ? ACCS : wbTab === 3 ? MOUNTS : OUTFITS; }
 function wbCount() { return wbList().length; }
 function wbRect() { const w = Math.min(560, W - 20), h = Math.min(560, H - 24); return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
 function wbView() { const p = wbRect(); return { p, top: p.y + 172, bot: p.y + p.h - 58, x0: p.x + 16, cw: (p.w - 32) / WB_C }; }
 function wbMaxScroll() { const v = wbView(); const rows = Math.ceil(wbCount() / WB_C); return Math.max(0, rows * (WB_CH + WB_GAP) - (v.bot - v.top)); }
 function wbCard(i) { const v = wbView(), r = Math.floor(i / WB_C), c = i % WB_C; return { x: v.x0 + c * v.cw, y: v.top + r * (WB_CH + WB_GAP) - wbScroll, w: v.cw - 8, h: WB_CH }; }
-function wbTabRect(i) { const p = wbRect(), tw = (p.w - 44) / 3; return { x: p.x + 16 + i * (tw + 6), y: p.y + 136, w: tw, h: 30 }; }
+function wbTabRect(i) { const p = wbRect(), n = WB_TABS.length, tw = (p.w - 32 - (n - 1) * 6) / n; return { x: p.x + 16 + i * (tw + 6), y: p.y + 136, w: tw, h: 30 }; }
 function wbCloseRect() { const p = wbRect(); return { x: p.x + p.w / 2 - 80, y: p.y + p.h - 46, w: 160, h: 36 }; }
 function wbTapAt(px, py) {
   const cl = wbCloseRect(); if (px >= cl.x && px <= cl.x + cl.w && py >= cl.y && py <= cl.y + cl.h) { state = uiBack; return; }
-  for (let i = 0; i < 3; i++) { const tb = wbTabRect(i); if (px >= tb.x && px <= tb.x + tb.w && py >= tb.y && py <= tb.y + tb.h) { if (wbTab !== i) { wbTab = i; wbScroll = 0; } sRight(); return; } }
+  for (let i = 0; i < WB_TABS.length; i++) { const tb = wbTabRect(i); if (px >= tb.x && px <= tb.x + tb.w && py >= tb.y && py <= tb.y + tb.h) { if (wbTab !== i) { wbTab = i; wbScroll = 0; } sRight(); return; } }
   const v = wbView(); if (py < v.top || py > v.bot) return;
   const n = wbCount();
   for (let i = 0; i < n; i++) { const r = wbCard(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
     if (wbTab === 0) { if (unlocked[i]) { outfit = i; saveWardrobe(); sRight(); } else if (bank >= OUTFITS[i].cost) { bank -= OUTFITS[i].cost; unlocked[i] = true; outfit = i; saveWardrobe(); sPower(); } else sWrong(); }
     else if (wbTab === 1) { if (uFace[i]) { face = i; saveCosmetics(); sRight(); } else openChallenge("face", i); }
-    else { if (uAcc[i]) { acc = i; saveCosmetics(); sRight(); } else openChallenge("acc", i); }
+    else if (wbTab === 2) { if (uAcc[i]) { acc = i; saveCosmetics(); sRight(); } else openChallenge("acc", i); }
+    else { if (uMount[i]) { mount = i; saveCosmetics(); sRight(); } else if (bank >= MOUNTS[i].cost) { bank -= MOUNTS[i].cost; uMount[i] = true; mount = i; saveCosmetics(); sPower(); } else sWrong(); }
     return;
   } }
 }
@@ -723,6 +733,15 @@ function drawCosMini(cx, cy, sz, kind, idx) {
   if (kind === "face") drawFace(idx, w, h, 0.5); else { drawFace(0, w, h, 0.5); drawAccessory(idx, w, h, w); }
   ctx.restore();
 }
+function drawMountMini(cx, cy, idx) {
+  if (idx === 0) { ctx.fillStyle = "#cfd3e0"; ctx.beginPath(); ctx.roundRect(cx - 11, cy + 4, 10, 7, 3); ctx.fill(); ctx.beginPath(); ctx.roundRect(cx + 1, cy + 4, 10, 7, 3); ctx.fill(); return; }
+  const fy = cy + 10;
+  const wheel = (wx, wr) => { ctx.fillStyle = "#1a1a1f"; ctx.beginPath(); ctx.arc(wx, fy, wr, 0, 7); ctx.fill(); ctx.fillStyle = "#666"; ctx.beginPath(); ctx.arc(wx, fy, wr * 0.45, 0, 7); ctx.fill(); };
+  if (idx === 1) { for (const sg of [-1, 1]) { ctx.fillStyle = "#e0479a"; ctx.beginPath(); ctx.roundRect(cx + sg * 9 - 7, fy - 8, 14, 8, 3); ctx.fill(); wheel(cx + sg * 9 - 3, 3); wheel(cx + sg * 9 + 3, 3); } }
+  else if (idx === 2) { ctx.fillStyle = "#3a2a18"; ctx.beginPath(); ctx.roundRect(cx - 16, fy - 3, 32, 5, 3); ctx.fill(); wheel(cx - 10, 5); wheel(cx + 10, 5); }
+  else if (idx === 3) { ctx.fillStyle = "#2a2c38"; ctx.fillRect(cx - 14, fy - 2, 28, 4); ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(cx + 12, fy); ctx.lineTo(cx + 15, fy - 20); ctx.lineTo(cx + 22, fy - 20); ctx.stroke(); wheel(cx - 12, 6); wheel(cx + 13, 6); }
+  else { ctx.strokeStyle = "#4aa3e0"; ctx.lineWidth = 2.5; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(cx - 13, fy); ctx.lineTo(cx, fy - 6); ctx.lineTo(cx + 13, fy); ctx.lineTo(cx, fy); ctx.closePath(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx + 13, fy); ctx.lineTo(cx + 15, fy - 18); ctx.lineTo(cx + 22, fy - 18); ctx.stroke(); wheel(cx - 13, 9); wheel(cx + 13, 9); }
+}
 function drawWardrobe() {
   ctx.fillStyle = "rgba(0,0,0,0.72)"; ctx.fillRect(0, 0, W, H);
   const p = wbRect(), v = wbView();
@@ -737,10 +756,10 @@ function drawWardrobe() {
   drawTaco(W / 2, stY + stH * 0.72, 64, Math.max(level, 6));
   playerMoving = pm;
   text("Equipo: " + OUTFITS[outfit].name + "   ·   Cara: " + FACES[face].name + "   ·   " + ACCS[acc].name, W / 2, stY + stH + 14, fitFont("Equipo: " + OUTFITS[outfit].name + " · Cara: " + FACES[face].name + " · " + ACCS[acc].name, p.w - 36, 12), "#9be7c0", "center");
-  const sub = wbTab === 0 ? "Banco " + bank + " mon  ·  " + Object.keys(unlocked).length + "/" + OUTFITS.length + " equipos"
-    : "Desbloquea diciendo la expresion en " + (lang === "ZH" ? "CHINO" : "INGLES") + "  ·  " + (wbTab === 1 ? Object.keys(uFace).length + "/" + FACES.length : Object.keys(uAcc).length + "/" + ACCS.length);
+  const sub = wbTab === 1 || wbTab === 2 ? "Desbloquea diciendo la expresion en " + (lang === "ZH" ? "CHINO" : "INGLES") + "  ·  " + (wbTab === 1 ? Object.keys(uFace).length + "/" + FACES.length : Object.keys(uAcc).length + "/" + ACCS.length)
+    : "Banco " + bank + " mon  ·  " + (wbTab === 3 ? Object.keys(uMount).length + "/" + MOUNTS.length + " vehiculos" : Object.keys(unlocked).length + "/" + OUTFITS.length + " equipos");
   text(sub, W / 2, p.y + 130, 11, "#ffe896", "center");
-  for (let i = 0; i < 3; i++) { const tb = wbTabRect(i), on = wbTab === i; ctx.fillStyle = on ? "#3a3320" : "#23273a"; ctx.beginPath(); ctx.roundRect(tb.x, tb.y, tb.w, tb.h, 8); ctx.fill(); ctx.strokeStyle = on ? "#f5cd46" : "#3a3f55"; ctx.lineWidth = on ? 2.5 : 1.5; ctx.stroke(); text(WB_TABS[i], tb.x + tb.w / 2, tb.y + tb.h / 2 + 5, fitFont(WB_TABS[i], tb.w - 6, 13), on ? "#f5cd46" : "#aeb4c6", "center"); }
+  for (let i = 0; i < WB_TABS.length; i++) { const tb = wbTabRect(i), on = wbTab === i; ctx.fillStyle = on ? "#3a3320" : "#23273a"; ctx.beginPath(); ctx.roundRect(tb.x, tb.y, tb.w, tb.h, 8); ctx.fill(); ctx.strokeStyle = on ? "#f5cd46" : "#3a3f55"; ctx.lineWidth = on ? 2.5 : 1.5; ctx.stroke(); text(WB_TABS[i], tb.x + tb.w / 2, tb.y + tb.h / 2 + 5, fitFont(WB_TABS[i], tb.w - 5, 12), on ? "#f5cd46" : "#aeb4c6", "center"); }
   ctx.save(); ctx.beginPath(); ctx.rect(p.x + 2, v.top - 4, p.w - 4, v.bot - v.top + 8); ctx.clip();
   const n = wbCount();
   for (let i = 0; i < n; i++) {
@@ -748,13 +767,16 @@ function drawWardrobe() {
     let owned, sel, name, label, lcol;
     if (wbTab === 0) { const O = OUTFITS[i]; owned = !!unlocked[i]; sel = outfit === i; name = O.name; const afford = bank >= O.cost; label = owned ? (sel ? "EN USO" : "USAR") : (afford ? O.cost + " mon" : "faltan " + (O.cost - bank)); lcol = sel ? "#62e074" : owned ? "#cfd3e0" : afford ? "#f5cd46" : "#9a6a6a"; }
     else if (wbTab === 1) { owned = !!uFace[i]; sel = face === i; name = FACES[i].name; label = owned ? (sel ? "EN USO" : "USAR") : "RETO IDIOMA"; lcol = sel ? "#62e074" : owned ? "#cfd3e0" : "#7fd6ff"; }
-    else { owned = !!uAcc[i]; sel = acc === i; name = ACCS[i].name; label = owned ? (sel ? "EN USO" : "USAR") : "RETO IDIOMA"; lcol = sel ? "#62e074" : owned ? "#cfd3e0" : "#7fd6ff"; }
+    else if (wbTab === 2) { owned = !!uAcc[i]; sel = acc === i; name = ACCS[i].name; label = owned ? (sel ? "EN USO" : "USAR") : "RETO IDIOMA"; lcol = sel ? "#62e074" : owned ? "#cfd3e0" : "#7fd6ff"; }
+    else { const M = MOUNTS[i]; owned = !!uMount[i]; sel = mount === i; name = M.name; const afford = bank >= M.cost; label = owned ? (sel ? "EN USO" : "USAR") : (afford ? M.cost + " mon" : "faltan " + (M.cost - bank)); lcol = sel ? "#62e074" : owned ? "#cfd3e0" : afford ? "#f5cd46" : "#9a6a6a"; }
     ctx.fillStyle = sel ? "#2e3658" : owned ? "#242a3e" : "#1c2030"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill();
     ctx.strokeStyle = sel ? "#f5cd46" : owned ? "#46506e" : "#33384a"; ctx.lineWidth = sel ? 3 : 1.5; ctx.stroke();
     ctx.globalAlpha = owned ? 1 : 0.55;
-    if (wbTab === 0) drawOutfitMini(r.x + r.w / 2, r.y + 32, 30, i); else drawCosMini(r.x + r.w / 2, r.y + 36, 26, wbTab === 1 ? "face" : "acc", i);
+    if (wbTab === 0) drawOutfitMini(r.x + r.w / 2, r.y + 32, 30, i);
+    else if (wbTab === 3) drawMountMini(r.x + r.w / 2, r.y + 34, i);
+    else drawCosMini(r.x + r.w / 2, r.y + 36, 26, wbTab === 1 ? "face" : "acc", i);
     ctx.globalAlpha = 1;
-    if (!owned && wbTab > 0) { text("🔒", r.x + r.w - 14, r.y + 18, 13, "#7fd6ff", "center"); }
+    if (!owned && (wbTab === 1 || wbTab === 2)) { text("🔒", r.x + r.w - 14, r.y + 18, 13, "#7fd6ff", "center"); }
     text(name, r.x + r.w / 2, r.y + 53, fitFont(name, r.w - 8, 11), "#fff", "center");
     text(label, r.x + r.w / 2, r.y + 68, 10, lcol, "center");
   }
@@ -891,7 +913,7 @@ function update(dt) {
   if (state !== "play" || paused) return;
 
   const inp = readInput();
-  const SP = 240;
+  const SP = 240 * (MOUNTS[mount] ? MOUNTS[mount].speed : 1); // el vehiculo sube la velocidad
   moveAxis(player, inp.mx * SP * dt, 0); moveAxis(player, 0, inp.my * SP * dt);
   playerMoving = (Math.abs(inp.mx) + Math.abs(inp.my)) > 0.12;
   walkPhase += dt * (playerMoving ? 13 : 2.5);
@@ -1270,6 +1292,28 @@ function drawAccessory(a, w, h, s) {
     const ty = hy + w * 0.18; ctx.fillStyle = "#d62828"; ctx.beginPath(); ctx.arc(0, ty, w * 0.26, Math.PI, 0, false); ctx.fill(); ctx.fillStyle = "#a81f1f"; ctx.fillRect(0, ty - w * 0.02, w * 0.34, w * 0.07); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, ty - w * 0.12, w * 0.04, 0, 7); ctx.fill();
   }
 }
+// VEHICULO (mount) bajo el taco: ruedas que giran al moverse
+function drawMount(m, w, h, s) {
+  if (!m) return;
+  const fy = s * 0.52, spin = playerMoving ? walkPhase * 2 : t; // giro de ruedas
+  const wheel = (wx, wr) => { ctx.fillStyle = "#1a1a1f"; ctx.beginPath(); ctx.arc(wx, fy, wr, 0, 7); ctx.fill(); ctx.fillStyle = "#555"; ctx.beginPath(); ctx.arc(wx, fy, wr * 0.45, 0, 7); ctx.fill(); ctx.strokeStyle = "#999"; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(wx + Math.cos(spin) * wr * 0.4, fy + Math.sin(spin) * wr * 0.4); ctx.lineTo(wx - Math.cos(spin) * wr * 0.4, fy - Math.sin(spin) * wr * 0.4); ctx.stroke(); };
+  if (m === 1) { // PATINES: botas con rueditas
+    for (const sg of [-1, 1]) { ctx.fillStyle = "#e0479a"; ctx.beginPath(); ctx.roundRect(sg * s * 0.2 - s * 0.1, fy - s * 0.1, s * 0.22, s * 0.12, 3); ctx.fill(); for (let k = -1; k <= 1; k++) { ctx.fillStyle = "#1a1a1f"; ctx.beginPath(); ctx.arc(sg * s * 0.2 + k * s * 0.06, fy + s * 0.05, s * 0.035, 0, 7); ctx.fill(); } }
+  } else if (m === 2) { // PATINETA
+    ctx.fillStyle = "#3a2a18"; ctx.beginPath(); ctx.roundRect(-s * 0.34, fy - s * 0.03, s * 0.68, s * 0.07, 4); ctx.fill();
+    ctx.fillStyle = "#ff6b3c"; ctx.fillRect(-s * 0.3, fy - s * 0.02, s * 0.6, s * 0.025);
+    wheel(-s * 0.22, s * 0.06); wheel(s * 0.22, s * 0.06);
+  } else if (m === 3) { // SCOOTER
+    ctx.fillStyle = "#2a2c38"; ctx.fillRect(-s * 0.3, fy - s * 0.02, s * 0.6, s * 0.06); // tabla
+    ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = s * 0.05; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(s * 0.28, fy); ctx.lineTo(s * 0.34, fy - s * 0.6); ctx.lineTo(s * 0.46, fy - s * 0.6); ctx.stroke(); // manubrio
+    wheel(-s * 0.26, s * 0.08); wheel(s * 0.3, s * 0.08);
+  } else if (m === 4) { // BICI
+    ctx.strokeStyle = "#4aa3e0"; ctx.lineWidth = s * 0.04; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(-s * 0.3, fy); ctx.lineTo(0, fy - s * 0.05); ctx.lineTo(s * 0.3, fy); ctx.lineTo(0, fy); ctx.closePath(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s * 0.3, fy); ctx.lineTo(s * 0.34, fy - s * 0.5); ctx.lineTo(s * 0.46, fy - s * 0.5); ctx.stroke(); // manubrio
+    wheel(-s * 0.3, s * 0.16); wheel(s * 0.3, s * 0.16);
+  }
+}
 function drawTaco(x, y, size, lvl) {
   const L = lvl || 1;
   const grow = 0.6 + Math.min(L - 1, 16) * 0.05;      // arranca bebe (chico) y crece de a poco con el nivel
@@ -1283,6 +1327,8 @@ function drawTaco(x, y, size, lvl) {
   if (stage >= 2) { ctx.globalAlpha = 0.12 + 0.08 * Math.sin(t * 5); ctx.fillStyle = stage >= 3 ? "#ffd84a" : "#b48cff"; ctx.beginPath(); ctx.arc(0, 0, s, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
   // sombra
   ctx.fillStyle = "rgba(0,0,0,0.28)"; ctx.beginPath(); ctx.ellipse(0, s * 0.52, s * 0.34, s * 0.11, 0, 0, 7); ctx.fill();
+  // vehiculo (patines/patineta/scooter/bici) bajo el taco
+  drawMount(mount, w, h, s);
   // piernas + pies (caminata alternada)
   drawLimb(-s * 0.15, s * 0.16, -s * 0.02, s * 0.34 + sw * s * 0.14, "#d89a3a", s * 0.095);
   drawLimb(s * 0.15, s * 0.16, s * 0.02, s * 0.34 - sw * s * 0.14, "#d89a3a", s * 0.095);

@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v23 - GRAFICOS ELITE 3D: edificios extruidos con azotea+ventanas, piso limpio, enemigos y gemas 3D, taco sombreado";
+const VERSION = "v24 - TIENDA pulida (iconos/monedas) + PREVIEW grande 'disena tu taco' en vestuario + taco arranca bebe y crece";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -664,11 +664,18 @@ function doDash() {
 // ---- Tienda ----
 function shopItems() {
   return [
-    { name: "CURAR VIDA", cost: 4, buy: () => { player.hp = MAXHP; } },
-    { name: "ESCUDO", cost: 5, buy: () => { pShield = 9; } },
-    { name: "SALSA TRIPLE", cost: 5, buy: () => { pTriple = 11; } },
-    { name: "DISPARO RAPIDO", cost: 5, buy: () => { pRapid = 11; } },
+    { name: "CURAR VIDA", desc: "Recupera toda la vida", icon: "heal", cost: 4, buy: () => { player.hp = MAXHP; } },
+    { name: "ESCUDO", desc: "Inmune unos segundos", icon: "shield", cost: 5, buy: () => { pShield = 9; } },
+    { name: "SALSA TRIPLE", desc: "Dispara en abanico", icon: "triple", cost: 5, buy: () => { pTriple = 11; } },
+    { name: "DISPARO RAPIDO", desc: "Cadencia x2", icon: "rapid", cost: 5, buy: () => { pRapid = 11; } },
   ];
+}
+function drawCoin(cx, cy, r) { ctx.fillStyle = "#b6892f"; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill(); ctx.fillStyle = "#f5d000"; ctx.beginPath(); ctx.arc(cx, cy, r * 0.78, 0, 7); ctx.fill(); ctx.fillStyle = "#b6892f"; ctx.font = "700 " + (r * 1.2) + "px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic"; ctx.fillText("$", cx, cy + r * 0.42); }
+function shopIcon(kind, cx, cy, r) {
+  if (kind === "heal") { ctx.fillStyle = "#60d050"; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill(); ctx.fillStyle = "#fff"; ctx.fillRect(cx - r * 0.55, cy - r * 0.18, r * 1.1, r * 0.36); ctx.fillRect(cx - r * 0.18, cy - r * 0.55, r * 0.36, r * 1.1); }
+  else if (kind === "shield") { ctx.fillStyle = "#5eead4"; ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r * 0.85, cy - r * 0.5); ctx.lineTo(cx + r * 0.7, cy + r * 0.6); ctx.lineTo(cx, cy + r); ctx.lineTo(cx - r * 0.7, cy + r * 0.6); ctx.lineTo(cx - r * 0.85, cy - r * 0.5); ctx.closePath(); ctx.fill(); ctx.fillStyle = "rgba(255,255,255,0.4)"; ctx.beginPath(); ctx.arc(cx - r * 0.2, cy - r * 0.2, r * 0.3, 0, 7); ctx.fill(); }
+  else if (kind === "triple") { ctx.fillStyle = "#ff963c"; for (let k = -1; k <= 1; k++) { ctx.beginPath(); ctx.arc(cx + k * r * 0.55, cy + Math.abs(k) * r * 0.25, r * 0.28, 0, 7); ctx.fill(); } }
+  else { ctx.fillStyle = "#f5cd46"; ctx.beginPath(); ctx.moveTo(cx - r * 0.2, cy - r); ctx.lineTo(cx + r * 0.45, cy - r * 0.1); ctx.lineTo(cx + r * 0.05, cy - r * 0.1); ctx.lineTo(cx + r * 0.2, cy + r); ctx.lineTo(cx - r * 0.45, cy + r * 0.1); ctx.lineTo(cx - r * 0.05, cy + r * 0.1); ctx.closePath(); ctx.fill(); }
 }
 function shopRect() { const w = Math.min(520, W - 32), h = Math.min(386, H - 60); return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
 function shopBtnRect(i) { const p = shopRect(); return { x: p.x + 26, y: p.y + 104 + i * 60, w: p.w - 52, h: 50 }; }
@@ -685,10 +692,10 @@ let wbTab = 0;
 function wbList() { return wbTab === 1 ? FACES : wbTab === 2 ? ACCS : OUTFITS; }
 function wbCount() { return wbList().length; }
 function wbRect() { const w = Math.min(560, W - 20), h = Math.min(560, H - 24); return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
-function wbView() { const p = wbRect(); return { p, top: p.y + 116, bot: p.y + p.h - 58, x0: p.x + 16, cw: (p.w - 32) / WB_C }; }
+function wbView() { const p = wbRect(); return { p, top: p.y + 172, bot: p.y + p.h - 58, x0: p.x + 16, cw: (p.w - 32) / WB_C }; }
 function wbMaxScroll() { const v = wbView(); const rows = Math.ceil(wbCount() / WB_C); return Math.max(0, rows * (WB_CH + WB_GAP) - (v.bot - v.top)); }
 function wbCard(i) { const v = wbView(), r = Math.floor(i / WB_C), c = i % WB_C; return { x: v.x0 + c * v.cw, y: v.top + r * (WB_CH + WB_GAP) - wbScroll, w: v.cw - 8, h: WB_CH }; }
-function wbTabRect(i) { const p = wbRect(), tw = (p.w - 44) / 3; return { x: p.x + 16 + i * (tw + 6), y: p.y + 74, w: tw, h: 30 }; }
+function wbTabRect(i) { const p = wbRect(), tw = (p.w - 44) / 3; return { x: p.x + 16 + i * (tw + 6), y: p.y + 136, w: tw, h: 30 }; }
 function wbCloseRect() { const p = wbRect(); return { x: p.x + p.w / 2 - 80, y: p.y + p.h - 46, w: 160, h: 36 }; }
 function wbTapAt(px, py) {
   const cl = wbCloseRect(); if (px >= cl.x && px <= cl.x + cl.w && py >= cl.y && py <= cl.y + cl.h) { state = uiBack; return; }
@@ -720,10 +727,19 @@ function drawWardrobe() {
   ctx.fillStyle = "rgba(0,0,0,0.72)"; ctx.fillRect(0, 0, W, H);
   const p = wbRect(), v = wbView();
   ctx.shadowColor = "#f5cd46"; ctx.shadowBlur = 18; ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#f5cd46"; ctx.lineWidth = 3; ctx.stroke();
-  text("VESTUARIO", W / 2, p.y + 32, 20, "#f5cd46", "center");
-  const sub = wbTab === 0 ? "Banco " + bank + " mon  ·  " + Object.keys(unlocked).length + "/" + OUTFITS.length
+  text("DISENA TU TACO", W / 2, p.y + 30, 20, "#f5cd46", "center");
+  // ----- PREVIEW GRANDE en vivo (refleja equipo + cara + accesorio) -----
+  const stY = p.y + 46, stH = 84;
+  const sg = ctx.createLinearGradient(0, stY, 0, stY + stH); sg.addColorStop(0, "#1b2030"); sg.addColorStop(1, "#0e1118");
+  ctx.fillStyle = sg; ctx.beginPath(); ctx.roundRect(p.x + 16, stY, p.w - 32, stH, 12); ctx.fill(); ctx.strokeStyle = "#33384a"; ctx.lineWidth = 1.5; ctx.stroke();
+  const glow = ctx.createRadialGradient(W / 2, stY + stH * 0.6, 6, W / 2, stY + stH * 0.6, 70); glow.addColorStop(0, "rgba(245,205,70,0.18)"); glow.addColorStop(1, "rgba(0,0,0,0)"); ctx.fillStyle = glow; ctx.fillRect(p.x + 16, stY, p.w - 32, stH);
+  const pm = playerMoving; playerMoving = false; // preview calmo
+  drawTaco(W / 2, stY + stH * 0.72, 64, Math.max(level, 6));
+  playerMoving = pm;
+  text("Equipo: " + OUTFITS[outfit].name + "   ·   Cara: " + FACES[face].name + "   ·   " + ACCS[acc].name, W / 2, stY + stH + 14, fitFont("Equipo: " + OUTFITS[outfit].name + " · Cara: " + FACES[face].name + " · " + ACCS[acc].name, p.w - 36, 12), "#9be7c0", "center");
+  const sub = wbTab === 0 ? "Banco " + bank + " mon  ·  " + Object.keys(unlocked).length + "/" + OUTFITS.length + " equipos"
     : "Desbloquea diciendo la expresion en " + (lang === "ZH" ? "CHINO" : "INGLES") + "  ·  " + (wbTab === 1 ? Object.keys(uFace).length + "/" + FACES.length : Object.keys(uAcc).length + "/" + ACCS.length);
-  text(sub, W / 2, p.y + 56, 12, "#ffe896", "center");
+  text(sub, W / 2, p.y + 130, 11, "#ffe896", "center");
   for (let i = 0; i < 3; i++) { const tb = wbTabRect(i), on = wbTab === i; ctx.fillStyle = on ? "#3a3320" : "#23273a"; ctx.beginPath(); ctx.roundRect(tb.x, tb.y, tb.w, tb.h, 8); ctx.fill(); ctx.strokeStyle = on ? "#f5cd46" : "#3a3f55"; ctx.lineWidth = on ? 2.5 : 1.5; ctx.stroke(); text(WB_TABS[i], tb.x + tb.w / 2, tb.y + tb.h / 2 + 5, fitFont(WB_TABS[i], tb.w - 6, 13), on ? "#f5cd46" : "#aeb4c6", "center"); }
   ctx.save(); ctx.beginPath(); ctx.rect(p.x + 2, v.top - 4, p.w - 4, v.bot - v.top + 8); ctx.clip();
   const n = wbCount();
@@ -978,18 +994,21 @@ function drawMinimap() {
   dot(player.x, player.y, "#fff", 2.6);
 }
 function drawShop() {
-  ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(0,0,0,0.62)"; ctx.fillRect(0, 0, W, H);
   const p = shopRect();
-  ctx.shadowColor = "#ffd84a"; ctx.shadowBlur = 18; ctx.fillStyle = "#1a1726"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 3; ctx.stroke();
-  text("TIENDA DEL TACO", W / 2, p.y + 42, 22, "#ffd84a", "center");
-  text("Monedas: " + coins, W / 2, p.y + 74, 16, "#ffe896", "center");
+  ctx.shadowColor = "#ffd84a"; ctx.shadowBlur = 20; const pg = ctx.createLinearGradient(0, p.y, 0, p.y + p.h); pg.addColorStop(0, "#231d2f"); pg.addColorStop(1, "#15121d"); ctx.fillStyle = pg; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 3; ctx.stroke();
+  text("TIENDA DEL TACO", W / 2, p.y + 40, 22, "#ffd84a", "center");
+  const ctxt = coins + " monedas", cw0 = ctx.measureText(ctxt).width; drawCoin(W / 2 - cw0 / 2 - 14, p.y + 68, 9); text(ctxt, W / 2 + 6, p.y + 73, 15, "#ffe896", "center");
   const it = shopItems();
   for (let i = 0; i < it.length; i++) {
     const r = shopBtnRect(i), ok = coins >= it[i].cost;
-    ctx.fillStyle = ok ? "#2a2e40" : "#241f28"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 11); ctx.fill();
+    const cg = ctx.createLinearGradient(0, r.y, 0, r.y + r.h); cg.addColorStop(0, ok ? "#2d3247" : "#241f28"); cg.addColorStop(1, ok ? "#222637" : "#1d1922"); ctx.fillStyle = cg; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 12); ctx.fill();
     ctx.strokeStyle = ok ? "#5a607a" : "#3a3340"; ctx.lineWidth = 2; ctx.stroke();
-    text(it[i].name, r.x + 18, r.y + r.h / 2 + 6, 18, ok ? "#fff" : "#888", "left");
-    text(it[i].cost + " mon", r.x + r.w - 16, r.y + r.h / 2 + 6, 15, ok ? "#ffd84a" : "#766", "right");
+    ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(r.x + 8, r.y + 8, r.h - 16, r.h - 16, 9); ctx.fill();
+    ctx.globalAlpha = ok ? 1 : 0.55; shopIcon(it[i].icon, r.x + 8 + (r.h - 16) / 2, r.y + r.h / 2, (r.h - 16) * 0.32); ctx.globalAlpha = 1;
+    text(it[i].name, r.x + r.h + 4, r.y + r.h / 2 - 3, 17, ok ? "#fff" : "#888", "left");
+    text(it[i].desc, r.x + r.h + 4, r.y + r.h / 2 + 15, 11, ok ? "#9aa0b4" : "#665", "left");
+    const pw2 = 70, px2 = r.x + r.w - pw2 - 10, py2 = r.y + r.h / 2 - 15; ctx.fillStyle = ok ? "#3a3320" : "#2a2530"; ctx.beginPath(); ctx.roundRect(px2, py2, pw2, 30, 8); ctx.fill(); drawCoin(px2 + 16, py2 + 15, 8); text(it[i].cost, px2 + pw2 - 12, py2 + 20, 15, ok ? "#ffd84a" : "#766", "right");
   }
   const c = shopCloseRect();
   ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 10); ctx.fill();
@@ -1253,7 +1272,7 @@ function drawAccessory(a, w, h, s) {
 }
 function drawTaco(x, y, size, lvl) {
   const L = lvl || 1;
-  const grow = 1 + Math.min(L - 1, 10) * 0.05;        // crece con el nivel
+  const grow = 0.6 + Math.min(L - 1, 16) * 0.05;      // arranca bebe (chico) y crece de a poco con el nivel
   const stage = Math.min(Math.floor((L - 1) / 3), 3); // evolucion 0..3 (corona/aura)
   const s = size * grow, w = s, h = s * 0.62;
   const wlk = Math.sin(walkPhase), sw = playerMoving ? wlk : 0;

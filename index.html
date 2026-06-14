@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v21 - CIUDAD EN CUADRAS: manzanas de edificios, avenidas con carriles, plazas y cruces peatonales";
+const VERSION = "v22 - CARAS + ACCESORIOS originales (estilo Pou) con candado de idioma: se ganan diciendo la expresion";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -179,6 +179,18 @@ const OUTFITS = [
 ];
 let bank = 0, outfit = 0, unlocked = { 0: true };
 function saveWardrobe() { lset("bank", bank); lset("outfit", outfit); lset("unlocked", JSON.stringify(unlocked)); }
+
+// Caras (expresiones) y accesorios ORIGINALES estilo Pou. Se ganan diciendo la expresion en el idioma.
+const FACES = [
+  { name: "FELIZ" }, { name: "GUINO" }, { name: "GENIAL" }, { name: "SORPRESA" },
+  { name: "RISA" }, { name: "ENOJON" }, { name: "AMOR" }, { name: "ROBOT" },
+];
+const ACCS = [
+  { name: "NADA" }, { name: "GORRO RANA" }, { name: "GAFAS DE SOL" }, { name: "MONIO" },
+  { name: "SOMBRERO" }, { name: "AUDIFONOS" }, { name: "FLOR" }, { name: "ANTIFAZ" }, { name: "GORRA" },
+];
+let face = 0, acc = 1, uFace = { 0: true }, uAcc = { 0: true, 1: true };
+function saveCosmetics() { lset("face", face); lset("acc", acc); lset("uface", JSON.stringify(uFace)); lset("uacc", JSON.stringify(uAcc)); }
 let wbScroll = 0, wbDrag = null;
 let uiBack = "title"; // a donde vuelve "VOLVER" (title o menu del juego)
 function openWb(back) { uiBack = back || "title"; wbScroll = 0; state = "wardrobe"; }
@@ -228,6 +240,10 @@ function loadPlayerData() {
   try { lstats = JSON.parse(lget("lstats") || "{}"); } catch (e) { lstats = {}; }
   try { profile = JSON.parse(lget("profile") || "null"); } catch (e) { profile = null; }
   outfit = clamp(outfit, 0, OUTFITS.length - 1);
+  face = +(lget("face") || 0); acc = lget("acc") == null ? 1 : +lget("acc");
+  try { uFace = JSON.parse(lget("uface") || "{}"); } catch (e) { uFace = {}; } uFace[0] = true;
+  try { uAcc = JSON.parse(lget("uacc") || "{}"); } catch (e) { uAcc = {}; } uAcc[0] = true; uAcc[1] = true;
+  face = clamp(face, 0, FACES.length - 1); acc = clamp(acc, 0, ACCS.length - 1);
 }
 function switchPlayer(name) { curPlayer = name; savePlayers(); loadPlayerData(); }
 function createPlayer() {
@@ -238,14 +254,16 @@ function createPlayer() {
   if (players.indexOf(nm) < 0) players.push(nm);
   curPlayer = nm; savePlayers();
   best = 0; bank = 0; outfit = 0; maxWorld = 1; unlocked = { 0: true }; lstats = {}; lang = "EN";
+  face = 0; acc = 1; uFace = { 0: true }; uAcc = { 0: true, 1: true };
   profile = { name: nm, age: age, eng: ageToTier(age, LESSONS.EN.levels.length - 1), zh: ageToTier(Math.max(6, age - 3), LESSONS.ZH.levels.length - 1) };
   lset("best", 0); lset("bank", 0); lset("outfit", 0); lset("maxworld", 1); lset("unlocked", JSON.stringify(unlocked)); lset("lstats", "{}"); lset("lang", "EN"); lset("profile", JSON.stringify(profile));
+  saveCosmetics();
   return true;
 }
 function deletePlayer(name) {
   const i = players.indexOf(name); if (i < 0) return;
   players.splice(i, 1);
-  try { ["best", "bank", "outfit", "maxworld", "lang", "unlocked", "lstats", "profile"].forEach(k => localStorage.removeItem("pl_" + name + "_" + k)); } catch (e) {}
+  try { ["best", "bank", "outfit", "maxworld", "lang", "unlocked", "lstats", "profile", "face", "acc", "uface", "uacc"].forEach(k => localStorage.removeItem("pl_" + name + "_" + k)); } catch (e) {}
   if (curPlayer === name) { curPlayer = players[0] || ""; if (curPlayer) loadPlayerData(); else profile = null; }
   savePlayers();
 }
@@ -425,6 +443,7 @@ addEventListener("keydown", e => {
   if (state === "menu") { if (k === "escape") state = "play"; return; }
   if (state === "players") { if (k === "escape" && profile) state = "title"; return; }
   if (state === "wardrobe") { if (k === "escape") state = uiBack; return; }
+  if (state === "challenge") { if (k === "escape") state = "wardrobe"; else if (k >= "1" && k <= "3") answerChallenge(+k - 1); return; }
   if (state === "quiz") { if (k >= "1" && k <= "3") answerQuiz(+k - 1); return; }
   if (state === "shop") { if (k === "escape" || k === "enter") { shopLock = true; state = "play"; } return; }
   if (k === "1" && weaponUnlocked(0)) weapon = 0; if (k === "2" && weaponUnlocked(1)) weapon = 1; if (k === "3" && weaponUnlocked(2)) weapon = 2;
@@ -442,6 +461,7 @@ canvas.addEventListener("mousedown", e => {
   if (state === "players") { playersTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "wardrobe") { wbTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "shop") { shopTapAt(e.clientX, e.clientY); mouse.down = false; return; }
+  if (state === "challenge") { const o = challengeOptAt(e.clientX, e.clientY); if (o >= 0) answerChallenge(o); mouse.down = false; return; }
   if (state === "quiz") { const o = quizOptAt(e.clientX, e.clientY); if (o >= 0) answerQuiz(o); return; }
   const b = btnAt(e.clientX, e.clientY); if (b) { doButton(b); mouse.down = false; }
 });
@@ -459,6 +479,7 @@ function onTouchStart(e) {
   if (state === "menu") { for (const tch of e.changedTouches) menuTapAt(tch.clientX, tch.clientY); return; }
   if (state === "players") { for (const tch of e.changedTouches) playersTapAt(tch.clientX, tch.clientY); return; }
   if (state === "wardrobe") { const tch = e.changedTouches[0]; if (tch) wbDrag = { id: tch.identifier, y0: tch.clientY, x0: tch.clientX, s0: wbScroll, moved: 0 }; return; }
+  if (state === "challenge") { for (const tch of e.changedTouches) { const o = challengeOptAt(tch.clientX, tch.clientY); if (o >= 0) answerChallenge(o); } return; }
   if (state === "shop") { for (const tch of e.changedTouches) shopTapAt(tch.clientX, tch.clientY); return; }
   for (const tch of e.changedTouches) {
     const x = tch.clientX, y = tch.clientY;
@@ -522,6 +543,47 @@ function openLangQuiz() {
   shuffle(opts);
   quiz = { kind: "lang", L, prompt: item[0], key: itemKey(item), say: item[1], options: opts, correct: opts.indexOf(ans), sel: -1, fb: 0, t0: t };
   state = "quiz";
+}
+
+// ---- RETO DE IDIOMA: desbloquear cara/accesorio diciendo la expresion ----
+let challenge = null;
+function openChallenge(kind, idx) {
+  const { L, item } = pickItem();
+  const ans = dispOf(L, item);
+  const all = []; for (const lv of L.levels) for (const it of lv.items) { const d = dispOf(L, it); if (d !== ans) all.push(d); }
+  const opts = [ans]; let g = 0; while (opts.length < 3 && all.length && g++ < 300) { const o = all[randi(0, all.length)]; if (opts.indexOf(o) < 0) opts.push(o); }
+  shuffle(opts);
+  challenge = { kind, idx, L, prompt: item[0], say: item[1], key: itemKey(item), options: opts, correct: opts.indexOf(ans), sel: -1, fb: 0 };
+  speak(item[1], L.code); // pista: escucha la pronunciacion
+  state = "challenge";
+}
+function challengeOptAt(px, py) { if (state !== "challenge" || !challenge || challenge.sel >= 0) return -1; for (let i = 0; i < challenge.options.length; i++) { const r = quizOptRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) return i; } return -1; }
+function answerChallenge(i) {
+  if (!challenge || challenge.sel >= 0) return;
+  challenge.sel = i; const ok = i === challenge.correct;
+  const s = lstat(challenge.key); s.seen++;
+  if (ok) {
+    s.ok++; s.streak++; words++; speak(challenge.say, challenge.L.code);
+    if (challenge.kind === "face") { uFace[challenge.idx] = true; face = challenge.idx; } else { uAcc[challenge.idx] = true; acc = challenge.idx; }
+    saveCosmetics(); sRight();
+  } else { s.streak = 0; sWrong(); }
+  saveL(); challenge.fb = 1.6;
+}
+function drawChallenge() {
+  ctx.fillStyle = "rgba(0,0,0,0.72)"; ctx.fillRect(0, 0, W, H);
+  const p = quizPanelRect();
+  ctx.shadowColor = "#7fd6ff"; ctx.shadowBlur = 18; ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = 3; ctx.stroke();
+  const itemName = (challenge.kind === "face" ? FACES : ACCS)[challenge.idx].name;
+  text("RETO DE IDIOMA  ·  " + itemName, W / 2, p.y + 34, 17, "#7fd6ff", "center");
+  text("Como se dice en " + (challenge.L.code === "zh-CN" ? "CHINO" : "INGLES") + ":", W / 2, p.y + 62, 13, "#9a9ab0", "center");
+  text(challenge.prompt, W / 2, p.y + 98, fitFont(challenge.prompt, p.w - 40, 26), "#fff", "center");
+  for (let i = 0; i < challenge.options.length; i++) {
+    const r = quizOptRect(i), sel = challenge.sel === i, correct = i === challenge.correct;
+    let bg = "#23273a", bd = "#3a3f55"; if (challenge.sel >= 0) { if (correct) { bg = "#1d3a24"; bd = "#62e074"; } else if (sel) { bg = "#3a1d24"; bd = "#e0556a"; } }
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.strokeStyle = bd; ctx.lineWidth = 2; ctx.stroke();
+    text(challenge.options[i], r.x + r.w / 2, r.y + r.h / 2 + 7, fitFont(challenge.options[i], r.w - 20, 19), "#fff", "center");
+  }
+  if (challenge.sel >= 0) text(challenge.sel === challenge.correct ? "CORRECTO! desbloqueado" : "Casi! escucha y reintenta", W / 2, p.y + p.h - 16, 14, challenge.sel === challenge.correct ? "#62e074" : "#e0556a", "center");
 }
 function numMCQ(ans, prompt, kind) {
   const spread = Math.max(3, Math.round(Math.abs(ans) * 0.3)) + 1;
@@ -609,20 +671,26 @@ function shopTapAt(px, py) {
   const c = shopCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) { shopLock = true; state = "play"; }
 }
 
-// ---- Vestuario (Mundial 2026) - grilla con scroll ----
-const WB_C = 3, WB_CH = 76, WB_GAP = 8;
+// ---- Vestuario: 3 pestanas (EQUIPOS Mundial / CARAS / ACCESORIOS) ----
+const WB_C = 3, WB_CH = 76, WB_GAP = 8, WB_TABS = ["EQUIPOS", "CARAS", "ACCESORIOS"];
+let wbTab = 0;
+function wbList() { return wbTab === 1 ? FACES : wbTab === 2 ? ACCS : OUTFITS; }
+function wbCount() { return wbList().length; }
 function wbRect() { const w = Math.min(560, W - 20), h = Math.min(560, H - 24); return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
-function wbView() { const p = wbRect(); return { p, top: p.y + 90, bot: p.y + p.h - 58, x0: p.x + 16, cw: (p.w - 32) / WB_C }; }
-function wbMaxScroll() { const v = wbView(); const rows = Math.ceil(OUTFITS.length / WB_C); return Math.max(0, rows * (WB_CH + WB_GAP) - (v.bot - v.top)); }
+function wbView() { const p = wbRect(); return { p, top: p.y + 116, bot: p.y + p.h - 58, x0: p.x + 16, cw: (p.w - 32) / WB_C }; }
+function wbMaxScroll() { const v = wbView(); const rows = Math.ceil(wbCount() / WB_C); return Math.max(0, rows * (WB_CH + WB_GAP) - (v.bot - v.top)); }
 function wbCard(i) { const v = wbView(), r = Math.floor(i / WB_C), c = i % WB_C; return { x: v.x0 + c * v.cw, y: v.top + r * (WB_CH + WB_GAP) - wbScroll, w: v.cw - 8, h: WB_CH }; }
+function wbTabRect(i) { const p = wbRect(), tw = (p.w - 44) / 3; return { x: p.x + 16 + i * (tw + 6), y: p.y + 74, w: tw, h: 30 }; }
 function wbCloseRect() { const p = wbRect(); return { x: p.x + p.w / 2 - 80, y: p.y + p.h - 46, w: 160, h: 36 }; }
 function wbTapAt(px, py) {
   const cl = wbCloseRect(); if (px >= cl.x && px <= cl.x + cl.w && py >= cl.y && py <= cl.y + cl.h) { state = uiBack; return; }
+  for (let i = 0; i < 3; i++) { const tb = wbTabRect(i); if (px >= tb.x && px <= tb.x + tb.w && py >= tb.y && py <= tb.y + tb.h) { if (wbTab !== i) { wbTab = i; wbScroll = 0; } sRight(); return; } }
   const v = wbView(); if (py < v.top || py > v.bot) return;
-  for (let i = 0; i < OUTFITS.length; i++) { const r = wbCard(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
-    if (unlocked[i]) { outfit = i; saveWardrobe(); sRight(); }
-    else if (bank >= OUTFITS[i].cost) { bank -= OUTFITS[i].cost; unlocked[i] = true; outfit = i; saveWardrobe(); sPower(); }
-    else sWrong();
+  const n = wbCount();
+  for (let i = 0; i < n; i++) { const r = wbCard(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
+    if (wbTab === 0) { if (unlocked[i]) { outfit = i; saveWardrobe(); sRight(); } else if (bank >= OUTFITS[i].cost) { bank -= OUTFITS[i].cost; unlocked[i] = true; outfit = i; saveWardrobe(); sPower(); } else sWrong(); }
+    else if (wbTab === 1) { if (uFace[i]) { face = i; saveCosmetics(); sRight(); } else openChallenge("face", i); }
+    else { if (uAcc[i]) { acc = i; saveCosmetics(); sRight(); } else openChallenge("acc", i); }
     return;
   } }
 }
@@ -633,21 +701,38 @@ function drawOutfitMini(cx, cy, sz, idx) {
   ctx.fillStyle = "#2a1808"; ctx.beginPath(); ctx.arc(-w * 0.12, -h * 0.03, w * 0.045, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(w * 0.12, -h * 0.03, w * 0.045, 0, 7); ctx.fill();
   ctx.restore();
 }
+function drawCosMini(cx, cy, sz, kind, idx) {
+  const w = sz, h = sz * 0.62; ctx.save(); ctx.translate(cx, cy);
+  ctx.fillStyle = "#f5b938"; ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.5, 0, Math.PI, false); ctx.fill();
+  ctx.fillStyle = "#e2342a"; ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.36, Math.PI + 0.2, -0.2, false); ctx.fill();
+  if (kind === "face") drawFace(idx, w, h, 0.5); else { drawFace(0, w, h, 0.5); drawAccessory(idx, w, h, w); }
+  ctx.restore();
+}
 function drawWardrobe() {
   ctx.fillStyle = "rgba(0,0,0,0.72)"; ctx.fillRect(0, 0, W, H);
   const p = wbRect(), v = wbView();
   ctx.shadowColor = "#f5cd46"; ctx.shadowBlur = 18; ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#f5cd46"; ctx.lineWidth = 3; ctx.stroke();
-  text("VESTUARIO  ·  MUNDIAL 2026", W / 2, p.y + 34, 19, "#f5cd46", "center");
-  text("Banco " + bank + " mon   ·   desliza para ver mas   ·   " + Object.keys(unlocked).length + "/" + OUTFITS.length, W / 2, p.y + 60, 12, "#ffe896", "center");
+  text("VESTUARIO", W / 2, p.y + 32, 20, "#f5cd46", "center");
+  const sub = wbTab === 0 ? "Banco " + bank + " mon  ·  " + Object.keys(unlocked).length + "/" + OUTFITS.length
+    : "Desbloquea diciendo la expresion en " + (lang === "ZH" ? "CHINO" : "INGLES") + "  ·  " + (wbTab === 1 ? Object.keys(uFace).length + "/" + FACES.length : Object.keys(uAcc).length + "/" + ACCS.length);
+  text(sub, W / 2, p.y + 56, 12, "#ffe896", "center");
+  for (let i = 0; i < 3; i++) { const tb = wbTabRect(i), on = wbTab === i; ctx.fillStyle = on ? "#3a3320" : "#23273a"; ctx.beginPath(); ctx.roundRect(tb.x, tb.y, tb.w, tb.h, 8); ctx.fill(); ctx.strokeStyle = on ? "#f5cd46" : "#3a3f55"; ctx.lineWidth = on ? 2.5 : 1.5; ctx.stroke(); text(WB_TABS[i], tb.x + tb.w / 2, tb.y + tb.h / 2 + 5, fitFont(WB_TABS[i], tb.w - 6, 13), on ? "#f5cd46" : "#aeb4c6", "center"); }
   ctx.save(); ctx.beginPath(); ctx.rect(p.x + 2, v.top - 4, p.w - 4, v.bot - v.top + 8); ctx.clip();
-  for (let i = 0; i < OUTFITS.length; i++) {
+  const n = wbCount();
+  for (let i = 0; i < n; i++) {
     const r = wbCard(i); if (r.y + r.h < v.top - 6 || r.y > v.bot + 6) continue;
-    const O = OUTFITS[i], owned = unlocked[i], sel = outfit === i, afford = bank >= O.cost;
+    let owned, sel, name, label, lcol;
+    if (wbTab === 0) { const O = OUTFITS[i]; owned = !!unlocked[i]; sel = outfit === i; name = O.name; const afford = bank >= O.cost; label = owned ? (sel ? "EN USO" : "USAR") : (afford ? O.cost + " mon" : "faltan " + (O.cost - bank)); lcol = sel ? "#62e074" : owned ? "#cfd3e0" : afford ? "#f5cd46" : "#9a6a6a"; }
+    else if (wbTab === 1) { owned = !!uFace[i]; sel = face === i; name = FACES[i].name; label = owned ? (sel ? "EN USO" : "USAR") : "RETO IDIOMA"; lcol = sel ? "#62e074" : owned ? "#cfd3e0" : "#7fd6ff"; }
+    else { owned = !!uAcc[i]; sel = acc === i; name = ACCS[i].name; label = owned ? (sel ? "EN USO" : "USAR") : "RETO IDIOMA"; lcol = sel ? "#62e074" : owned ? "#cfd3e0" : "#7fd6ff"; }
     ctx.fillStyle = sel ? "#2e3658" : owned ? "#242a3e" : "#1c2030"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill();
     ctx.strokeStyle = sel ? "#f5cd46" : owned ? "#46506e" : "#33384a"; ctx.lineWidth = sel ? 3 : 1.5; ctx.stroke();
-    ctx.globalAlpha = owned || afford ? 1 : 0.5; drawOutfitMini(r.x + r.w / 2, r.y + 32, 30, i); ctx.globalAlpha = 1;
-    text(O.name, r.x + r.w / 2, r.y + 53, fitFont(O.name, r.w - 8, 11), "#fff", "center");
-    text(owned ? (sel ? "EN USO" : "USAR") : (afford ? O.cost + " mon" : "faltan " + (O.cost - bank)), r.x + r.w / 2, r.y + 68, 10, sel ? "#62e074" : owned ? "#cfd3e0" : afford ? "#f5cd46" : "#9a6a6a", "center");
+    ctx.globalAlpha = owned ? 1 : 0.55;
+    if (wbTab === 0) drawOutfitMini(r.x + r.w / 2, r.y + 32, 30, i); else drawCosMini(r.x + r.w / 2, r.y + 36, 26, wbTab === 1 ? "face" : "acc", i);
+    ctx.globalAlpha = 1;
+    if (!owned && wbTab > 0) { text("🔒", r.x + r.w - 14, r.y + 18, 13, "#7fd6ff", "center"); }
+    text(name, r.x + r.w / 2, r.y + 53, fitFont(name, r.w - 8, 11), "#fff", "center");
+    text(label, r.x + r.w / 2, r.y + 68, 10, lcol, "center");
   }
   ctx.restore();
   const ms = wbMaxScroll();
@@ -664,7 +749,6 @@ function optRows() {
     { label: "SONIDO", val: settings.sound ? "SI" : "NO", act: () => { settings.sound = !settings.sound; mute = !settings.sound; } },
     { label: "VIBRACION", val: settings.vibrate ? "SI" : "NO", act: () => { settings.vibrate = !settings.vibrate; vib(40); } },
     { label: "GRAFICOS", val: settings.quality ? "ALTA" : "BAJA", act: () => { settings.quality = settings.quality ? 0 : 1; } },
-    { label: "GORRO RANA", val: settings.gorro ? "SI" : "NO", act: () => { settings.gorro = settings.gorro ? 0 : 1; } },
     { label: "DIFICULTAD", val: ["FACIL", "NORMAL", "DIFICIL"][settings.difficulty], act: () => { settings.difficulty = (settings.difficulty + 1) % 3; } },
     { label: "IDIOMA", val: lang === "ZH" ? "CHINO" : "INGLES", act: () => { cycleLang(); } },
     { label: "PANTALLA COMPLETA", val: "►", act: () => { try { if (!document.fullscreenElement) (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen).call(document.documentElement); else document.exitFullscreen(); } catch (e) {} } },
@@ -775,6 +859,7 @@ function update(dt) {
   if (bannerT > 0) bannerT -= dt;
   for (let i = rings.length - 1; i >= 0; i--) { const rg = rings[i]; rg.r += (rg.max - rg.r) * dt * 6; rg.life -= dt * 1.6; if (rg.life <= 0) rings.splice(i, 1); }
 
+  if (state === "challenge") { if (challenge && challenge.sel >= 0) { challenge.fb -= dt; if (challenge.fb <= 0) { if (challenge.sel === challenge.correct) state = "wardrobe"; else challenge.sel = -1; } } return; }
   if (state === "quiz") {
     if (quiz && quiz.sel >= 0) { quiz.fb -= dt; if (quiz.fb <= 0) nextLevel(); }
     return;
@@ -1075,6 +1160,69 @@ function drawPortal(x, y) {
 }
 
 function drawLimb(x, y, dx, dy, col, r) { ctx.strokeStyle = col; ctx.lineWidth = r * 1.5; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx, y + dy); ctx.stroke(); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x + dx, y + dy, r, 0, 7); ctx.fill(); }
+function heart(cx, cy, r) { ctx.beginPath(); ctx.moveTo(cx, cy + r * 0.4); ctx.bezierCurveTo(cx - r, cy - r * 0.4, cx - r * 0.5, cy - r, cx, cy - r * 0.3); ctx.bezierCurveTo(cx + r * 0.5, cy - r, cx + r, cy - r * 0.4, cx, cy + r * 0.4); ctx.fill(); }
+// CARA (expresion): ojos + boca segun el indice de FACES. Coords locales del taco.
+function drawFace(f, w, h, mo) {
+  const ex = w * 0.12, ey = -h * 0.04, er = w * 0.075, pr = w * 0.038;
+  ctx.lineCap = "round";
+  if (f === 1) { // GUINO
+    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(-ex, ey, er, 0, 7); ctx.fill();
+    ctx.fillStyle = "#2a1808"; ctx.beginPath(); ctx.arc(-ex + w * 0.02, ey + w * 0.01, pr, 0, 7); ctx.fill();
+    ctx.strokeStyle = "#2a1808"; ctx.lineWidth = w * 0.03; ctx.beginPath(); ctx.arc(ex, ey, er, 0.2, Math.PI - 0.2, false); ctx.stroke();
+  } else if (f === 2) { // GENIAL (a media asta)
+    for (const sg of [-1, 1]) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(sg * ex, ey, er, 0, 7); ctx.fill(); ctx.fillStyle = "#2a1808"; ctx.beginPath(); ctx.arc(sg * ex + w * 0.01, ey + w * 0.015, pr, 0, 7); ctx.fill(); }
+    ctx.fillStyle = "#f5b938"; ctx.fillRect(-ex - er, ey - er, (ex + er) * 2, er);
+  } else if (f === 3) { // SORPRESA
+    for (const sg of [-1, 1]) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(sg * ex, ey, er * 1.3, 0, 7); ctx.fill(); ctx.fillStyle = "#2a1808"; ctx.beginPath(); ctx.arc(sg * ex, ey, pr, 0, 7); ctx.fill(); }
+  } else if (f === 4) { // RISA (^^)
+    ctx.strokeStyle = "#2a1808"; ctx.lineWidth = w * 0.03; for (const sg of [-1, 1]) { ctx.beginPath(); ctx.arc(sg * ex, ey + w * 0.02, er, Math.PI + 0.3, -0.3, false); ctx.stroke(); }
+  } else if (f === 5) { // ENOJON
+    for (const sg of [-1, 1]) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(sg * ex, ey, er, 0, 7); ctx.fill(); ctx.fillStyle = "#2a1808"; ctx.beginPath(); ctx.arc(sg * ex, ey, pr, 0, 7); ctx.fill(); }
+    ctx.strokeStyle = "#2a1808"; ctx.lineWidth = w * 0.035; ctx.beginPath(); ctx.moveTo(-ex - er, ey - er * 1.4); ctx.lineTo(-ex + er * 0.3, ey - er * 0.4); ctx.moveTo(ex + er, ey - er * 1.4); ctx.lineTo(ex - er * 0.3, ey - er * 0.4); ctx.stroke();
+  } else if (f === 6) { // AMOR (corazones)
+    ctx.fillStyle = "#ff4d6d"; for (const sg of [-1, 1]) heart(sg * ex, ey, er * 1.2);
+  } else if (f === 7) { // ROBOT
+    for (const sg of [-1, 1]) { ctx.fillStyle = "#7fd6ff"; ctx.fillRect(sg * ex - er, ey - er * 0.7, er * 2, er * 1.4); ctx.fillStyle = "#0c2030"; ctx.fillRect(sg * ex - pr, ey - pr, pr * 2, pr * 2); }
+  } else { // FELIZ
+    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(-ex, ey, er, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(ex, ey, er, 0, 7); ctx.fill();
+    ctx.fillStyle = "#2a1808"; ctx.beginPath(); ctx.arc(-ex + w * 0.02, ey + w * 0.01, pr, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(ex + w * 0.02, ey + w * 0.01, pr, 0, 7); ctx.fill();
+  }
+  // boca
+  if (f === 3) { ctx.fillStyle = "#3a1810"; ctx.beginPath(); ctx.arc(0, h * 0.08, w * 0.07, 0, 7); ctx.fill(); }
+  else if (f === 5) { ctx.strokeStyle = "#3a1810"; ctx.lineWidth = w * 0.03; ctx.beginPath(); ctx.arc(0, h * 0.16, w * 0.12, Math.PI + 0.4, -0.4, false); ctx.stroke(); }
+  else if (f === 7) { ctx.fillStyle = "#3a1810"; ctx.fillRect(-w * 0.12, h * 0.07, w * 0.24, w * 0.03); }
+  else if (f === 4 || f === 6) { ctx.fillStyle = "#3a1810"; ctx.beginPath(); ctx.ellipse(0, h * 0.08, w * 0.14, w * (0.06 + 0.05 * mo), 0, 0, 7); ctx.fill(); ctx.fillStyle = "#ff7a8a"; ctx.beginPath(); ctx.ellipse(0, h * 0.10, w * 0.07, w * 0.03, 0, 0, 7); ctx.fill(); }
+  else { ctx.fillStyle = "#3a1810"; ctx.beginPath(); ctx.ellipse(0, h * 0.07, w * 0.12, w * (0.035 + 0.06 * mo), 0, 0, 7); ctx.fill(); ctx.fillStyle = "#ff7a8a"; ctx.beginPath(); ctx.ellipse(0, h * 0.09, w * 0.06, w * (0.015 + 0.03 * mo), 0, 0, 7); ctx.fill(); }
+}
+// ACCESORIO (estilo Pou) sobre la cabeza/cara segun el indice de ACCS.
+function drawAccessory(a, w, h, s) {
+  if (!a) return;
+  const hy = -h * 0.1 - w * 0.46, ey = -h * 0.04, ex = w * 0.12;
+  if (a === 1) { // GORRO RANA
+    ctx.fillStyle = "#2f8a3a"; ctx.beginPath(); ctx.ellipse(0, hy + w * 0.16, w * 0.46, w * 0.12, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#3aa84a"; ctx.beginPath(); ctx.ellipse(0, hy + w * 0.14, w * 0.46, w * 0.1, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#3aa84a"; ctx.beginPath(); ctx.moveTo(-w * 0.3, hy + w * 0.16); ctx.lineTo(-w * 0.24, hy - w * 0.14); ctx.quadraticCurveTo(0, hy - w * 0.26, w * 0.24, hy - w * 0.14); ctx.lineTo(w * 0.3, hy + w * 0.16); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.18)"; ctx.beginPath(); ctx.ellipse(-w * 0.1, hy - w * 0.05, w * 0.12, w * 0.08, -0.4, 0, 7); ctx.fill();
+    for (const sgn of [-1, 1]) { ctx.fillStyle = "#3aa84a"; ctx.beginPath(); ctx.arc(sgn * w * 0.16, hy - w * 0.2, w * 0.12, 0, 7); ctx.fill(); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(sgn * w * 0.16, hy - w * 0.22, w * 0.075, 0, 7); ctx.fill(); ctx.fillStyle = "#15240f"; ctx.beginPath(); ctx.arc(sgn * w * 0.16, hy - w * 0.22, w * 0.035, 0, 7); ctx.fill(); }
+  } else if (a === 2) { // GAFAS DE SOL
+    const r = w * 0.11; ctx.fillStyle = "#15161f"; for (const sg of [-1, 1]) { ctx.beginPath(); ctx.roundRect(sg * ex - r, ey - r * 0.8, r * 2, r * 1.5, 4); ctx.fill(); }
+    ctx.strokeStyle = "#15161f"; ctx.lineWidth = w * 0.03; ctx.beginPath(); ctx.moveTo(-ex + r, ey); ctx.lineTo(ex - r, ey); ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.25)"; ctx.fillRect(-ex - r * 0.6, ey - r * 0.6, r * 0.6, r * 0.4); ctx.fillRect(ex - r * 0.4, ey - r * 0.6, r * 0.6, r * 0.4);
+  } else if (a === 3) { // MONIO
+    const by = hy + w * 0.06; ctx.fillStyle = "#e0479a"; ctx.beginPath(); ctx.moveTo(0, by); ctx.lineTo(-w * 0.2, by - w * 0.1); ctx.lineTo(-w * 0.2, by + w * 0.1); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(0, by); ctx.lineTo(w * 0.2, by - w * 0.1); ctx.lineTo(w * 0.2, by + w * 0.1); ctx.closePath(); ctx.fill(); ctx.fillStyle = "#ff86c4"; ctx.beginPath(); ctx.arc(0, by, w * 0.06, 0, 7); ctx.fill();
+  } else if (a === 4) { // SOMBRERO DE COPA
+    const ty = hy + w * 0.14; ctx.fillStyle = "#2a2230"; ctx.fillRect(-w * 0.3, ty, w * 0.6, w * 0.06); ctx.fillRect(-w * 0.2, ty - w * 0.28, w * 0.4, w * 0.3); ctx.fillStyle = "#c0392b"; ctx.fillRect(-w * 0.2, ty - w * 0.06, w * 0.4, w * 0.05);
+  } else if (a === 5) { // AUDIFONOS
+    ctx.strokeStyle = "#2a2c38"; ctx.lineWidth = w * 0.05; ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.5, Math.PI * 1.16, Math.PI * 1.84, false); ctx.stroke();
+    ctx.fillStyle = "#7fd6ff"; for (const sg of [-1, 1]) { ctx.beginPath(); ctx.roundRect(sg * w * 0.46 - w * 0.06, -h * 0.16, w * 0.12, w * 0.18, 4); ctx.fill(); }
+  } else if (a === 6) { // CORONA DE FLORES
+    const fy = hy + w * 0.2, cols2 = ["#ff6b8a", "#ffd84a", "#7fd6ff", "#b48cff", "#ff9b3c"]; for (let i = -2; i <= 2; i++) { const cx = i * w * 0.16; ctx.fillStyle = cols2[i + 2]; for (let k = 0; k < 5; k++) { const a2 = k / 5 * 6.28; ctx.beginPath(); ctx.arc(cx + Math.cos(a2) * w * 0.05, fy + Math.sin(a2) * w * 0.05, w * 0.04, 0, 7); ctx.fill(); } ctx.fillStyle = "#fff3a0"; ctx.beginPath(); ctx.arc(cx, fy, w * 0.03, 0, 7); ctx.fill(); }
+  } else if (a === 7) { // ANTIFAZ
+    ctx.fillStyle = "#2540c0"; ctx.beginPath(); ctx.roundRect(-w * 0.26, ey - w * 0.1, w * 0.52, w * 0.16, 6); ctx.fill(); ctx.fillStyle = "#fff"; for (const sg of [-1, 1]) { ctx.beginPath(); ctx.ellipse(sg * ex, ey, w * 0.06, w * 0.04, 0, 0, 7); ctx.fill(); }
+  } else if (a === 8) { // GORRA
+    const ty = hy + w * 0.18; ctx.fillStyle = "#d62828"; ctx.beginPath(); ctx.arc(0, ty, w * 0.26, Math.PI, 0, false); ctx.fill(); ctx.fillStyle = "#a81f1f"; ctx.fillRect(0, ty - w * 0.02, w * 0.34, w * 0.07); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, ty - w * 0.12, w * 0.04, 0, 7); ctx.fill();
+  }
+}
 function drawTaco(x, y, size, lvl) {
   const L = lvl || 1;
   const grow = 1 + Math.min(L - 1, 10) * 0.05;        // crece con el nivel
@@ -1113,33 +1261,14 @@ function drawTaco(x, y, size, lvl) {
     ctx.restore();
     if (O.band) { ctx.fillStyle = O.band; ctx.fillRect(-w * 0.46, -h * 0.14, w * 0.92, h * 0.05); } // vincha
   }
-  // ojos
-  ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(-w * 0.12, -h * 0.04, w * 0.075, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(w * 0.12, -h * 0.04, w * 0.075, 0, 7); ctx.fill();
-  ctx.fillStyle = "#2a1808"; ctx.beginPath(); ctx.arc(-w * 0.10, -h * 0.03, w * 0.038, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(w * 0.14, -h * 0.03, w * 0.038, 0, 7); ctx.fill();
-  // boca animada (habla/camina)
+  // CARA (expresion) + ACCESORIO (estilo Pou)
   const mo = (0.5 + 0.5 * Math.sin(t * 6)) * (playerMoving ? 1 : 0.45);
-  ctx.fillStyle = "#3a1810"; ctx.beginPath(); ctx.ellipse(0, h * 0.07, w * 0.12, w * (0.035 + 0.06 * mo), 0, 0, 7); ctx.fill();
-  ctx.fillStyle = "#ff7a8a"; ctx.beginPath(); ctx.ellipse(0, h * 0.09, w * 0.06, w * (0.015 + 0.03 * mo), 0, 0, 7); ctx.fill();
-  // GORRO DE RANA (estilo de la imagen) - sombrero balde verde con ojitos de rana
-  if (settings.gorro) {
-    const hy = -h * 0.1 - w * 0.46; // sobre la cabeza
-    // ala del sombrero
-    ctx.fillStyle = "#2f8a3a"; ctx.beginPath(); ctx.ellipse(0, hy + w * 0.16, w * 0.46, w * 0.12, 0, 0, 7); ctx.fill();
-    ctx.fillStyle = "#3aa84a"; ctx.beginPath(); ctx.ellipse(0, hy + w * 0.14, w * 0.46, w * 0.1, 0, 0, 7); ctx.fill();
-    // copa del balde
-    ctx.fillStyle = "#3aa84a"; ctx.beginPath(); ctx.moveTo(-w * 0.3, hy + w * 0.16); ctx.lineTo(-w * 0.24, hy - w * 0.14); ctx.quadraticCurveTo(0, hy - w * 0.26, w * 0.24, hy - w * 0.14); ctx.lineTo(w * 0.3, hy + w * 0.16); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.18)"; ctx.beginPath(); ctx.ellipse(-w * 0.1, hy - w * 0.05, w * 0.12, w * 0.08, -0.4, 0, 7); ctx.fill();
-    // ojos de rana saltones
-    for (const sgn of [-1, 1]) {
-      ctx.fillStyle = "#3aa84a"; ctx.beginPath(); ctx.arc(sgn * w * 0.16, hy - w * 0.2, w * 0.12, 0, 7); ctx.fill();
-      ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(sgn * w * 0.16, hy - w * 0.22, w * 0.075, 0, 7); ctx.fill();
-      ctx.fillStyle = "#15240f"; ctx.beginPath(); ctx.arc(sgn * w * 0.16, hy - w * 0.22, w * 0.035, 0, 7); ctx.fill();
-    }
-  }
-  // corona de evolucion (flota sobre el gorro)
+  drawFace(face, w, h, mo);
+  drawAccessory(acc, w, h, s);
+  // corona de evolucion (flota sobre el accesorio)
   if (stage >= 1) {
     ctx.fillStyle = stage >= 3 ? "#ffd84a" : stage >= 2 ? "#e6c0ff" : "#cfd3e0";
-    const cy = -h * 0.46 - s * (settings.gorro ? 0.44 : 0.16), cw = s * 0.32;
+    const cy = -h * 0.46 - s * (acc ? 0.46 : 0.16), cw = s * 0.32;
     ctx.beginPath(); ctx.moveTo(-cw, cy + s * 0.13); ctx.lineTo(-cw, cy); ctx.lineTo(-cw * 0.5, cy + s * 0.07); ctx.lineTo(0, cy - s * 0.05); ctx.lineTo(cw * 0.5, cy + s * 0.07); ctx.lineTo(cw, cy); ctx.lineTo(cw, cy + s * 0.13); ctx.closePath(); ctx.fill();
   }
   ctx.restore();
@@ -1281,6 +1410,7 @@ function render() {
   if (state === "wardrobe") drawWardrobe();
   if (state === "options") drawOptions();
   if (state === "menu") drawMenu();
+  if (state === "challenge") drawChallenge();
   if (state === "players") drawPlayers();
   if (paused && state === "play") { ctx.fillStyle = "rgba(6,6,12,0.6)"; ctx.fillRect(0, 0, W, H); text("PAUSA", W / 2, H / 2, 48, "#f5cd46", "center"); text("toca II para seguir", W / 2, H / 2 + 40, 16, "#9a9ab0", "center"); drawButtons(); }
   if (state === "title") {

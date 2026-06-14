@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v26 - CIUDAD DECORADA: tiendas con toldo+cartel, faroles, arboles y canteros de flores en las veredas";
+const VERSION = "v27 - MANEJAR AUTOS: acercate y toca AUTO para subir; vas rapido y atropellas enemigos; BAJAR para salir";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -303,6 +303,7 @@ let cityBlocks = []; // manzanas (rectangulos) para dibujar edificios 3D
 let pShield = 0, pTriple = 0, pRapid = 0, weapon = 0;
 let shop = null, shopLock = false, coins = 0; // tienda + monedas (divisa)
 let dashT = 0, dashCD = 0, dashDir = { x: 1, y: 0 }, lastMoveX = 1, lastMoveY = 0, lastLeftTap = 0; // esquive
+let driving = null; // auto que el taco esta manejando (o null)
 let camX = 0, camY = 0; // camara (recorre el mundo grande)
 let shake = 0, t = 0;
 function camClamp() { const tx = clamp(player.x - W / 2, 0, Math.max(0, cols * TS - W)), ty = clamp(player.y - H / 2, 0, Math.max(0, rows * TS - H)); return { tx, ty }; }
@@ -381,7 +382,7 @@ function genLevel() {
 
   player.x = (sx + 0.5) * TS; player.y = (sy + 0.5) * TS; player.vx = player.vy = 0;
   { const c = camClamp(); camX = c.tx; camY = c.ty; }
-  gems = []; enemies = []; bullets = []; parts = []; heals = []; powerDrops = []; eshots = []; rings = []; peds = []; cars = []; props = []; portal = null;
+  gems = []; enemies = []; bullets = []; parts = []; heals = []; powerDrops = []; eshots = []; rings = []; peds = []; cars = []; props = []; portal = null; driving = null;
   const ng = 4 + level;
   for (let i = 0; i < ng; i++) { const p = freeCell(); gems.push({ x: p.x, y: p.y }); }
   const ne = Math.max(1, 2 + level + diffMul().n);
@@ -437,12 +438,17 @@ function buttons() {
   let x = W - m; const arr = [];
   const add = (id, w) => { x -= w; arr.push({ id, x, y, w, h: s }); x -= 8; };
   add("menu", s); add("mute", s); add("pause", s); add("weapon", Math.max(66, Math.round(s * 1.5))); add("lang", s);
+  if (driving || nearCar()) add("car", Math.max(58, Math.round(s * 1.2))); // solo aparece cerca de un auto
   return arr; // el DASH es por doble-toque en la zona de mover (sin boton)
 }
 function btnAt(px, py) { for (const b of buttons()) if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) return b.id; return null; }
 function cycleLang() { lang = LANGS[(LANGS.indexOf(lang) + 1) % LANGS.length]; lset("lang", lang); }
+function nearCar() { for (const c of cars) if (c !== driving && len(c.x - player.x, c.y - player.y) < 66) return c; return null; }
+function enterCar(c) { driving = c; player.x = c.x; player.y = c.y; sPower(); floatText(player.x, player.y - 30, "A MANEJAR!", "#7fd6ff"); }
+function exitCar() { if (!driving) return; driving = null; sRight(); }
 function doButton(id) {
   if (id === "menu") { openMenu(); }
+  else if (id === "car") { if (driving) exitCar(); else { const c = nearCar(); if (c) enterCar(c); else sWrong(); } }
   else if (id === "mute") { mute = !mute; if (!mute) sGem(); }
   else if (id === "pause") { paused = !paused; }
   else if (id === "weapon") { nextWeapon(); sShoot(); }
@@ -914,8 +920,15 @@ function update(dt) {
   if (state !== "play" || paused) return;
 
   const inp = readInput();
-  const SP = 240 * (MOUNTS[mount] ? MOUNTS[mount].speed : 1); // el vehiculo sube la velocidad
-  moveAxis(player, inp.mx * SP * dt, 0); moveAxis(player, 0, inp.my * SP * dt);
+  if (driving) {
+    // MANEJANDO: el auto se mueve rapido con el stick y atropella enemigos
+    const CARSP = 380; moveAxis(driving, inp.mx * CARSP * dt, 0); moveAxis(driving, 0, inp.my * CARSP * dt);
+    player.x = driving.x; player.y = driving.y; player.vx = player.vy = 0;
+    if (Math.abs(inp.mx) + Math.abs(inp.my) > 0.06) { driving.vx = inp.mx; driving.vy = inp.my; }
+    for (let j = enemies.length - 1; j >= 0; j--) { const e = enemies[j]; if (len(e.x - player.x, e.y - player.y) < driving.r + e.r + 6) { if (e.boss) { e.hp -= 4; e.flash = 0.1; } else { e.hp = 0; } addParts(e.x, e.y, 16, "#ffa040", 260); shake = Math.min(shake + 6, 16); sHit(); if (e.hp <= 0 && !e.boss) { score += e.bounty; coins += 2; if (mission && mission.type === 1) mission.prog++; floatText(e.x, e.y, "ATROPELLADO +" + e.bounty, "#ffb060"); enemies.splice(j, 1); } } }
+  }
+  const SP = 240 * (MOUNTS[mount] ? MOUNTS[mount].speed : 1); // el vehiculo (mount) sube la velocidad
+  if (!driving) { moveAxis(player, inp.mx * SP * dt, 0); moveAxis(player, 0, inp.my * SP * dt); }
   playerMoving = (Math.abs(inp.mx) + Math.abs(inp.my)) > 0.12;
   walkPhase += dt * (playerMoving ? 13 : 2.5);
   if (Math.abs(inp.mx) > 0.06) playerFace = inp.mx > 0 ? 1 : -1; // mira a donde se mueve
@@ -930,7 +943,7 @@ function update(dt) {
   pShield = Math.max(0, pShield - dt); pTriple = Math.max(0, pTriple - dt); pRapid = Math.max(0, pRapid - dt);
   if (comboT > 0) { comboT -= dt; if (comboT <= 0) combo = 0; }
   player.fire -= dt;
-  if (inp.firing && player.fire <= 0) fire(inp.ax, inp.ay);
+  if (!driving && inp.firing && player.fire <= 0) fire(inp.ax, inp.ay);
 
   for (let i = gems.length - 1; i >= 0; i--) if (len(gems[i].x - player.x, gems[i].y - player.y) < player.r + 14) { addParts(gems[i].x, gems[i].y, 10, "#5eead4", 150); floatText(gems[i].x, gems[i].y, "+10", "#5eead4"); gems.splice(i, 1); score += 10; coins += 1; sGem(); }
   // gente caminando (mundo vivo) + rescate (mision)
@@ -944,6 +957,7 @@ function update(dt) {
     if (mission.type === 2 && len(p.x - player.x, p.y - player.y) < player.r + p.r + 4) { p.rescued = true; p.vx = p.vy = 0; mission.prog++; coins += 2; floatText(p.x, p.y, "RESCATADO!", "#9be7c0"); addParts(p.x, p.y, 12, "#9be7c0", 180); sGem(); }
   }
   for (const c of cars) {
+    if (c === driving) continue; // el auto manejado no se mueve solo
     if (!isFloor(c.x + c.vx * dt + Math.sign(c.vx) * c.r, c.y + c.vy * dt + Math.sign(c.vy) * c.r)) { c.vx *= -1; c.vy *= -1; }
     c.x += c.vx * dt; c.y += c.vy * dt;
   }
@@ -965,7 +979,7 @@ function update(dt) {
       moveAxis(e, ux * e.speed * dt, 0); moveAxis(e, 0, uy * e.speed * dt);
     }
     if (e.flash > 0) e.flash -= dt;
-    if (d < e.r + player.r) hurt(e.dmg);
+    if (!driving && d < e.r + player.r) hurt(e.dmg);
   }
   for (let i = eshots.length - 1; i >= 0; i--) {
     const s = eshots[i]; s.life -= dt; s.x += s.vx * dt; s.y += s.vy * dt;
@@ -1340,7 +1354,7 @@ function drawAccessory(a, w, h, s) {
 }
 // VEHICULO (mount) bajo el taco: ruedas que giran al moverse
 function drawMount(m, w, h, s) {
-  if (!m) return;
+  if (!m || driving) return;
   const fy = s * 0.52, spin = playerMoving ? walkPhase * 2 : t; // giro de ruedas
   const wheel = (wx, wr) => { ctx.fillStyle = "#1a1a1f"; ctx.beginPath(); ctx.arc(wx, fy, wr, 0, 7); ctx.fill(); ctx.fillStyle = "#555"; ctx.beginPath(); ctx.arc(wx, fy, wr * 0.45, 0, 7); ctx.fill(); ctx.strokeStyle = "#999"; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(wx + Math.cos(spin) * wr * 0.4, fy + Math.sin(spin) * wr * 0.4); ctx.lineTo(wx - Math.cos(spin) * wr * 0.4, fy - Math.sin(spin) * wr * 0.4); ctx.stroke(); };
   if (m === 1) { // PATINES: botas con rueditas
@@ -1428,7 +1442,8 @@ function drawButtons() {
     ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 9); ctx.fill(); ctx.stroke();
     if (b.id === "menu") { drawHouse(b.x + b.w / 2, b.y + b.h / 2 + 3, b.h * 0.3); continue; }
     let lbl = "", col = "#dfe2ea";
-    if (b.id === "mute") { lbl = mute ? "MUTE" : "SON"; col = mute ? "#888" : "#dfe2ea"; }
+    if (b.id === "car") { lbl = driving ? "BAJAR" : "AUTO"; col = "#7fd6ff"; }
+    else if (b.id === "mute") { lbl = mute ? "MUTE" : "SON"; col = mute ? "#888" : "#dfe2ea"; }
     else if (b.id === "pause") { lbl = paused ? ">" : "II"; }
     else if (b.id === "weapon") { lbl = WEAPONS[weapon].name; col = "#ffb060"; }
     else if (b.id === "lang") { lbl = lang; col = lang === "ZH" ? "#f08cbe" : "#7fd6ff"; }
@@ -1526,8 +1541,8 @@ function render() {
   for (const e of enemies) { drawEnemy(e); if (e.hp < e.maxhp && !e.boss) bar(e.x - e.r, e.y - e.r - 8, e.r * 2, 4, e.hp / e.maxhp, "#60d050"); }
   for (const rg of rings) { ctx.globalAlpha = clamp(rg.life, 0, 1) * 0.7; ctx.strokeStyle = rg.col; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(rg.x, rg.y, rg.r, 0, 7); ctx.stroke(); }
   ctx.globalAlpha = 1;
-  if (!(player.inv > 0 && Math.floor(t * 20) % 2)) drawTaco(player.x, player.y, player.r * 2.2, level);
-  { const cd = dashCD <= 0 ? 1 : 1 - dashCD / 0.9; ctx.globalAlpha = dashCD <= 0 ? 0.3 + 0.22 * Math.sin(t * 6) : 0.55; ctx.strokeStyle = "#5eead4"; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(player.x, player.y, player.r + 11, -Math.PI / 2, -Math.PI / 2 + cd * 2 * Math.PI); ctx.stroke(); ctx.globalAlpha = 1; }
+  if (!(player.inv > 0 && Math.floor(t * 20) % 2)) drawTaco(player.x, player.y - (driving ? 8 : 0), player.r * (driving ? 1.5 : 2.2), level);
+  if (!driving) { const cd = dashCD <= 0 ? 1 : 1 - dashCD / 0.9; ctx.globalAlpha = dashCD <= 0 ? 0.3 + 0.22 * Math.sin(t * 6) : 0.55; ctx.strokeStyle = "#5eead4"; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(player.x, player.y, player.r + 11, -Math.PI / 2, -Math.PI / 2 + cd * 2 * Math.PI); ctx.stroke(); ctx.globalAlpha = 1; }
   for (const p of parts) { ctx.globalAlpha = clamp(p.life / p.max, 0, 1); ctx.fillStyle = p.col; ctx.fillRect(p.x - p.r / 2, p.y - p.r / 2, p.r, p.r); }
   for (const f of floaters) { ctx.globalAlpha = clamp(f.life, 0, 1); text(f.txt, f.x, f.y, 17, f.col, "center"); }
   ctx.globalAlpha = 1;

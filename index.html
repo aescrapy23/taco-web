@@ -8,9 +8,11 @@
 <meta name="theme-color" content="#0c0c12" />
 <title>Catacomb - el taco en la catacumba</title>
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; background: #0c0c12; overflow: hidden;
+  :root { --sab: env(safe-area-inset-bottom, 0px); --sat: env(safe-area-inset-top, 0px); }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #0c0c12; overflow: hidden;
+    position: fixed; inset: 0; overscroll-behavior: none;
     font-family: -apple-system, "Segoe UI", system-ui, sans-serif; -webkit-user-select: none; user-select: none; }
-  #c { display: block; position: fixed; inset: 0; touch-action: none; -webkit-tap-highlight-color: transparent; }
+  #c { display: block; position: fixed; top: 0; left: 0; touch-action: none; -webkit-tap-highlight-color: transparent; }
 </style>
 </head>
 <body>
@@ -26,12 +28,18 @@ let grid = [];
 const dcanvas = document.createElement("canvas");
 const dctx = dcanvas.getContext("2d");
 
+let safeB = 0, safeT = 0;
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth; H = window.innerHeight;
+  const vv = window.visualViewport;
+  W = Math.round(vv ? vv.width : window.innerWidth);
+  H = Math.round(vv ? vv.height : window.innerHeight);
   canvas.width = Math.floor(W * DPR); canvas.height = Math.floor(H * DPR);
   canvas.style.width = W + "px"; canvas.style.height = H + "px";
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const cs = getComputedStyle(document.documentElement);
+  safeB = parseInt(cs.getPropertyValue("--sab")) || 0;
+  safeT = parseInt(cs.getPropertyValue("--sat")) || 0;
 }
 let _rt = null;
 function onResize() {
@@ -39,13 +47,15 @@ function onResize() {
   if (_rt) clearTimeout(_rt);
   _rt = setTimeout(() => {
     if (state === "play" || state === "quiz") {
-      const nc = Math.max(10, Math.floor(W / TS)), nr = Math.max(8, Math.floor(H / TS));
-      if (Math.abs(nc - cols) >= 2 || Math.abs(nr - rows) >= 2) genLevel();
+      const ts2 = clamp(Math.round(Math.min(W, H) / 13), 44, 64);
+      const nc = Math.max(10, Math.floor(W / ts2)), nr = Math.max(8, Math.floor(H / ts2));
+      if (nc !== cols || nr !== rows) genLevel();
     }
-  }, 250);
+  }, 220);
 }
 window.addEventListener("resize", onResize);
 window.addEventListener("orientationchange", onResize);
+if (window.visualViewport) window.visualViewport.addEventListener("resize", onResize);
 resize();
 
 // ---------- Utils ----------
@@ -101,36 +111,45 @@ const WEAPONS = [
   { name: "RAFAGA", cd: 0.08, speed: 780, pellets: 1, spread: 7, life: 0.7, r: 5, dmg: 1 },
 ];
 
-// Banco de palabras por nivel de dificultad [es, en, tier]
-const WORDBANK = [
-  ["GATO", "CAT", 1], ["PERRO", "DOG", 1], ["SOL", "SUN", 1], ["LUNA", "MOON", 1], ["AGUA", "WATER", 1],
-  ["CASA", "HOUSE", 1], ["ROJO", "RED", 1], ["AZUL", "BLUE", 1], ["DIA", "DAY", 1], ["MANO", "HAND", 1],
-  ["OJO", "EYE", 1], ["PAN", "BREAD", 1],
-  ["LECHE", "MILK", 2], ["AMIGO", "FRIEND", 2], ["NOCHE", "NIGHT", 2], ["LIBRO", "BOOK", 2], ["COMER", "EAT", 2],
-  ["CORRER", "RUN", 2], ["VERDE", "GREEN", 2], ["FUEGO", "FIRE", 2], ["LLAVE", "KEY", 2], ["GRANDE", "BIG", 2],
-  ["PEQUENO", "SMALL", 2], ["ARRIBA", "UP", 2],
-  ["FELIZ", "HAPPY", 3], ["RAPIDO", "FAST", 3], ["LENTO", "SLOW", 3], ["SALTAR", "JUMP", 3], ["PELIGRO", "DANGER", 3],
-  ["FUERTE", "STRONG", 3], ["VALIENTE", "BRAVE", 3], ["TESORO", "TREASURE", 3], ["OSCURO", "DARK", 3], ["MUNDO", "WORLD", 3],
-];
-
-// "Neural": dominio por palabra guardado (repeticion espaciada + dificultad adaptativa, sutil).
-let engStats = {}; try { engStats = JSON.parse(localStorage.getItem("catacomb_eng") || "{}"); } catch (e) { engStats = {}; }
-function saveEng() { try { localStorage.setItem("catacomb_eng", JSON.stringify(engStats)); } catch (e) {} }
-function estat(en) { return engStats[en] || (engStats[en] = { seen: 0, ok: 0, streak: 0 }); }
-function isMastered(en) { const s = engStats[en]; return !!s && s.streak >= 3; }
-function masteredAt(tier) { let n = 0; for (const w of WORDBANK) if (w[2] === tier && isMastered(w[1])) n++; return n; }
-function masteredTotal() { let n = 0; for (const w of WORDBANK) if (isMastered(w[1])) n++; return n; }
-function engTier() { return masteredAt(1) >= 5 ? (masteredAt(2) >= 5 ? 3 : 2) : 1; } // sube al dominar ~5 del nivel
+// ===== Aprendizaje ELITE: multi-idioma por niveles (Ingles CEFR/TOEFL + Chino HSK), palabras y FRASES =====
+// item EN: [es, en]   |   item ZH: [es, hanzi, pinyin]
+const LESSONS = {
+  EN: { name: "INGLES", code: "en-US", levels: [
+    { tag: "A1", items: [["HOLA", "HELLO"], ["GATO", "CAT"], ["PERRO", "DOG"], ["AGUA", "WATER"], ["SOL", "SUN"], ["CASA", "HOUSE"], ["ROJO", "RED"], ["SI", "YES"], ["GRACIAS", "THANK YOU"], ["UNO", "ONE"], ["AMIGO", "FRIEND"], ["COMIDA", "FOOD"]] },
+    { tag: "A2", items: [["BUENOS DIAS", "GOOD MORNING"], ["COMO ESTAS", "HOW ARE YOU"], ["ME LLAMO ANA", "MY NAME IS ANA"], ["TENGO HAMBRE", "I AM HUNGRY"], ["QUIERO AGUA", "I WANT WATER"], ["GATO NEGRO", "BLACK CAT"], ["HASTA LUEGO", "SEE YOU LATER"], ["ME GUSTA", "I LIKE IT"]] },
+    { tag: "B1", items: [["ESTOY APRENDIENDO INGLES", "I AM LEARNING ENGLISH"], ["ME GUSTA ESTE JUEGO", "I LIKE THIS GAME"], ["NECESITO AYUDA", "I NEED HELP"], ["VAMOS A JUGAR", "LET US PLAY"], ["HOY HACE CALOR", "IT IS HOT TODAY"], ["NO ENTIENDO", "I DO NOT UNDERSTAND"]] },
+    { tag: "B2 / TOEFL", items: [["AUNQUE LLUEVA, IRE", "ALTHOUGH IT RAINS, I WILL GO"], ["DEBERIAS HABERLO DICHO", "YOU SHOULD HAVE SAID IT"], ["CUANTO ANTES MEJOR", "THE SOONER THE BETTER"], ["VALE LA PENA INTENTARLO", "IT IS WORTH TRYING"], ["ESTOY DE ACUERDO", "I AGREE WITH YOU"], ["DEPENDE DE TI", "IT IS UP TO YOU"]] },
+    { tag: "C1 / TOEFL", items: [["A PESAR DE LOS OBSTACULOS", "DESPITE THE OBSTACLES"], ["TAN PRONTO COMO LLEGUE", "AS SOON AS HE ARRIVES"], ["LO HABRIA HECHO", "I WOULD HAVE DONE IT"], ["SIN LUGAR A DUDAS", "WITHOUT A DOUBT"], ["EN RESUMIDAS CUENTAS", "IN A NUTSHELL"], ["ME DI CUENTA TARDE", "I REALIZED IT LATE"]] },
+  ] },
+  ZH: { name: "CHINO", code: "zh-CN", levels: [
+    { tag: "HSK1", items: [["HOLA", "你好", "ni hao"], ["GRACIAS", "谢谢", "xie xie"], ["CORRECTO", "对", "dui"], ["NO", "不", "bu"], ["AGUA", "水", "shui"], ["YO", "我", "wo"], ["TU", "你", "ni"], ["BUENO", "好", "hao"], ["UNO", "一", "yi"], ["GATO", "猫", "mao"]] },
+    { tag: "HSK2", items: [["BUENOS DIAS", "早上好", "zaoshang hao"], ["ADIOS", "再见", "zai jian"], ["COMO ESTAS", "你好吗", "ni hao ma"], ["MUY BIEN", "很好", "hen hao"], ["GRACIAS A TI", "谢谢你", "xie xie ni"], ["COMER", "吃饭", "chi fan"], ["BEBER AGUA", "喝水", "he shui"], ["MI AMIGO", "我的朋友", "wo de pengyou"]] },
+    { tag: "HSK3", items: [["ME GUSTA", "我喜欢", "wo xihuan"], ["TE QUIERO", "我爱你", "wo ai ni"], ["NO ENTIENDO", "我不懂", "wo bu dong"], ["ESTOY APRENDIENDO", "我在学习", "wo zai xuexi"], ["DONDE ESTA", "在哪里", "zai nali"], ["CUANTO CUESTA", "多少钱", "duoshao qian"]] },
+  ] },
+};
+const LANGS = ["EN", "ZH"];
+let lang = localStorage.getItem("catacomb_lang") || "EN";
+if (LANGS.indexOf(lang) < 0) lang = "EN";
+let lstats = {}; try { lstats = JSON.parse(localStorage.getItem("catacomb_lstats") || "{}"); } catch (e) { lstats = {}; }
+function saveL() { try { localStorage.setItem("catacomb_lstats", JSON.stringify(lstats)); } catch (e) {} }
+function itemKey(it) { return it[1]; }
+function lstat(k) { return lstats[k] || (lstats[k] = { seen: 0, ok: 0, streak: 0 }); }
+function masteredK(k) { const s = lstats[k]; return !!s && s.streak >= 3; }
+function dispOf(L, it) { return L.code === "zh-CN" ? it[1] + "  " + it[2] : it[1]; }
+function levelMastered(L, lv) { let n = 0; for (const it of lv.items) if (masteredK(itemKey(it))) n++; return n; }
+function langTierIdx(L) { for (let i = 0; i < L.levels.length - 1; i++) if (levelMastered(L, L.levels[i]) < 5) return i; return L.levels.length - 1; }
+function masteredTotalL(L) { let n = 0, tot = 0; for (const lv of L.levels) for (const it of lv.items) { tot++; if (masteredK(itemKey(it))) n++; } return [n, tot]; }
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = randi(0, i + 1); const tmp = a[i]; a[i] = a[j]; a[j] = tmp; } return a; }
-function pickWord() {
-  const tier = engTier();
-  const pool = WORDBANK.filter(w => w[2] <= tier);
-  const weights = pool.map(w => { const s = engStats[w[1]]; let wt = !s || s.seen === 0 ? 3 : s.streak === 0 ? 5 : s.streak < 3 ? 3 : 1; if (w[2] === tier) wt += 1; return wt; });
+function pickItem() {
+  const L = LESSONS[lang], top = langTierIdx(L), pool = [];
+  for (let i = 0; i <= top; i++) for (const it of L.levels[i].items) pool.push({ it, tier: i });
+  const weights = pool.map(p => { const s = lstats[itemKey(p.it)]; let w = !s || s.seen === 0 ? 3 : s.streak === 0 ? 5 : s.streak < 3 ? 3 : 1; if (p.tier === top) w += 1; return w; });
   let total = 0; for (const x of weights) total += x;
   let r = Math.random() * total;
-  for (let i = 0; i < pool.length; i++) { r -= weights[i]; if (r <= 0) return pool[i]; }
-  return pool[pool.length - 1];
+  for (let i = 0; i < pool.length; i++) { r -= weights[i]; if (r <= 0) return { L, item: pool[i].it }; }
+  return { L, item: pool[pool.length - 1].it };
 }
+function speak(txt, code) { try { if (!mute && window.speechSynthesis) { const u = new SpeechSynthesisUtterance(txt); u.lang = code || "en-US"; u.rate = 0.85; speechSynthesis.cancel(); speechSynthesis.speak(u); } } catch (e) {} }
 
 // ---------- Estado ----------
 let state = "title";  // title | play | quiz | over
@@ -214,18 +233,19 @@ function moveAxis(e, dx, dy) {
 // ---------- UI buttons (touch) ----------
 function buttons() {
   if (state !== "play") return [];
-  const s = Math.max(42, Math.min(54, W * 0.07)), m = 12;
-  const arr = [];
-  arr.push({ id: "mute", x: W - s - m, y: m, w: s, h: s });
-  arr.push({ id: "pause", x: W - s * 2 - m * 2, y: m, w: s, h: s });
-  arr.push({ id: "weapon", x: W - s * 2 - m * 2 - 96, y: m, w: 96, h: s });
+  const s = Math.max(40, Math.min(50, Math.round(W * 0.062))), m = 10, y = m + safeT;
+  let x = W - m; const arr = [];
+  const add = (id, w) => { x -= w; arr.push({ id, x, y, w, h: s }); x -= 8; };
+  add("mute", s); add("pause", s); add("weapon", Math.max(66, Math.round(s * 1.5))); add("lang", s);
   return arr;
 }
 function btnAt(px, py) { for (const b of buttons()) if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) return b.id; return null; }
+function cycleLang() { lang = LANGS[(LANGS.indexOf(lang) + 1) % LANGS.length]; try { localStorage.setItem("catacomb_lang", lang); } catch (e) {} }
 function doButton(id) {
   if (id === "mute") { mute = !mute; if (!mute) sGem(); }
   else if (id === "pause") { paused = !paused; }
   else if (id === "weapon") { weapon = (weapon + 1) % WEAPONS.length; sShoot(); }
+  else if (id === "lang") { cycleLang(); sRight(); }
 }
 
 // ---------- Input ----------
@@ -236,7 +256,7 @@ addEventListener("keydown", e => {
   if (state === "title" || state === "over") { startOrRestart(); return; }
   if (state === "quiz") { if (k >= "1" && k <= "3") answerQuiz(+k - 1); return; }
   if (k === "1") weapon = 0; if (k === "2") weapon = 1; if (k === "3") weapon = 2;
-  if (k === "p") paused = !paused; if (k === "m") { mute = !mute; }
+  if (k === "p") paused = !paused; if (k === "m") { mute = !mute; } if (k === "l") cycleLang();
 });
 addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 canvas.addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
@@ -300,22 +320,24 @@ function readInput() {
 function startOrRestart() { level = 1; score = 0; words = 0; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; genLevel(); state = "play"; sLevel(); }
 
 function openQuiz() {
-  const w = pickWord();
-  const opts = [w[1]];
-  const cand = WORDBANK.filter(x => x[1] !== w[1]);
-  while (opts.length < 3) { const o = cand[randi(0, cand.length)][1]; if (opts.indexOf(o) < 0) opts.push(o); }
+  const { L, item } = pickItem();
+  const ans = dispOf(L, item);
+  const all = [];
+  for (const lv of L.levels) for (const it of lv.items) { const d = dispOf(L, it); if (d !== ans) all.push(d); }
+  const opts = [ans]; let guard = 0;
+  while (opts.length < 3 && all.length && guard++ < 300) { const o = all[randi(0, all.length)]; if (opts.indexOf(o) < 0) opts.push(o); }
   shuffle(opts);
-  quiz = { prompt: w[0], en: w[1], options: opts, correct: opts.indexOf(w[1]), sel: -1, fb: 0 };
+  quiz = { L, prompt: item[0], key: itemKey(item), say: item[1], options: opts, correct: opts.indexOf(ans), sel: -1, fb: 0, t0: t };
   state = "quiz";
 }
 function answerQuiz(i) {
   if (!quiz || quiz.sel >= 0) return;
   quiz.sel = i;
-  const s = estat(quiz.en); s.seen++;
-  if (i === quiz.correct) { s.ok++; s.streak++; score += 80; words++; floatText(player.x, player.y - 30, "+80 INGLES", "#60d050"); sRight(); }
-  else { s.streak = 0; sWrong(); }
-  saveEng();
-  quiz.fb = 1.6;
+  const s = lstat(quiz.key); s.seen++;
+  if (i === quiz.correct) { s.ok++; s.streak++; score += 80; words++; floatText(player.x, player.y - 30, "+80 " + quiz.L.name, "#60d050"); flash("96,208,80", 0.18); speak(quiz.say, quiz.L.code); sRight(); }
+  else { s.streak = 0; speak(quiz.say, quiz.L.code); sWrong(); }
+  saveL();
+  quiz.fb = 1.9;
 }
 function nextLevel() { level++; score += 120; player.hp = Math.min(MAXHP, player.hp + 30); genLevel(); state = "play"; flash("245,205,70", 0.3); floatText(player.x, player.y - 32, "NIVEL " + level, "#f5cd46"); sLevel(); }
 
@@ -453,53 +475,78 @@ function drawTaco(x, y, size) {
 function bar(x, y, w, h, ratio, col) { ctx.fillStyle = "rgba(8,10,16,0.9)"; ctx.fillRect(x - 2, y - 2, w + 4, h + 4); ctx.fillStyle = "#222630"; ctx.fillRect(x, y, w, h); ctx.fillStyle = col; ctx.fillRect(x, y, w * clamp(ratio, 0, 1), h); }
 function drawStick(s, col) { if (s.id === null) return; ctx.strokeStyle = "rgba(255,255,255,0.16)"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(s.bx, s.by, 56, 0, 7); ctx.stroke(); const dx = s.x - s.bx, dy = s.y - s.by, d = len(dx, dy), m = Math.min(d, 56); const kx = d > 0 ? s.bx + dx / d * m : s.bx, ky = d > 0 ? s.by + dy / d * m : s.by; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(kx, ky, 26, 0, 7); ctx.fill(); }
 function text(s, x, y, size, col, align) { ctx.fillStyle = col; ctx.font = "700 " + size + "px -apple-system, Segoe UI, sans-serif"; ctx.textAlign = align || "left"; ctx.textBaseline = "alphabetic"; ctx.fillText(s, x, y); }
+function fitFont(s, maxW, base) { let fs = base; ctx.font = "700 " + fs + "px -apple-system,Segoe UI,sans-serif"; while (ctx.measureText(s).width > maxW && fs > 10) { fs--; ctx.font = "700 " + fs + "px -apple-system,Segoe UI,sans-serif"; } return fs; }
+function fitText(s, x, y, maxW, base, col) { text(s, x, y, fitFont(s, maxW, base), col, "center"); }
+function fitTextLeft(s, x, y, maxW, base, col) { text(s, x, y, fitFont(s, maxW, base), col, "left"); }
 
 function drawButtons() {
   for (const b of buttons()) {
-    ctx.fillStyle = "rgba(30,32,44,0.85)"; ctx.strokeStyle = "rgba(120,120,150,0.6)"; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 8); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = "#dfe2ea"; ctx.textBaseline = "middle";
-    if (b.id === "mute") { ctx.textAlign = "center"; ctx.font = "600 16px sans-serif"; text(mute ? "MUTE" : "SON", b.x + b.w / 2, b.y + b.h / 2, 13, mute ? "#888" : "#dfe2ea", "center"); }
-    else if (b.id === "pause") { ctx.textAlign = "center"; text(paused ? ">" : "II", b.x + b.w / 2, b.y + b.h / 2, 18, "#dfe2ea", "center"); }
-    else if (b.id === "weapon") { text(WEAPONS[weapon].name, b.x + b.w / 2, b.y + b.h / 2, 13, "#ffb060", "center"); }
+    ctx.fillStyle = "rgba(28,30,42,0.9)"; ctx.strokeStyle = "rgba(120,120,150,0.6)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 9); ctx.fill(); ctx.stroke();
+    let lbl = "", col = "#dfe2ea";
+    if (b.id === "mute") { lbl = mute ? "MUTE" : "SON"; col = mute ? "#888" : "#dfe2ea"; }
+    else if (b.id === "pause") { lbl = paused ? ">" : "II"; }
+    else if (b.id === "weapon") { lbl = WEAPONS[weapon].name; col = "#ffb060"; }
+    else { lbl = lang; col = lang === "ZH" ? "#f08cbe" : "#7fd6ff"; }
+    const fs = fitFont(lbl, b.w - 8, b.id === "pause" ? 18 : 13);
+    text(lbl, b.x + b.w / 2, b.y + b.h / 2 + fs * 0.36, fs, col, "center");
   }
-  ctx.textBaseline = "alphabetic";
 }
 
 function drawHUD() {
-  text(score, W / 2, 40, 30, "#fff", "center");
-  text("RECORD " + best, W / 2, 60, 13, "#9a9ab0", "center");
-  if (combo >= 2) text("COMBO x" + (1 + Math.min(Math.floor(combo / 3), 4)) + "  (" + combo + ")", W / 2, 84, 17, "#ff9b3c", "center");
-  text("NIVEL " + level + "   ING " + words, 16, 26, 15, "#b480ff", "left");
-  bar(16, 36, 180, 14, player.hp / MAXHP, player.hp > 50 ? "#eb5046" : player.hp > 25 ? "#f0aa3c" : "#dc322d");
-  // chips de power-ups
+  const tp = safeT, bt = safeB, lf = 16 + Math.max(0, safeT > 0 ? 0 : 0);
+  text(score, W / 2, 40 + tp, 30, "#fff", "center");
+  text("RECORD " + best, W / 2, 60 + tp, 13, "#9a9ab0", "center");
+  if (combo >= 2) text("COMBO x" + (1 + Math.min(Math.floor(combo / 3), 4)) + "  (" + combo + ")", W / 2, 84 + tp, 17, "#ff9b3c", "center");
+  text("NIVEL " + level + "   ING " + words, 16, 26 + tp, 15, "#b480ff", "left");
+  bar(16, 36 + tp, 180, 14, player.hp / MAXHP, player.hp > 50 ? "#eb5046" : player.hp > 25 ? "#f0aa3c" : "#dc322d");
   let cx = 16;
-  [[0, pShield, 7], [1, pTriple, 9], [2, pRapid, 9]].forEach(([k, v, mx]) => { if (v > 0) { const w = 78; bar(cx, 60, w, 16, v / mx, powerCol(k)); text(powerName(k), cx + 4, 73, 11, "#0c0c12", "left"); cx += w + 8; } });
-  // barra de jefe
+  [[0, pShield, 7], [1, pTriple, 9], [2, pRapid, 9]].forEach(([k, v, mx]) => { if (v > 0) { const w = 78; bar(cx, 60 + tp, w, 16, v / mx, powerCol(k)); text(powerName(k), cx + 4, 73 + tp, 11, "#0c0c12", "left"); cx += w + 8; } });
   const boss = enemies.find(e => e.boss);
-  if (boss) { const w = Math.min(420, W - 120); text("JEFE", W / 2, H - 60, 16, "#ce82ff", "center"); bar(W / 2 - w / 2, H - 50, w, 14, boss.hp / boss.maxhp, "#ce50aa"); }
-  if (portal) text("PORTAL ABIERTO - ANDA AL REMOLINO", W / 2, H - 24, 13, "#b480ff", "center");
+  if (boss) { const w = Math.min(420, W - 120); text("JEFE", W / 2, H - 62 - bt, 16, "#ce82ff", "center"); bar(W / 2 - w / 2, H - 52 - bt, w, 14, boss.hp / boss.maxhp, "#ce50aa"); }
+  if (portal) text("PORTAL ABIERTO - ANDA AL REMOLINO", W / 2, H - 26 - bt, 13, "#b480ff", "center");
 }
 
-// Panel del quiz (portal de ingles)
-function quizPanelRect() { const w = Math.min(560, W - 40), h = Math.min(380, H - 80); return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
-function quizOptRect(i) { const p = quizPanelRect(); const w = p.w - 60, h = 54, gap = 14; return { x: p.x + 30, y: p.y + 150 + i * (h + gap), w, h }; }
+// Panel del quiz (portal de idiomas) - ELITE
+function quizPanelRect() { const w = Math.min(580, W - 32), h = Math.min(400, H - 64); return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
+function quizOptRect(i) { const p = quizPanelRect(); const w = p.w - 52, h = 50, gap = 11; return { x: p.x + 26, y: p.y + 146 + i * (h + gap), w, h }; }
 function quizOptAt(px, py) { if (state !== "quiz" || !quiz || quiz.sel >= 0) return -1; for (let i = 0; i < quiz.options.length; i++) { const r = quizOptRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) return i; } return -1; }
 function drawQuiz() {
-  ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(0, 0, W, H);
+  const L = quiz.L, lv = L.levels[langTierIdx(L)], zh = L.code === "zh-CN";
+  const acc = zh ? "#e85d9a" : "#b480ff", accL = zh ? "#f29ac6" : "#cba6ff";
+  const anim = clamp((t - quiz.t0) / 0.22, 0, 1), ease = 1 - (1 - anim) * (1 - anim);
+  ctx.fillStyle = "rgba(4,4,10," + (0.66 * ease) + ")"; ctx.fillRect(0, 0, W, H);
   const p = quizPanelRect();
-  ctx.fillStyle = "#181a26"; ctx.strokeStyle = "#b480ff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 14); ctx.fill(); ctx.stroke();
-  const tiers = ["BASICO", "MEDIO", "AVANZADO"];
-  text("PORTAL DE INGLES   -   " + tiers[engTier() - 1], W / 2, p.y + 38, 17, "#b480ff", "center");
-  text("Como se dice en ingles:", W / 2, p.y + 80, 15, "#9a9ab0", "center");
-  text('"' + quiz.prompt + '"', W / 2, p.y + 122, 30, "#fff", "center");
+  ctx.save();
+  ctx.translate(p.x + p.w / 2, p.y + p.h / 2); const sc = 0.86 + 0.14 * ease; ctx.scale(sc, sc); ctx.globalAlpha = ease; ctx.translate(-(p.x + p.w / 2), -(p.y + p.h / 2));
+  const glow = 0.5 + 0.5 * Math.sin(t * 4);
+  ctx.shadowColor = acc; ctx.shadowBlur = 16 + 12 * glow;
+  ctx.fillStyle = "#161826"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill();
+  ctx.shadowBlur = 0; ctx.strokeStyle = acc; ctx.lineWidth = 3; ctx.stroke();
+  text("PORTAL  ·  " + L.name + "  ·  " + lv.tag, W / 2, p.y + 36, 16, accL, "center");
+  text("Traduce al " + (zh ? "CHINO (caracteres + pinyin)" : "INGLES") + ":", W / 2, p.y + 70, 13, "#9a9ab0", "center");
+  fitText(quiz.prompt, W / 2, p.y + 112, p.w - 56, 27, "#fff");
   for (let i = 0; i < quiz.options.length; i++) {
-    const r = quizOptRect(i); let bg = "#2a2e40";
-    if (quiz.sel >= 0) { if (i === quiz.correct) bg = "#2f9b3c"; else if (i === quiz.sel) bg = "#b03434"; }
-    ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill();
-    text((i + 1) + ".  " + quiz.options[i], r.x + 20, r.y + r.h / 2 + 7, 20, "#fff", "left");
+    const r = quizOptRect(i); let bg = "#262a3c", bc = "#3a3f55", al = ease;
+    if (quiz.sel >= 0) {
+      if (i === quiz.correct) { const g2 = 0.55 + 0.45 * Math.sin(t * 12); bg = "rgba(40,150,55," + g2 + ")"; bc = "#62e074"; }
+      else if (i === quiz.sel) { bg = "#6e2730"; bc = "#d05858"; }
+      else al = ease * 0.45;
+    }
+    ctx.globalAlpha = al;
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 11); ctx.fill();
+    ctx.strokeStyle = bc; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.10)"; ctx.beginPath(); ctx.roundRect(r.x + 8, r.y + 9, 30, r.h - 18, 7); ctx.fill();
+    text("" + (i + 1), r.x + 23, r.y + r.h / 2 + 6, 17, "#cfd3e0", "center");
+    fitTextLeft(quiz.options[i], r.x + 48, r.y + r.h / 2 + 6, r.w - 64, 20, "#fff");
+    ctx.globalAlpha = ease;
   }
-  if (quiz.sel >= 0) text(quiz.sel === quiz.correct ? "CORRECTO!  +180" : "Era: " + quiz.options[quiz.correct], W / 2, p.y + p.h - 18, 18, quiz.sel === quiz.correct ? "#60d050" : "#eb6050", "center");
+  const md = masteredTotalL(L), bx = p.x + 28, bw = p.w - 56, by = p.y + p.h - 48;
+  ctx.fillStyle = "#222630"; ctx.beginPath(); ctx.roundRect(bx, by, bw, 8, 4); ctx.fill();
+  ctx.fillStyle = "#60d050"; ctx.beginPath(); ctx.roundRect(bx, by, bw * (md[0] / Math.max(1, md[1])), 8, 4); ctx.fill();
+  text("Dominadas " + md[0] + "/" + md[1] + "   ·   boton " + lang + " cambia idioma", W / 2, p.y + p.h - 30, 12, "#8a8aa0", "center");
+  if (quiz.sel >= 0) text(quiz.sel === quiz.correct ? "CORRECTO!  +80  (escucha)" : "Era:  " + quiz.options[quiz.correct], W / 2, p.y + p.h - 12, 16, quiz.sel === quiz.correct ? "#60d050" : "#eb6050", "center");
+  ctx.restore();
 }
 
 function render() {
@@ -534,13 +581,14 @@ function render() {
     text("el taco en la catacumba", W / 2, H / 2 - 8, 18, "#96c8eb", "center");
     text("TOCA PARA JUGAR", W / 2, H / 2 + 52, 22, "#f5cd46", "center");
     text("izq: mover   der: apuntar y disparar", W / 2, H / 2 + 88, 14, "#8a8aa0", "center");
-    text("junta gemas, cruza el portal y aprende ingles", W / 2, H / 2 + 112, 13, "#7a7a90", "center");
+    text("junta gemas, cruza el portal y aprende INGLES y CHINO (con frases)", W / 2, H / 2 + 112, 13, "#7a7a90", "center");
   }
   if (state === "over") {
     ctx.fillStyle = "rgba(6,6,12,0.8)"; ctx.fillRect(0, 0, W, H);
     text("GAME OVER", W / 2, H / 2 - 30, Math.min(64, W / 8), "#eb5040", "center");
+    let mAll = 0, tAll = 0; for (const lk of LANGS) { const md = masteredTotalL(LESSONS[lk]); mAll += md[0]; tAll += md[1]; }
     text("PUNTAJE  " + score, W / 2, H / 2 + 22, 26, "#fff", "center");
-    text("PALABRAS " + words + "    DOMINADAS " + masteredTotal() + "/" + WORDBANK.length, W / 2, H / 2 + 52, 15, "#60d050", "center");
+    text("APRENDIDAS " + words + "    DOMINADAS " + mAll + "/" + tAll + " (EN+ZH)", W / 2, H / 2 + 52, 15, "#60d050", "center");
     text("RECORD  " + best, W / 2, H / 2 + 76, 15, "#9a9ab0", "center");
     text("TOCA PARA REINTENTAR", W / 2, H / 2 + 110, 20, "#f5cd46", "center");
   }

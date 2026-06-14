@@ -22,7 +22,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v8 - humanoide + dimensiones + multi-idioma";
+const VERSION = "v9 - tiradores + ambiente + estela + dominio";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -74,6 +74,7 @@ function shade(hex, f) {
   return "rgb(" + r + "," + g + "," + b + ")";
 }
 function rot(x, y, deg) { const r = deg * Math.PI / 180, c = Math.cos(r), s = Math.sin(r); return [x * c - y * s, x * s + y * c]; }
+function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")"; }
 
 // ---------- Audio ----------
 let actx = null, mute = false;
@@ -163,7 +164,7 @@ let paused = false;
 let level = 1, score = 0, best = +(localStorage.getItem("catacomb_best") || 0), words = 0;
 const MAXHP = 100;
 const player = { x: 0, y: 0, r: 18, vx: 0, vy: 0, hp: MAXHP, inv: 0, aimx: 1, aimy: 0, fire: 0 };
-let gems = [], enemies = [], bullets = [], parts = [], heals = [], powerDrops = [], portal = null;
+let gems = [], enemies = [], bullets = [], parts = [], heals = [], powerDrops = [], eshots = [], portal = null;
 let pShield = 0, pTriple = 0, pRapid = 0, weapon = 0;
 let shake = 0, t = 0;
 let quiz = null; // {prompt, options[], correct, sel, fb}
@@ -203,7 +204,7 @@ function genLevel() {
   for (let y = sy - 1; y <= sy + 1; y++) for (let x = sx - 1; x <= sx + 1; x++) if (x > 0 && y > 0 && x < cols - 1 && y < rows - 1) grid[y * cols + x] = 0;
 
   player.x = (sx + 0.5) * TS; player.y = (sy + 0.5) * TS; player.vx = player.vy = 0;
-  gems = []; enemies = []; bullets = []; parts = []; heals = []; powerDrops = []; portal = null;
+  gems = []; enemies = []; bullets = []; parts = []; heals = []; powerDrops = []; eshots = []; portal = null;
   const ng = 4 + level;
   for (let i = 0; i < ng; i++) { const p = freeCell(); gems.push({ x: p.x, y: p.y }); }
   const ne = 2 + level;
@@ -219,10 +220,11 @@ function spawnEnemy(boss) {
     enemies.push({ x: p.x, y: p.y, vx: 0, vy: 0, r: 40, hp: 18 + level * 2, maxhp: 18 + level * 2, speed: 50 + level * 2, col: "#ba40d0", bounty: 500, dmg: 22, flash: 0, boss: true });
     return;
   }
-  const chaser = Math.random() < 0.6;
-  const e = chaser
-    ? { x: p.x, y: p.y, vx: 0, vy: 0, r: 16, hp: 3, speed: 95 + level * 6, col: "#e24a3c", bounty: 30, dmg: 10 }
-    : { x: p.x, y: p.y, vx: 0, vy: 0, r: 26, hp: 6, speed: 55 + level * 3, col: "#9698a4", bounty: 60, dmg: 16 };
+  const roll = Math.random();
+  let e;
+  if (roll < 0.48) e = { x: p.x, y: p.y, vx: 0, vy: 0, r: 16, hp: 3, speed: 95 + level * 6, col: "#e24a3c", bounty: 30, dmg: 10 };           // perseguidor
+  else if (roll < 0.74) e = { x: p.x, y: p.y, vx: 0, vy: 0, r: 26, hp: 6, speed: 55 + level * 3, col: "#9698a4", bounty: 60, dmg: 16 };       // tanque
+  else e = { x: p.x, y: p.y, vx: 0, vy: 0, r: 16, hp: 3, speed: 70 + level * 3, col: "#78d2eb", bounty: 80, dmg: 12, shoot: Math.random() * 1.7 }; // tirador (kiting + dispara)
   e.maxhp = e.hp; e.flash = 0; e.boss = false;
   enemies.push(e);
 }
@@ -404,11 +406,25 @@ function update(dt) {
   for (let i = powerDrops.length - 1; i >= 0; i--) { const pd = powerDrops[i]; if (len(pd.x - player.x, pd.y - player.y) < player.r + 16) { applyPower(pd.kind); addParts(pd.x, pd.y, 18, powerCol(pd.kind), 240); floatText(pd.x, pd.y, powerName(pd.kind) + "!", powerCol(pd.kind)); flash("94,234,212", 0.18); shake = Math.min(shake + 4, 14); powerDrops.splice(i, 1); } }
 
   for (const e of enemies) {
-    const dx = player.x - e.x, dy = player.y - e.y, d = len(dx, dy) || 1;
-    moveAxis(e, dx / d * e.speed * dt, 0); moveAxis(e, 0, dy / d * e.speed * dt);
+    const dx = player.x - e.x, dy = player.y - e.y, d = len(dx, dy) || 1, ux = dx / d, uy = dy / d;
+    if (e.shoot !== undefined) { // tirador: mantiene distancia (kiting) y dispara
+      const prefer = 230, mv = d > prefer + 45 ? 1 : d < prefer - 45 ? -1 : 0;
+      moveAxis(e, ux * e.speed * mv * dt, 0); moveAxis(e, 0, uy * e.speed * mv * dt);
+      e.shoot -= dt;
+      if (e.shoot <= 0 && d < 640) { eshots.push({ x: e.x + ux * e.r, y: e.y + uy * e.r, vx: ux * 300, vy: uy * 300, life: 2.4 }); e.shoot = 1.7; sShoot(); }
+    } else {
+      moveAxis(e, ux * e.speed * dt, 0); moveAxis(e, 0, uy * e.speed * dt);
+    }
     if (e.flash > 0) e.flash -= dt;
     if (d < e.r + player.r) hurt(e.dmg);
   }
+  for (let i = eshots.length - 1; i >= 0; i--) {
+    const s = eshots[i]; s.life -= dt; s.x += s.vx * dt; s.y += s.vy * dt;
+    let dead = s.life <= 0 || !isFloor(s.x, s.y);
+    if (!dead && len(s.x - player.x, s.y - player.y) < player.r + 8) { hurt(14); addParts(s.x, s.y, 6, "#78d2eb", 160); dead = true; }
+    if (dead) eshots.splice(i, 1);
+  }
+  if (playerMoving && Math.random() < 0.5) parts.push({ x: player.x + rand(-5, 5), y: player.y + player.r * 0.5, vx: 0, vy: 0, life: 0.3, max: 0.3, col: "#e8b84e", r: 3 }); // estela/polvo
 
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i]; b.life -= dt; b.x += b.vx * dt; b.y += b.vy * dt;
@@ -452,7 +468,14 @@ function buildDungeonCache() {
   for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) if (!solid(x, y)) dctx.fillRect(x * TS + TS / 2 - 2, y * TS + TS / 2 - 2, 4, 4);
   for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) if (solid(x, y)) drawBlock(dctx, x * TS, y * TS, TS, theme.wall);
 }
-function drawDungeon() { ctx.fillStyle = theme.floor; ctx.fillRect(0, 0, W, H); if (dcanvas.width > 0) ctx.drawImage(dcanvas, 0, 0, cols * TS, rows * TS); }
+function drawDungeon() {
+  ctx.fillStyle = theme.floor; ctx.fillRect(0, 0, W, H);
+  // glow ambiental con el color de la dimension
+  const gr = ctx.createRadialGradient(W / 2, H * 0.42, 40, W / 2, H * 0.42, Math.max(W, H) * 0.62);
+  gr.addColorStop(0, hexA(theme.stud, 0.12)); gr.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+  if (dcanvas.width > 0) ctx.drawImage(dcanvas, 0, 0, cols * TS, rows * TS);
+}
 
 function drawGem(x, y) { const s = 11 + Math.sin(t * 5) * 1.5; ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4); ctx.fillStyle = "#5eead4"; ctx.fillRect(-s, -s, s * 2, s * 2); ctx.fillStyle = "#bff7ec"; ctx.fillRect(-s * 0.4, -s * 0.4, s * 0.8, s * 0.8); ctx.restore(); }
 function drawHeal(x, y) { ctx.fillStyle = "#60d050"; ctx.beginPath(); ctx.arc(x, y, 11, 0, 7); ctx.fill(); ctx.fillStyle = "#fff"; ctx.fillRect(x - 6, y - 2, 12, 4); ctx.fillRect(x - 2, y - 6, 4, 12); }
@@ -563,7 +586,9 @@ function drawQuiz() {
   ctx.shadowBlur = 0; ctx.strokeStyle = acc; ctx.lineWidth = 3; ctx.stroke();
   text("PORTAL  ·  " + L.name + "  ·  " + lv.tag, W / 2, p.y + 36, 16, accL, "center");
   text("Traduce al " + (zh ? "CHINO (caracteres + pinyin)" : "INGLES") + ":", W / 2, p.y + 70, 13, "#9a9ab0", "center");
-  fitText(quiz.prompt, W / 2, p.y + 112, p.w - 56, 27, "#fff");
+  fitText(quiz.prompt, W / 2, p.y + 110, p.w - 56, 27, "#fff");
+  const st = Math.min((lstats[quiz.key] || {}).streak || 0, 3);
+  text((st >= 1 ? "●" : "○") + "  " + (st >= 2 ? "●" : "○") + "  " + (st >= 3 ? "●" : "○") + (st >= 3 ? "  DOMINADA" : ""), W / 2, p.y + 132, 12, st >= 3 ? "#60d050" : accL, "center");
   for (let i = 0; i < quiz.options.length; i++) {
     const r = quizOptRect(i); let bg = "#262a3c", bc = "#3a3f55", al = ease;
     if (quiz.sel >= 0) {
@@ -596,6 +621,7 @@ function render() {
   for (const pd of powerDrops) drawPower(pd.x, pd.y, pd.kind);
   if (portal) drawPortal(portal.x, portal.y);
   for (const b of bullets) { ctx.fillStyle = "#ff8c32"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill(); ctx.fillStyle = "#ffe896"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.5, 0, 7); ctx.fill(); }
+  for (const s of eshots) { ctx.fillStyle = "#78d2eb"; ctx.beginPath(); ctx.arc(s.x, s.y, 8, 0, 7); ctx.fill(); ctx.fillStyle = "#dff4ff"; ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, 7); ctx.fill(); }
   for (const e of enemies) { drawBlock(ctx, e.x - e.r, e.y - e.r, e.r * 2, e.flash > 0 ? "#ffffff" : e.col); if (e.hp < e.maxhp && !e.boss) bar(e.x - e.r, e.y - e.r - 8, e.r * 2, 4, e.hp / e.maxhp, "#60d050"); }
   if (!(player.inv > 0 && Math.floor(t * 20) % 2)) drawTaco(player.x, player.y, player.r * 2.2, level);
   for (const p of parts) { ctx.globalAlpha = clamp(p.life / p.max, 0, 1); ctx.fillStyle = p.col; ctx.fillRect(p.x - p.r / 2, p.y - p.r / 2, p.r, p.r); }

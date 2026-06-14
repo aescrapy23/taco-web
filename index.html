@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v12 - ELITE: cartel de dimension, anillo de dash, pulso de peligro, ondas de choque";
+const VERSION = "v13 - VESTUARIO Mundial 2026 (skins) + PERFIL (nombre/edad -> nivel) + MUNDOS";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -123,6 +123,26 @@ const WEAPONS = [
   { name: "RAFAGA", cd: 0.08, speed: 780, pellets: 1, spread: 7, life: 0.7, r: 5, dmg: 1 },
 ];
 
+// VESTUARIO Mundial 2026: camisetas (c1 cuerpo, c2 franja, band vincha). Se compran con el banco de monedas.
+const OUTFITS = [
+  { name: "CLASICO", cost: 0 },
+  { name: "MEXICO", c1: "#1f8a4c", c2: "#ffffff", band: "#d62828", cost: 12 },
+  { name: "USA", c1: "#2540a0", c2: "#ffffff", band: "#d62828", cost: 12 },
+  { name: "CANADA", c1: "#d62828", c2: "#ffffff", band: "#ffffff", cost: 12 },
+  { name: "ARGENTINA", c1: "#74c0e8", c2: "#ffffff", band: "#f5cd46", cost: 20 },
+  { name: "BRASIL", c1: "#f5d000", c2: "#1f8a4c", band: "#2540a0", cost: 20 },
+  { name: "ESPANA", c1: "#d62828", c2: "#f5cd46", band: "#d62828", cost: 28 },
+  { name: "FRANCIA", c1: "#2540a0", c2: "#ffffff", band: "#d62828", cost: 28 },
+  { name: "PORTUGAL", c1: "#c81e3a", c2: "#1f6b3a", band: "#f5cd46", cost: 28 },
+  { name: "ALEMANIA", c1: "#222222", c2: "#ffffff", band: "#f5cd46", cost: 35 },
+  { name: "ORO", c1: "#f5cd46", c2: "#ffe896", band: "#caa23a", cost: 50 },
+];
+let bank = +(localStorage.getItem("catacomb_bank") || 0);
+let outfit = +(localStorage.getItem("catacomb_outfit") || 0);
+let unlocked = {}; try { unlocked = JSON.parse(localStorage.getItem("catacomb_unlocked") || "{}"); } catch (e) { unlocked = {}; }
+unlocked[0] = true;
+function saveWardrobe() { try { localStorage.setItem("catacomb_bank", bank); localStorage.setItem("catacomb_outfit", outfit); localStorage.setItem("catacomb_unlocked", JSON.stringify(unlocked)); } catch (e) {} }
+
 // ===== Aprendizaje ELITE: multi-idioma por niveles (Ingles CEFR/TOEFL + Chino HSK), palabras y FRASES =====
 // item EN: [es, en]   |   item ZH: [es, hanzi, pinyin]
 const LESSONS = {
@@ -149,7 +169,19 @@ function lstat(k) { return lstats[k] || (lstats[k] = { seen: 0, ok: 0, streak: 0
 function masteredK(k) { const s = lstats[k]; return !!s && s.streak >= 3; }
 function dispOf(L, it) { return L.code === "zh-CN" ? it[1] + "  " + it[2] : it[1]; }
 function levelMastered(L, lv) { let n = 0; for (const it of lv.items) if (masteredK(itemKey(it))) n++; return n; }
-function langTierIdx(L) { for (let i = 0; i < L.levels.length - 1; i++) if (levelMastered(L, L.levels[i]) < 5) return i; return L.levels.length - 1; }
+function langTierIdx(L) { let m = L.levels.length - 1; for (let i = 0; i < L.levels.length - 1; i++) if (levelMastered(L, L.levels[i]) < 5) { m = i; break; } return Math.max(m, startTierFor(L)); }
+// Perfil del usuario: nombre + edad -> nivel asignado (siempre 1 mayor a lo que toca por la edad).
+let profile = null; try { profile = JSON.parse(localStorage.getItem("catacomb_profile") || "null"); } catch (e) { profile = null; }
+function ageToTier(age, maxT) { const b = age < 8 ? 0 : age < 11 ? 1 : age < 14 ? 2 : age < 17 ? 3 : 4; return clamp(b + 1, 0, maxT); }
+function startTierFor(L) { if (!profile) return 0; return L.code === "zh-CN" ? (profile.zh || 0) : (profile.eng || 0); }
+function askProfile() {
+  let nm = null; try { nm = prompt("Hola! Como te llamas?", (profile && profile.name) || ""); } catch (e) {}
+  nm = ((nm || "JUGADOR").trim().slice(0, 14)) || "JUGADOR";
+  let ageStr = null; try { ageStr = prompt("Cuantos anios tenes? (un numero)", (profile && String(profile.age)) || "10"); } catch (e) {}
+  let age = parseInt(ageStr); if (!age || age < 3 || age > 99) age = 10;
+  profile = { name: nm, age: age, eng: ageToTier(age, LESSONS.EN.levels.length - 1), zh: ageToTier(Math.max(6, age - 3), LESSONS.ZH.levels.length - 1) };
+  try { localStorage.setItem("catacomb_profile", JSON.stringify(profile)); } catch (e) {}
+}
 function masteredTotalL(L) { let n = 0, tot = 0; for (const lv of L.levels) for (const it of lv.items) { tot++; if (masteredK(itemKey(it))) n++; } return [n, tot]; }
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = randi(0, i + 1); const tmp = a[i]; a[i] = a[j]; a[j] = tmp; } return a; }
 function pickItem() {
@@ -285,7 +317,9 @@ const keys = {};
 let mouse = { x: 0, y: 0, down: false };
 addEventListener("keydown", e => {
   const k = e.key.toLowerCase(); keys[k] = true; audioInit();
-  if (state === "title" || state === "over") { startOrRestart(); return; }
+  if (state === "title") { if (k === "v") state = "wardrobe"; else startOrRestart(); return; }
+  if (state === "over") { startOrRestart(); return; }
+  if (state === "wardrobe") { if (k === "escape") state = "title"; return; }
   if (state === "quiz") { if (k >= "1" && k <= "3") answerQuiz(+k - 1); return; }
   if (state === "shop") { if (k === "escape" || k === "enter") { shopLock = true; state = "play"; } return; }
   if (k === "1") weapon = 0; if (k === "2") weapon = 1; if (k === "3") weapon = 2;
@@ -296,7 +330,9 @@ addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 canvas.addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
 canvas.addEventListener("mousedown", e => {
   mouse.down = true; audioInit();
-  if (state === "title" || state === "over") { startOrRestart(); return; }
+  if (state === "title") { const r = titleWbRect(); if (e.clientX >= r.x && e.clientX <= r.x + r.w && e.clientY >= r.y && e.clientY <= r.y + r.h) { state = "wardrobe"; mouse.down = false; return; } startOrRestart(); return; }
+  if (state === "over") { startOrRestart(); return; }
+  if (state === "wardrobe") { wbTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "shop") { shopTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "quiz") { const o = quizOptAt(e.clientX, e.clientY); if (o >= 0) answerQuiz(o); return; }
   const b = btnAt(e.clientX, e.clientY); if (b) { doButton(b); mouse.down = false; }
@@ -308,7 +344,9 @@ const stickL = { id: null, bx: 0, by: 0, x: 0, y: 0 };
 const stickR = { id: null, bx: 0, by: 0, x: 0, y: 0 };
 function onTouchStart(e) {
   e.preventDefault(); audioInit();
-  if (state === "title" || state === "over") { startOrRestart(); return; }
+  if (state === "title") { for (const tch of e.changedTouches) { const r = titleWbRect(); if (tch.clientX >= r.x && tch.clientX <= r.x + r.w && tch.clientY >= r.y && tch.clientY <= r.y + r.h) { state = "wardrobe"; return; } } startOrRestart(); return; }
+  if (state === "over") { startOrRestart(); return; }
+  if (state === "wardrobe") { for (const tch of e.changedTouches) wbTapAt(tch.clientX, tch.clientY); return; }
   if (state === "shop") { for (const tch of e.changedTouches) shopTapAt(tch.clientX, tch.clientY); return; }
   for (const tch of e.changedTouches) {
     const x = tch.clientX, y = tch.clientY;
@@ -353,7 +391,7 @@ function readInput() {
 }
 
 // ---------- Flujo ----------
-function startOrRestart() { level = 1; score = 0; words = 0; coins = 5; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; dashT = 0; dashCD = 0; genLevel(); state = "play"; sLevel(); }
+function startOrRestart() { if (!profile) askProfile(); level = 1; score = 0; words = 0; coins = 5; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; dashT = 0; dashCD = 0; genLevel(); state = "play"; sLevel(); }
 
 function openQuiz() {
   const { L, item } = pickItem();
@@ -370,7 +408,7 @@ function answerQuiz(i) {
   if (!quiz || quiz.sel >= 0) return;
   quiz.sel = i;
   const s = lstat(quiz.key); s.seen++;
-  if (i === quiz.correct) { s.ok++; s.streak++; score += 80; words++; floatText(player.x, player.y - 30, "+80 " + quiz.L.name, "#60d050"); flash("96,208,80", 0.18); speak(quiz.say, quiz.L.code); sRight(); }
+  if (i === quiz.correct) { s.ok++; s.streak++; score += 80; words++; coins += 3; floatText(player.x, player.y - 30, "+80 +3MON " + quiz.L.name, "#60d050"); flash("96,208,80", 0.18); speak(quiz.say, quiz.L.code); sRight(); }
   else { s.streak = 0; speak(quiz.say, quiz.L.code); sWrong(); }
   saveL();
   quiz.fb = 1.9;
@@ -423,10 +461,48 @@ function shopTapAt(px, py) {
   const c = shopCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) { shopLock = true; state = "play"; }
 }
 
+// ---- Vestuario (Mundial 2026) ----
+function wbRect() { const w = Math.min(540, W - 24), h = Math.min(450, H - 40); return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
+function wbCell(i) { const p = wbRect(); const C = 3, cw = (p.w - 36) / C, ch = 72, r = Math.floor(i / C), c = i % C; return { x: p.x + 18 + c * cw, y: p.y + 90 + r * (ch + 6), w: cw - 8, h: ch }; }
+function wbCloseRect() { const p = wbRect(); return { x: p.x + p.w / 2 - 70, y: p.y + p.h - 48, w: 140, h: 36 }; }
+function wbTapAt(px, py) {
+  for (let i = 0; i < OUTFITS.length; i++) { const r = wbCell(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
+    if (unlocked[i]) { outfit = i; saveWardrobe(); sRight(); }
+    else if (bank >= OUTFITS[i].cost) { bank -= OUTFITS[i].cost; unlocked[i] = true; outfit = i; saveWardrobe(); sPower(); }
+    else sWrong();
+    return;
+  } }
+  const c = wbCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) state = "title";
+}
+function drawOutfitMini(cx, cy, sz, idx) {
+  const O = OUTFITS[idx], w = sz, h = sz * 0.62; ctx.save(); ctx.translate(cx, cy);
+  ctx.fillStyle = "#f5b938"; ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.5, 0, Math.PI, false); ctx.fill();
+  if (O.c1) { ctx.save(); ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.47, 0, Math.PI, false); ctx.clip(); ctx.fillStyle = O.c1; ctx.fillRect(-w * 0.5, 0, w, h * 0.55); if (O.c2) { ctx.fillStyle = O.c2; ctx.fillRect(-w * 0.5, h * 0.14, w, h * 0.07); } ctx.restore(); if (O.band) { ctx.fillStyle = O.band; ctx.fillRect(-w * 0.46, -h * 0.14, w * 0.92, h * 0.05); } }
+  ctx.fillStyle = "#2a1808"; ctx.beginPath(); ctx.arc(-w * 0.12, -h * 0.03, w * 0.045, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(w * 0.12, -h * 0.03, w * 0.045, 0, 7); ctx.fill();
+  ctx.restore();
+}
+function drawWardrobe() {
+  ctx.fillStyle = "rgba(0,0,0,0.66)"; ctx.fillRect(0, 0, W, H);
+  const p = wbRect();
+  ctx.shadowColor = "#f5cd46"; ctx.shadowBlur = 18; ctx.fillStyle = "#171826"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#f5cd46"; ctx.lineWidth = 3; ctx.stroke();
+  text("VESTUARIO  ·  MUNDIAL 2026", W / 2, p.y + 36, 19, "#f5cd46", "center");
+  text("Banco: " + bank + " monedas  (ganas jugando y aprendiendo)", W / 2, p.y + 64, 13, "#ffe896", "center");
+  for (let i = 0; i < OUTFITS.length; i++) {
+    const r = wbCell(i), O = OUTFITS[i], owned = unlocked[i], sel = outfit === i;
+    ctx.fillStyle = sel ? "#2f3550" : "#23273a"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill();
+    ctx.strokeStyle = sel ? "#f5cd46" : "#3a3f55"; ctx.lineWidth = sel ? 3 : 2; ctx.stroke();
+    drawOutfitMini(r.x + r.w / 2, r.y + 32, 30, i);
+    text(O.name, r.x + r.w / 2, r.y + 52, 11, "#fff", "center");
+    text(owned ? (sel ? "EN USO" : "USAR") : (bank >= O.cost ? O.cost + " mon" : "FALTAN " + (O.cost - bank)), r.x + r.w / 2, r.y + 67, 10, owned ? (sel ? "#60d050" : "#cfd3e0") : (bank >= O.cost ? "#f5cd46" : "#a66"), "center");
+  }
+  const c = wbCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 10); ctx.fill(); text("VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 6, 16, "#ff9bb0", "center");
+}
+function titleWbRect() { return { x: W / 2 - 120, y: H / 2 + 140, w: 240, h: 42 }; }
+
 function hurt(d) {
   if (player.inv > 0 || pShield > 0) return;
   player.hp -= d; player.inv = 0.7; shake = Math.min(shake + 8, 14); flash("235,80,64", 0.22); sHurt(); addParts(player.x, player.y, 14, "#eb5040", 200);
-  if (player.hp <= 0) { player.hp = 0; combo = 0; best = Math.max(best, score); localStorage.setItem("catacomb_best", best); state = "over"; }
+  if (player.hp <= 0) { player.hp = 0; combo = 0; best = Math.max(best, score); localStorage.setItem("catacomb_best", best); bank += coins; saveWardrobe(); state = "over"; }
 }
 
 function update(dt) {
@@ -625,6 +701,15 @@ function drawTaco(x, y, size, lvl) {
   ctx.fillStyle = "#e2342a"; ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.36, Math.PI + 0.2, -0.2, false); ctx.fill();
   ctx.fillStyle = "#ffd650"; ctx.beginPath(); ctx.arc(-w * 0.12, -h * 0.18, w * 0.13, 0, 7); ctx.fill();
   ctx.fillStyle = "#60d040"; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.arc(i * w * 0.16, -h * 0.34, w * 0.11, Math.PI, 0, false); ctx.fill(); }
+  // VESTUARIO: camiseta del Mundial 2026
+  const O = OUTFITS[outfit];
+  if (O.c1) {
+    ctx.save(); ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.47, 0, Math.PI, false); ctx.clip();
+    ctx.fillStyle = O.c1; ctx.fillRect(-w * 0.5, 0, w, h * 0.55);
+    if (O.c2) { ctx.fillStyle = O.c2; ctx.fillRect(-w * 0.5, h * 0.14, w, h * 0.07); }
+    ctx.restore();
+    if (O.band) { ctx.fillStyle = O.band; ctx.fillRect(-w * 0.46, -h * 0.14, w * 0.92, h * 0.05); } // vincha
+  }
   // ojos
   ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(-w * 0.12, -h * 0.04, w * 0.075, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(w * 0.12, -h * 0.04, w * 0.075, 0, 7); ctx.fill();
   ctx.fillStyle = "#2a1808"; ctx.beginPath(); ctx.arc(-w * 0.10, -h * 0.03, w * 0.038, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(w * 0.14, -h * 0.03, w * 0.038, 0, 7); ctx.fill();
@@ -668,7 +753,7 @@ function drawHUD() {
   text(score, W / 2, 40 + tp, 30, "#fff", "center");
   text("RECORD " + best, W / 2, 60 + tp, 13, "#9a9ab0", "center");
   if (combo >= 2) text("COMBO x" + (1 + Math.min(Math.floor(combo / 3), 4)) + "  (" + combo + ")", W / 2, 84 + tp, 17, "#ff9b3c", "center");
-  text("DIM " + level + " " + theme.name + "  ·  ING " + words + "  ·  MON " + coins, 16, 26 + tp, 14, "#7fd6ff", "left");
+  text("MUNDO " + level + " " + theme.name + "  ·  ING " + words + "  ·  MON " + coins, 16, 26 + tp, 13, "#7fd6ff", "left");
   bar(16, 36 + tp, 180, 14, player.hp / MAXHP, player.hp > 50 ? "#eb5046" : player.hp > 25 ? "#f0aa3c" : "#dc322d");
   let cx = 16;
   [[0, pShield, 7], [1, pTriple, 9], [2, pRapid, 9]].forEach(([k, v, mx]) => { if (v > 0) { const w = 78; bar(cx, 60 + tp, w, 16, v / mx, powerCol(k)); text(powerName(k), cx + 4, 73 + tp, 11, "#0c0c12", "left"); cx += w + 8; } });
@@ -754,18 +839,23 @@ function render() {
 
   if (state === "play" || state === "quiz" || state === "shop") { drawHUD(); }
   if (state === "play") { drawMinimap(); drawStick(stickL, "rgba(94,234,212,0.5)"); drawStick(stickR, "rgba(255,150,60,0.6)"); drawButtons(); }
-  if (bannerT > 0 && (state === "play" || state === "quiz")) { const a = clamp(bannerT / 0.6, 0, 1) * clamp((2.4 - bannerT) / 0.3, 0, 1); ctx.globalAlpha = a; text("DIMENSION " + level, W / 2, H * 0.3, Math.min(46, W / 9), "#fff", "center"); text(theme.name, W / 2, H * 0.3 + 38, Math.min(32, W / 11), hexA(theme.stud, 1), "center"); text("junta las gemas y cruza el portal", W / 2, H * 0.3 + 70, 14, "#9a9ab0", "center"); ctx.globalAlpha = 1; }
+  if (bannerT > 0 && (state === "play" || state === "quiz")) { const a = clamp(bannerT / 0.6, 0, 1) * clamp((2.4 - bannerT) / 0.3, 0, 1); ctx.globalAlpha = a; text("MUNDO " + level, W / 2, H * 0.3, Math.min(46, W / 9), "#fff", "center"); text(theme.name, W / 2, H * 0.3 + 38, Math.min(32, W / 11), hexA(theme.stud, 1), "center"); text("junta las gemas y cruza el portal", W / 2, H * 0.3 + 70, 14, "#9a9ab0", "center"); ctx.globalAlpha = 1; }
   if (state === "quiz") drawQuiz();
   if (state === "shop") drawShop();
+  if (state === "wardrobe") drawWardrobe();
   if (paused && state === "play") { ctx.fillStyle = "rgba(6,6,12,0.6)"; ctx.fillRect(0, 0, W, H); text("PAUSA", W / 2, H / 2, 48, "#f5cd46", "center"); text("toca II para seguir", W / 2, H / 2 + 40, 16, "#9a9ab0", "center"); drawButtons(); }
   if (state === "title") {
     ctx.fillStyle = "rgba(8,8,16,0.62)"; ctx.fillRect(0, 0, W, H);
     drawTaco(W / 2, H / 2 - 140, Math.min(70, W / 6), 7); // taco evolucionado de muestra
     text("CATACOMB", W / 2, H / 2 - 50, Math.min(72, W / 7), "#f5cd46", "center");
     text("el taco en la catacumba", W / 2, H / 2 - 8, 18, "#96c8eb", "center");
+    if (profile) text("Hola " + profile.name + "  ·  Ingles " + LESSONS.EN.levels[profile.eng].tag + "  ·  Chino " + LESSONS.ZH.levels[profile.zh].tag, W / 2, H / 2 + 20, 13, "#9be7c0", "center");
     text("TOCA PARA JUGAR", W / 2, H / 2 + 52, 22, "#f5cd46", "center");
     text("izq: mover (doble-toque = esquive) · der: apuntar/disparar", W / 2, H / 2 + 88, 14, "#8a8aa0", "center");
     text("dimensiones, tiendas, minimapa · aprende INGLES y CHINO (frases)", W / 2, H / 2 + 112, 13, "#7a7a90", "center");
+    const wr = titleWbRect();
+    ctx.fillStyle = "#2a2030"; ctx.strokeStyle = "#f5cd46"; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(wr.x, wr.y, wr.w, wr.h, 10); ctx.fill(); ctx.stroke();
+    text("VESTUARIO · MUNDIAL 2026", W / 2, wr.y + wr.h / 2 + 6, 15, "#f5cd46", "center");
     text("build " + VERSION, W / 2, H - 14 - safeB, 11, "#586", "center");
   }
   if (state === "over") {

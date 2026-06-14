@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v19 - CIUDAD REALISTA (calles, edificios 3D, sombras) + taco con gorro de rana + autos/gente con volumen";
+const VERSION = "v20 - BOTON CASA (menu in-game): opciones, vestuario, cambiar jugador y salir, sin frenar la partida";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -180,7 +180,8 @@ const OUTFITS = [
 let bank = 0, outfit = 0, unlocked = { 0: true };
 function saveWardrobe() { lset("bank", bank); lset("outfit", outfit); lset("unlocked", JSON.stringify(unlocked)); }
 let wbScroll = 0, wbDrag = null;
-function openWb() { wbScroll = 0; state = "wardrobe"; }
+let uiBack = "title"; // a donde vuelve "VOLVER" (title o menu del juego)
+function openWb(back) { uiBack = back || "title"; wbScroll = 0; state = "wardrobe"; }
 
 // ===== Aprendizaje ELITE: multi-idioma por niveles (Ingles CEFR/TOEFL + Chino HSK), palabras y FRASES =====
 // item EN: [es, en]   |   item ZH: [es, hanzi, pinyin]
@@ -394,13 +395,14 @@ function buttons() {
   const s = Math.max(40, Math.min(50, Math.round(W * 0.062))), m = 10, y = m + safeT;
   let x = W - m; const arr = [];
   const add = (id, w) => { x -= w; arr.push({ id, x, y, w, h: s }); x -= 8; };
-  add("mute", s); add("pause", s); add("weapon", Math.max(66, Math.round(s * 1.5))); add("lang", s);
+  add("menu", s); add("mute", s); add("pause", s); add("weapon", Math.max(66, Math.round(s * 1.5))); add("lang", s);
   return arr; // el DASH es por doble-toque en la zona de mover (sin boton)
 }
 function btnAt(px, py) { for (const b of buttons()) if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) return b.id; return null; }
 function cycleLang() { lang = LANGS[(LANGS.indexOf(lang) + 1) % LANGS.length]; lset("lang", lang); }
 function doButton(id) {
-  if (id === "mute") { mute = !mute; if (!mute) sGem(); }
+  if (id === "menu") { openMenu(); }
+  else if (id === "mute") { mute = !mute; if (!mute) sGem(); }
   else if (id === "pause") { paused = !paused; }
   else if (id === "weapon") { nextWeapon(); sShoot(); }
   else if (id === "lang") { cycleLang(); sRight(); }
@@ -414,9 +416,10 @@ addEventListener("keydown", e => {
   const k = e.key.toLowerCase(); keys[k] = true; audioInit();
   if (state === "title") { if (k === "v") openWb(); else if (k === "o") openOptions(); else startOrRestart(); return; }
   if (state === "over") { startOrRestart(); return; }
-  if (state === "options") { if (k === "escape") state = "title"; return; }
+  if (state === "options") { if (k === "escape") state = uiBack; return; }
+  if (state === "menu") { if (k === "escape") state = "play"; return; }
   if (state === "players") { if (k === "escape" && profile) state = "title"; return; }
-  if (state === "wardrobe") { if (k === "escape") state = "title"; return; }
+  if (state === "wardrobe") { if (k === "escape") state = uiBack; return; }
   if (state === "quiz") { if (k >= "1" && k <= "3") answerQuiz(+k - 1); return; }
   if (state === "shop") { if (k === "escape" || k === "enter") { shopLock = true; state = "play"; } return; }
   if (k === "1" && weaponUnlocked(0)) weapon = 0; if (k === "2" && weaponUnlocked(1)) weapon = 1; if (k === "3" && weaponUnlocked(2)) weapon = 2;
@@ -430,6 +433,7 @@ canvas.addEventListener("mousedown", e => {
   if (state === "title") { const w = titleWbRect(); if (e.clientX >= w.x && e.clientX <= w.x + w.w && e.clientY >= w.y && e.clientY <= w.y + w.h) { openWb(); mouse.down = false; return; } const o = titleOptRect(); if (e.clientX >= o.x && e.clientX <= o.x + o.w && e.clientY >= o.y && e.clientY <= o.y + o.h) { openOptions(); mouse.down = false; return; } startOrRestart(); return; }
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { optTapAt(e.clientX, e.clientY); mouse.down = false; return; }
+  if (state === "menu") { menuTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "players") { playersTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "wardrobe") { wbTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "shop") { shopTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -447,6 +451,7 @@ function onTouchStart(e) {
   if (state === "title") { for (const tch of e.changedTouches) { const w = titleWbRect(); if (tch.clientX >= w.x && tch.clientX <= w.x + w.w && tch.clientY >= w.y && tch.clientY <= w.y + w.h) { openWb(); return; } const o = titleOptRect(); if (tch.clientX >= o.x && tch.clientX <= o.x + o.w && tch.clientY >= o.y && tch.clientY <= o.y + o.h) { openOptions(); return; } } startOrRestart(); return; }
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { for (const tch of e.changedTouches) optTapAt(tch.clientX, tch.clientY); return; }
+  if (state === "menu") { for (const tch of e.changedTouches) menuTapAt(tch.clientX, tch.clientY); return; }
   if (state === "players") { for (const tch of e.changedTouches) playersTapAt(tch.clientX, tch.clientY); return; }
   if (state === "wardrobe") { const tch = e.changedTouches[0]; if (tch) wbDrag = { id: tch.identifier, y0: tch.clientY, x0: tch.clientX, s0: wbScroll, moved: 0 }; return; }
   if (state === "shop") { for (const tch of e.changedTouches) shopTapAt(tch.clientX, tch.clientY); return; }
@@ -607,7 +612,7 @@ function wbMaxScroll() { const v = wbView(); const rows = Math.ceil(OUTFITS.leng
 function wbCard(i) { const v = wbView(), r = Math.floor(i / WB_C), c = i % WB_C; return { x: v.x0 + c * v.cw, y: v.top + r * (WB_CH + WB_GAP) - wbScroll, w: v.cw - 8, h: WB_CH }; }
 function wbCloseRect() { const p = wbRect(); return { x: p.x + p.w / 2 - 80, y: p.y + p.h - 46, w: 160, h: 36 }; }
 function wbTapAt(px, py) {
-  const cl = wbCloseRect(); if (px >= cl.x && px <= cl.x + cl.w && py >= cl.y && py <= cl.y + cl.h) { state = "title"; return; }
+  const cl = wbCloseRect(); if (px >= cl.x && px <= cl.x + cl.w && py >= cl.y && py <= cl.y + cl.h) { state = uiBack; return; }
   const v = wbView(); if (py < v.top || py > v.bot) return;
   for (let i = 0; i < OUTFITS.length; i++) { const r = wbCard(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
     if (unlocked[i]) { outfit = i; saveWardrobe(); sRight(); }
@@ -648,7 +653,7 @@ function titleWbRect() { return { x: W / 2 - 152, y: H / 2 + 140, w: 144, h: 42 
 function titleOptRect() { return { x: W / 2 + 8, y: H / 2 + 140, w: 144, h: 42 }; }
 
 // ---- OPCIONES ----
-function openOptions() { state = "options"; }
+function openOptions(back) { uiBack = back || "title"; state = "options"; }
 function optRows() {
   return [
     { label: "SONIDO", val: settings.sound ? "SI" : "NO", act: () => { settings.sound = !settings.sound; mute = !settings.sound; } },
@@ -668,7 +673,7 @@ function optCloseRect() { const p = optRect(); return { x: p.x + p.w / 2 - 80, y
 function optTapAt(px, py) {
   const rows = optRows();
   for (let i = 0; i < rows.length; i++) { const r = optRowRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { rows[i].act(); saveSettings(); sRight(); return; } }
-  const c = optCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) state = "title";
+  const c = optCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) state = uiBack;
 }
 function drawOptions() {
   ctx.fillStyle = "rgba(0,0,0,0.72)"; ctx.fillRect(0, 0, W, H);
@@ -678,6 +683,35 @@ function drawOptions() {
   const rows = optRows();
   for (let i = 0; i < rows.length; i++) { const r = optRowRect(i); ctx.fillStyle = "#23273a"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 9); ctx.fill(); ctx.strokeStyle = "#3a3f55"; ctx.lineWidth = 1.5; ctx.stroke(); text(rows[i].label, r.x + 16, r.y + r.h / 2 + 6, 15, "#fff", "left"); text(rows[i].val, r.x + r.w - 16, r.y + r.h / 2 + 6, 15, "#f5cd46", "right"); }
   const c = optCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 10); ctx.fill(); text("VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 6, 16, "#ff9bb0", "center");
+}
+
+// ---- MENU del juego (boton casa) : continuar / opciones / vestuario / jugador / titulo ----
+function openMenu() { state = "menu"; }
+function menuRows() {
+  return [
+    { label: "CONTINUAR", col: "#5eead4", act: () => { state = "play"; } },
+    { label: "OPCIONES", col: "#7fd6ff", act: () => { openOptions("menu"); } },
+    { label: "VESTUARIO", col: "#f5cd46", act: () => { openWb("menu"); } },
+    { label: "CAMBIAR JUGADOR", col: "#9be7c0", act: () => { openPlayers(); } },
+    { label: "SALIR AL TITULO", col: "#ff9bb0", act: () => { state = "title"; } },
+  ];
+}
+function menuRect() { const n = menuRows().length, w = Math.min(420, W - 36), h = 78 + n * 58; return { x: (W - w) / 2, y: Math.max(20 + safeT, (H - h) / 2), w, h }; }
+function menuRowRect(i) { const p = menuRect(); return { x: p.x + 22, y: p.y + 66 + i * 58, w: p.w - 44, h: 48 }; }
+function menuTapAt(px, py) { const rows = menuRows(); for (let i = 0; i < rows.length; i++) { const r = menuRowRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { rows[i].act(); sRight(); return; } } }
+function drawMenu() {
+  ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, W, H);
+  const p = menuRect();
+  ctx.shadowColor = "#5eead4"; ctx.shadowBlur = 18; ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#5eead4"; ctx.lineWidth = 3; ctx.stroke();
+  drawHouse(W / 2 - 52, p.y + 36, 11); text("MENU", W / 2 + 6, p.y + 44, 24, "#fff", "center");
+  const rows = menuRows();
+  for (let i = 0; i < rows.length; i++) { const r = menuRowRect(i); ctx.fillStyle = "#23273a"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.strokeStyle = "#3a3f55"; ctx.lineWidth = 1.5; ctx.stroke(); text(rows[i].label, W / 2, r.y + r.h / 2 + 6, 17, rows[i].col, "center"); }
+}
+function drawHouse(cx, cy, r) {
+  ctx.fillStyle = "#f5cd46";
+  ctx.beginPath(); ctx.moveTo(cx - r, cy - r * 0.05); ctx.lineTo(cx, cy - r * 0.9); ctx.lineTo(cx + r, cy - r * 0.05); ctx.closePath(); ctx.fill();
+  ctx.fillRect(cx - r * 0.72, cy - r * 0.05, r * 1.44, r * 0.95);
+  ctx.fillStyle = "#15161f"; ctx.fillRect(cx - r * 0.24, cy + r * 0.25, r * 0.48, r * 0.65);
 }
 
 // ---- JUGADORES (perfiles multijugador: cada uno con su progreso) ----
@@ -1108,6 +1142,7 @@ function drawButtons() {
   for (const b of buttons()) {
     ctx.fillStyle = "rgba(28,30,42,0.9)"; ctx.strokeStyle = "rgba(120,120,150,0.6)"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 9); ctx.fill(); ctx.stroke();
+    if (b.id === "menu") { drawHouse(b.x + b.w / 2, b.y + b.h / 2 + 3, b.h * 0.3); continue; }
     let lbl = "", col = "#dfe2ea";
     if (b.id === "mute") { lbl = mute ? "MUTE" : "SON"; col = mute ? "#888" : "#dfe2ea"; }
     else if (b.id === "pause") { lbl = paused ? ">" : "II"; }
@@ -1231,6 +1266,7 @@ function render() {
   if (state === "shop") drawShop();
   if (state === "wardrobe") drawWardrobe();
   if (state === "options") drawOptions();
+  if (state === "menu") drawMenu();
   if (state === "players") drawPlayers();
   if (paused && state === "play") { ctx.fillStyle = "rgba(6,6,12,0.6)"; ctx.fillRect(0, 0, W, H); text("PAUSA", W / 2, H / 2, 48, "#f5cd46", "center"); text("toca II para seguir", W / 2, H / 2 + 40, 16, "#9a9ab0", "center"); drawButtons(); }
   if (state === "title") {

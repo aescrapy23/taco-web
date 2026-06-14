@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v17 - OPCIONES (sonido/vibracion/graficos/dificultad) + portales de MATE y LOGICA (neural educativo)";
+const VERSION = "v18 - PERFILES multijugador (cada jugador con su progreso en el mismo celu)";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -114,7 +114,7 @@ const WEAPONS = [
   { name: "LASER", cd: 0.11, speed: 1150, pellets: 1, spread: 0, life: 1.1, r: 9, dmg: 3, unlock: 8 },
   { name: "PLASMA", cd: 0.30, speed: 720, pellets: 3, spread: 14, life: 0.9, r: 8, dmg: 2, unlock: 11 },
 ];
-let maxWorld = +(localStorage.getItem("catacomb_maxworld") || 1);
+let maxWorld = 1;
 function weaponUnlocked(i) { return (WEAPONS[i].unlock || 1) <= maxWorld; }
 function nextWeapon() { let i = weapon; for (let k = 0; k < WEAPONS.length; k++) { i = (i + 1) % WEAPONS.length; if (weaponUnlocked(i)) { weapon = i; return; } } }
 
@@ -177,11 +177,8 @@ const OUTFITS = [
   { name: "ARCOIRIS", c1: "#ff4d4d", c2: "#4dd2ff", band: "#f5d000", cost: 45 },
   { name: "ORO MUNDIAL", c1: "#f5cd46", c2: "#ffe896", band: "#caa23a", cost: 60 },
 ];
-let bank = +(localStorage.getItem("catacomb_bank") || 0);
-let outfit = +(localStorage.getItem("catacomb_outfit") || 0);
-let unlocked = {}; try { unlocked = JSON.parse(localStorage.getItem("catacomb_unlocked") || "{}"); } catch (e) { unlocked = {}; }
-unlocked[0] = true;
-function saveWardrobe() { try { localStorage.setItem("catacomb_bank", bank); localStorage.setItem("catacomb_outfit", outfit); localStorage.setItem("catacomb_unlocked", JSON.stringify(unlocked)); } catch (e) {} }
+let bank = 0, outfit = 0, unlocked = { 0: true };
+function saveWardrobe() { lset("bank", bank); lset("outfit", outfit); lset("unlocked", JSON.stringify(unlocked)); }
 let wbScroll = 0, wbDrag = null;
 function openWb() { wbScroll = 0; state = "wardrobe"; }
 
@@ -202,27 +199,54 @@ const LESSONS = {
   ] },
 };
 const LANGS = ["EN", "ZH"];
-let lang = localStorage.getItem("catacomb_lang") || "EN";
-if (LANGS.indexOf(lang) < 0) lang = "EN";
-let lstats = {}; try { lstats = JSON.parse(localStorage.getItem("catacomb_lstats") || "{}"); } catch (e) { lstats = {}; }
-function saveL() { try { localStorage.setItem("catacomb_lstats", JSON.stringify(lstats)); } catch (e) {} }
+let lang = "EN";
+let lstats = {};
+function saveL() { lset("lstats", JSON.stringify(lstats)); }
 function itemKey(it) { return it[1]; }
 function lstat(k) { return lstats[k] || (lstats[k] = { seen: 0, ok: 0, streak: 0 }); }
 function masteredK(k) { const s = lstats[k]; return !!s && s.streak >= 3; }
 function dispOf(L, it) { return L.code === "zh-CN" ? it[1] + "  " + it[2] : it[1]; }
 function levelMastered(L, lv) { let n = 0; for (const it of lv.items) if (masteredK(itemKey(it))) n++; return n; }
 function langTierIdx(L) { let m = L.levels.length - 1; for (let i = 0; i < L.levels.length - 1; i++) if (levelMastered(L, L.levels[i]) < 5) { m = i; break; } return Math.max(m, startTierFor(L)); }
-// Perfil del usuario: nombre + edad -> nivel asignado (siempre 1 mayor a lo que toca por la edad).
-let profile = null; try { profile = JSON.parse(localStorage.getItem("catacomb_profile") || "null"); } catch (e) { profile = null; }
+// Perfil + niveles asignados por edad (siempre 1 mayor a lo que toca por la edad).
+let profile = null;
 function ageToTier(age, maxT) { const b = age < 8 ? 0 : age < 11 ? 1 : age < 14 ? 2 : age < 17 ? 3 : 4; return clamp(b + 1, 0, maxT); }
 function startTierFor(L) { if (!profile) return 0; return L.code === "zh-CN" ? (profile.zh || 0) : (profile.eng || 0); }
-function askProfile() {
-  let nm = null; try { nm = prompt("Hola! Como te llamas?", (profile && profile.name) || ""); } catch (e) {}
-  nm = ((nm || "JUGADOR").trim().slice(0, 14)) || "JUGADOR";
-  let ageStr = null; try { ageStr = prompt("Cuantos anios tenes? (un numero)", (profile && String(profile.age)) || "10"); } catch (e) {}
+
+// ===== Perfiles multijugador (cada jugador con su propio progreso) =====
+let players = []; try { players = JSON.parse(localStorage.getItem("catacomb_players") || "[]"); } catch (e) { players = []; }
+let curPlayer = localStorage.getItem("catacomb_current") || "";
+function pkey(k) { return "pl_" + curPlayer + "_" + k; }
+function lget(k) { try { return curPlayer ? localStorage.getItem(pkey(k)) : null; } catch (e) { return null; } }
+function lset(k, v) { try { if (curPlayer) localStorage.setItem(pkey(k), v); } catch (e) {} }
+function savePlayers() { try { localStorage.setItem("catacomb_players", JSON.stringify(players)); localStorage.setItem("catacomb_current", curPlayer); } catch (e) {} }
+function loadPlayerData() {
+  best = +(lget("best") || 0); bank = +(lget("bank") || 0); outfit = +(lget("outfit") || 0); maxWorld = +(lget("maxworld") || 1);
+  lang = lget("lang") || "EN"; if (LANGS.indexOf(lang) < 0) lang = "EN";
+  try { unlocked = JSON.parse(lget("unlocked") || "{}"); } catch (e) { unlocked = {}; } unlocked[0] = true;
+  try { lstats = JSON.parse(lget("lstats") || "{}"); } catch (e) { lstats = {}; }
+  try { profile = JSON.parse(lget("profile") || "null"); } catch (e) { profile = null; }
+  outfit = clamp(outfit, 0, OUTFITS.length - 1);
+}
+function switchPlayer(name) { curPlayer = name; savePlayers(); loadPlayerData(); }
+function createPlayer() {
+  let nm = null; try { nm = prompt("Nombre del jugador:", ""); } catch (e) {}
+  nm = (nm || "").trim().slice(0, 14); if (!nm) return false;
+  let ageStr = null; try { ageStr = prompt("Edad de " + nm + ":", "10"); } catch (e) {}
   let age = parseInt(ageStr); if (!age || age < 3 || age > 99) age = 10;
+  if (players.indexOf(nm) < 0) players.push(nm);
+  curPlayer = nm; savePlayers();
+  best = 0; bank = 0; outfit = 0; maxWorld = 1; unlocked = { 0: true }; lstats = {}; lang = "EN";
   profile = { name: nm, age: age, eng: ageToTier(age, LESSONS.EN.levels.length - 1), zh: ageToTier(Math.max(6, age - 3), LESSONS.ZH.levels.length - 1) };
-  try { localStorage.setItem("catacomb_profile", JSON.stringify(profile)); } catch (e) {}
+  lset("best", 0); lset("bank", 0); lset("outfit", 0); lset("maxworld", 1); lset("unlocked", JSON.stringify(unlocked)); lset("lstats", "{}"); lset("lang", "EN"); lset("profile", JSON.stringify(profile));
+  return true;
+}
+function deletePlayer(name) {
+  const i = players.indexOf(name); if (i < 0) return;
+  players.splice(i, 1);
+  try { ["best", "bank", "outfit", "maxworld", "lang", "unlocked", "lstats", "profile"].forEach(k => localStorage.removeItem("pl_" + name + "_" + k)); } catch (e) {}
+  if (curPlayer === name) { curPlayer = players[0] || ""; if (curPlayer) loadPlayerData(); else profile = null; }
+  savePlayers();
 }
 function masteredTotalL(L) { let n = 0, tot = 0; for (const lv of L.levels) for (const it of lv.items) { tot++; if (masteredK(itemKey(it))) n++; } return [n, tot]; }
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = randi(0, i + 1); const tmp = a[i]; a[i] = a[j]; a[j] = tmp; } return a; }
@@ -240,7 +264,7 @@ function speak(txt, code) { try { if (!mute && window.speechSynthesis) { const u
 // ---------- Estado ----------
 let state = "title";  // title | play | quiz | over
 let paused = false;
-let level = 1, score = 0, best = +(localStorage.getItem("catacomb_best") || 0), words = 0;
+let level = 1, score = 0, best = 0, words = 0;
 const MAXHP = 100;
 const player = { x: 0, y: 0, r: 18, vx: 0, vy: 0, hp: MAXHP, inv: 0, aimx: 1, aimy: 0, fire: 0 };
 let gems = [], enemies = [], bullets = [], parts = [], heals = [], powerDrops = [], eshots = [], portal = null;
@@ -326,7 +350,7 @@ function genLevel() {
   buildAmbient();
   buildWorld();
   buildMission();
-  maxWorld = Math.max(maxWorld, level); try { localStorage.setItem("catacomb_maxworld", maxWorld); } catch (e) {}
+  maxWorld = Math.max(maxWorld, level); lset("maxworld", maxWorld);
   // recompensa: 1 skin gratis cada 2 mundos
   const freeSkins = Math.min(Math.floor(maxWorld / 2), OUTFITS.length - 1); let newSkin = false;
   for (let i = 1; i <= freeSkins; i++) if (!unlocked[i]) { unlocked[i] = true; newSkin = true; }
@@ -374,7 +398,7 @@ function buttons() {
   return arr; // el DASH es por doble-toque en la zona de mover (sin boton)
 }
 function btnAt(px, py) { for (const b of buttons()) if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) return b.id; return null; }
-function cycleLang() { lang = LANGS[(LANGS.indexOf(lang) + 1) % LANGS.length]; try { localStorage.setItem("catacomb_lang", lang); } catch (e) {} }
+function cycleLang() { lang = LANGS[(LANGS.indexOf(lang) + 1) % LANGS.length]; lset("lang", lang); }
 function doButton(id) {
   if (id === "mute") { mute = !mute; if (!mute) sGem(); }
   else if (id === "pause") { paused = !paused; }
@@ -391,6 +415,7 @@ addEventListener("keydown", e => {
   if (state === "title") { if (k === "v") openWb(); else if (k === "o") openOptions(); else startOrRestart(); return; }
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { if (k === "escape") state = "title"; return; }
+  if (state === "players") { if (k === "escape" && profile) state = "title"; return; }
   if (state === "wardrobe") { if (k === "escape") state = "title"; return; }
   if (state === "quiz") { if (k >= "1" && k <= "3") answerQuiz(+k - 1); return; }
   if (state === "shop") { if (k === "escape" || k === "enter") { shopLock = true; state = "play"; } return; }
@@ -405,6 +430,7 @@ canvas.addEventListener("mousedown", e => {
   if (state === "title") { const w = titleWbRect(); if (e.clientX >= w.x && e.clientX <= w.x + w.w && e.clientY >= w.y && e.clientY <= w.y + w.h) { openWb(); mouse.down = false; return; } const o = titleOptRect(); if (e.clientX >= o.x && e.clientX <= o.x + o.w && e.clientY >= o.y && e.clientY <= o.y + o.h) { openOptions(); mouse.down = false; return; } startOrRestart(); return; }
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { optTapAt(e.clientX, e.clientY); mouse.down = false; return; }
+  if (state === "players") { playersTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "wardrobe") { wbTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "shop") { shopTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "quiz") { const o = quizOptAt(e.clientX, e.clientY); if (o >= 0) answerQuiz(o); return; }
@@ -421,6 +447,7 @@ function onTouchStart(e) {
   if (state === "title") { for (const tch of e.changedTouches) { const w = titleWbRect(); if (tch.clientX >= w.x && tch.clientX <= w.x + w.w && tch.clientY >= w.y && tch.clientY <= w.y + w.h) { openWb(); return; } const o = titleOptRect(); if (tch.clientX >= o.x && tch.clientX <= o.x + o.w && tch.clientY >= o.y && tch.clientY <= o.y + o.h) { openOptions(); return; } } startOrRestart(); return; }
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { for (const tch of e.changedTouches) optTapAt(tch.clientX, tch.clientY); return; }
+  if (state === "players") { for (const tch of e.changedTouches) playersTapAt(tch.clientX, tch.clientY); return; }
   if (state === "wardrobe") { const tch = e.changedTouches[0]; if (tch) wbDrag = { id: tch.identifier, y0: tch.clientY, x0: tch.clientX, s0: wbScroll, moved: 0 }; return; }
   if (state === "shop") { for (const tch of e.changedTouches) shopTapAt(tch.clientX, tch.clientY); return; }
   for (const tch of e.changedTouches) {
@@ -468,7 +495,7 @@ function readInput() {
 }
 
 // ---------- Flujo ----------
-function startOrRestart() { if (!profile) askProfile(); level = 1; score = 0; words = 0; coins = 5; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; dashT = 0; dashCD = 0; genLevel(); state = "play"; sLevel(); }
+function startOrRestart() { if (!profile || !curPlayer) { openPlayers(); return; } level = 1; score = 0; words = 0; coins = 5; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; dashT = 0; dashCD = 0; genLevel(); state = "play"; sLevel(); }
 
 // Portal "neural": mezcla idioma + matematica + logica segun avance
 function openQuiz() {
@@ -630,7 +657,7 @@ function optRows() {
     { label: "DIFICULTAD", val: ["FACIL", "NORMAL", "DIFICIL"][settings.difficulty], act: () => { settings.difficulty = (settings.difficulty + 1) % 3; } },
     { label: "IDIOMA", val: lang === "ZH" ? "CHINO" : "INGLES", act: () => { cycleLang(); } },
     { label: "PANTALLA COMPLETA", val: "►", act: () => { try { if (!document.fullscreenElement) (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen).call(document.documentElement); else document.exitFullscreen(); } catch (e) {} } },
-    { label: "CAMBIAR JUGADOR", val: profile ? profile.name : "►", act: () => { askProfile(); } },
+    { label: "CAMBIAR JUGADOR", val: curPlayer || "►", act: () => { openPlayers(); } },
     { label: "BORRAR PROGRESO", val: "⚠", act: () => { let ok = false; try { ok = confirm("Borrar TODO el progreso?"); } catch (e) {} if (ok) { try { localStorage.clear(); } catch (e) {} try { location.reload(); } catch (e) {} } } },
   ];
 }
@@ -652,10 +679,51 @@ function drawOptions() {
   const c = optCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 10); ctx.fill(); text("VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 6, 16, "#ff9bb0", "center");
 }
 
+// ---- JUGADORES (perfiles multijugador: cada uno con su progreso) ----
+function openPlayers() { state = "players"; }
+function rawBest(name) { try { return +(localStorage.getItem("pl_" + name + "_best") || 0); } catch (e) { return 0; } }
+function plRect() { const w = Math.min(500, W - 28), h = Math.min(560, H - 28); return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
+function plRowRect(i) { const p = plRect(); return { x: p.x + 22, y: p.y + 84 + i * 56, w: p.w - 44, h: 48 }; }
+function plDelRect(i) { const r = plRowRect(i); return { x: r.x + r.w - 46, y: r.y + 7, w: 34, h: 34 }; }
+function plNewRect() { const p = plRect(); return { x: p.x + 22, y: p.y + 84 + players.length * 56, w: p.w - 44, h: 48 }; }
+function plCloseRect() { const p = plRect(); return { x: p.x + p.w / 2 - 80, y: p.y + p.h - 46, w: 160, h: 36 }; }
+function playersTapAt(px, py) {
+  for (let i = 0; i < players.length; i++) {
+    const d = plDelRect(i);
+    if (px >= d.x && px <= d.x + d.w && py >= d.y && py <= d.y + d.h) {
+      let ok = false; try { ok = confirm("Borrar el jugador \"" + players[i] + "\" y su progreso?"); } catch (e) {}
+      if (ok) { deletePlayer(players[i]); saveSettings(); } return;
+    }
+    const r = plRowRect(i);
+    if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { switchPlayer(players[i]); sRight(); startOrRestart(); return; }
+  }
+  const n = plNewRect();
+  if (px >= n.x && px <= n.x + n.w && py >= n.y && py <= n.y + n.h) { if (createPlayer()) { sPower(); startOrRestart(); } return; }
+  if (profile) { const c = plCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) state = "title"; }
+}
+function drawPlayers() {
+  ctx.fillStyle = "rgba(0,0,0,0.78)"; ctx.fillRect(0, 0, W, H);
+  const p = plRect();
+  ctx.shadowColor = "#5eead4"; ctx.shadowBlur = 18; ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#5eead4"; ctx.lineWidth = 3; ctx.stroke();
+  text("JUGADORES", W / 2, p.y + 40, 22, "#5eead4", "center");
+  text("cada jugador guarda su propio progreso", W / 2, p.y + 64, 12, "#8a8aa0", "center");
+  for (let i = 0; i < players.length; i++) {
+    const r = plRowRect(i), sel = players[i] === curPlayer;
+    ctx.fillStyle = sel ? "#1d3a34" : "#23273a"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill();
+    ctx.strokeStyle = sel ? "#5eead4" : "#3a3f55"; ctx.lineWidth = sel ? 2.5 : 1.5; ctx.stroke();
+    text((sel ? "● " : "") + players[i], r.x + 16, r.y + r.h / 2 - 2, 17, "#fff", "left");
+    text("record " + rawBest(players[i]), r.x + 16, r.y + r.h / 2 + 16, 12, "#9be7c0", "left");
+    const d = plDelRect(i); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(d.x, d.y, d.w, d.h, 8); ctx.fill(); text("✕", d.x + d.w / 2, d.y + d.h / 2 + 6, 16, "#ff9bb0", "center");
+  }
+  const n = plNewRect(); ctx.fillStyle = "#2a2030"; ctx.strokeStyle = "#f5cd46"; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(n.x, n.y, n.w, n.h, 10); ctx.fill(); ctx.stroke();
+  text("+ NUEVO JUGADOR", n.x + n.w / 2, n.y + n.h / 2 + 6, 16, "#f5cd46", "center");
+  if (profile) { const c = plCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 10); ctx.fill(); text("VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 6, 16, "#ff9bb0", "center"); }
+}
+
 function hurt(d) {
   if (player.inv > 0 || pShield > 0) return;
   player.hp -= d; player.inv = 0.7; shake = Math.min(shake + 8, 14); flash("235,80,64", 0.22); vib(70); sHurt(); addParts(player.x, player.y, 14, "#eb5040", 200);
-  if (player.hp <= 0) { player.hp = 0; combo = 0; best = Math.max(best, score); localStorage.setItem("catacomb_best", best); bank += coins; saveWardrobe(); state = "over"; }
+  if (player.hp <= 0) { player.hp = 0; combo = 0; best = Math.max(best, score); lset("best", best); bank += coins; saveWardrobe(); state = "over"; }
 }
 
 function update(dt) {
@@ -1057,6 +1125,7 @@ function render() {
   if (state === "shop") drawShop();
   if (state === "wardrobe") drawWardrobe();
   if (state === "options") drawOptions();
+  if (state === "players") drawPlayers();
   if (paused && state === "play") { ctx.fillStyle = "rgba(6,6,12,0.6)"; ctx.fillRect(0, 0, W, H); text("PAUSA", W / 2, H / 2, 48, "#f5cd46", "center"); text("toca II para seguir", W / 2, H / 2 + 40, 16, "#9a9ab0", "center"); drawButtons(); }
   if (state === "title") {
     ctx.fillStyle = "rgba(8,8,16,0.62)"; ctx.fillRect(0, 0, W, H);
@@ -1090,6 +1159,24 @@ function render() {
 if (!CanvasRenderingContext2D.prototype.roundRect) {
   CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) { this.beginPath(); this.moveTo(x + r, y); this.arcTo(x + w, y, x + w, y + h, r); this.arcTo(x + w, y + h, x, y + h, r); this.arcTo(x, y + h, x, y, r); this.arcTo(x, y, x + w, y, r); this.closePath(); return this; };
 }
+
+// ===== Arranque de perfiles: migrar progreso viejo (1 jugador) o pedir crear jugador =====
+(function initPlayers() {
+  if (players.length === 0) {
+    let hadOld = null; try { hadOld = localStorage.getItem("catacomb_profile") || localStorage.getItem("catacomb_best") || localStorage.getItem("catacomb_maxworld"); } catch (e) {}
+    if (hadOld) {
+      let pr = null; try { pr = JSON.parse(localStorage.getItem("catacomb_profile") || "null"); } catch (e) {}
+      const nm = (pr && pr.name) ? String(pr.name).slice(0, 14) : "JUGADOR 1";
+      players.push(nm); curPlayer = nm; savePlayers();
+      const map = { best: "catacomb_best", bank: "catacomb_bank", outfit: "catacomb_outfit", maxworld: "catacomb_maxworld", lang: "catacomb_lang", unlocked: "catacomb_unlocked", lstats: "catacomb_lstats", profile: "catacomb_profile" };
+      for (const k in map) { let v = null; try { v = localStorage.getItem(map[k]); } catch (e) {} if (v != null) lset(k, v); }
+      loadPlayerData(); state = "title";
+    } else { state = "players"; }
+  } else {
+    if (!curPlayer || players.indexOf(curPlayer) < 0) curPlayer = players[0];
+    loadPlayerData(); state = "title";
+  }
+})();
 
 let last = performance.now();
 function frame(now) { let dt = (now - last) / 1000; last = now; if (dt > 0.05) dt = 0.05; update(dt); render(); requestAnimationFrame(frame); }

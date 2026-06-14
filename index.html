@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v15 - mundos vivos (gente/autos/props) + MISIONES + armas desbloqueables + skins por avanzar";
+const VERSION = "v16 - CIUDAD GRANDE RECORRIBLE (camara sigue al taco) + mundo vivo";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -49,17 +49,7 @@ function resize() {
   safeT = parseInt(cs.getPropertyValue("--sat")) || 0;
 }
 let _rt = null;
-function onResize() {
-  resize();
-  if (_rt) clearTimeout(_rt);
-  _rt = setTimeout(() => {
-    if (state === "play" || state === "quiz") {
-      const ts2 = clamp(Math.round(Math.min(W, H) / 13), 44, 64);
-      const nc = Math.max(10, Math.floor(W / ts2)), nr = Math.max(8, Math.floor(H / ts2));
-      if (nc !== cols || nr !== rows) genLevel();
-    }
-  }, 220);
-}
+function onResize() { resize(); if (cols) { const c = camClamp(); camX = c.tx; camY = c.ty; } } // mundo fijo: solo reajusta camara
 window.addEventListener("resize", onResize);
 window.addEventListener("orientationchange", onResize);
 if (window.visualViewport) window.visualViewport.addEventListener("resize", onResize);
@@ -249,7 +239,9 @@ let peds = [], cars = [], props = [], mission = null; // mundo vivo (gente, auto
 let pShield = 0, pTriple = 0, pRapid = 0, weapon = 0;
 let shop = null, shopLock = false, coins = 0; // tienda + monedas (divisa)
 let dashT = 0, dashCD = 0, dashDir = { x: 1, y: 0 }, lastMoveX = 1, lastMoveY = 0, lastLeftTap = 0; // esquive
+let camX = 0, camY = 0; // camara (recorre el mundo grande)
 let shake = 0, t = 0;
+function camClamp() { const tx = clamp(player.x - W / 2, 0, Math.max(0, cols * TS - W)), ty = clamp(player.y - H / 2, 0, Math.max(0, rows * TS - H)); return { tx, ty }; }
 let quiz = null; // {prompt, options[], correct, sel, fb}
 // Juice 4D: texto flotante, combo de bajas, destello de pantalla
 let floaters = [], combo = 0, comboT = 0, flashT = 0, flashMax = 0.001, flashCol = "255,255,255";
@@ -300,9 +292,7 @@ function farFree(fx, fy) {
 // ---------- Nivel ----------
 function genLevel() {
   theme = PALETTES[(level - 1) % PALETTES.length];
-  TS = clamp(Math.round(Math.min(W, H) / 13), 44, 64);
-  cols = Math.max(10, Math.floor(W / TS));
-  rows = Math.max(8, Math.floor(H / TS));
+  TS = 52; cols = 46; rows = 30; // mundo grande FIJO; la camara lo recorre (ciudad explorable)
   grid = new Array(cols * rows).fill(0);
   for (let x = 0; x < cols; x++) { grid[x] = 1; grid[(rows - 1) * cols + x] = 1; }
   for (let y = 0; y < rows; y++) { grid[y * cols] = 1; grid[y * cols + cols - 1] = 1; }
@@ -315,6 +305,7 @@ function genLevel() {
   for (let y = sy - 1; y <= sy + 1; y++) for (let x = sx - 1; x <= sx + 1; x++) if (x > 0 && y > 0 && x < cols - 1 && y < rows - 1) grid[y * cols + x] = 0;
 
   player.x = (sx + 0.5) * TS; player.y = (sy + 0.5) * TS; player.vx = player.vy = 0;
+  { const c = camClamp(); camX = c.tx; camY = c.ty; }
   gems = []; enemies = []; bullets = []; parts = []; heals = []; powerDrops = []; eshots = []; rings = []; peds = []; cars = []; props = []; portal = null;
   const ng = 4 + level;
   for (let i = 0; i < ng; i++) { const p = freeCell(); gems.push({ x: p.x, y: p.y }); }
@@ -459,7 +450,7 @@ function readInput() {
   const ml = len(mx, my); if (ml > 1) { mx /= ml; my /= ml; }
   let ax = 0, ay = 0, firing = false;
   if (stickR.id !== null) { const dx = stickR.x - stickR.bx, dy = stickR.y - stickR.by, d = len(dx, dy); if (d > 10) { ax = dx / d; ay = dy / d; } else { ax = player.aimx; ay = player.aimy; } firing = true; }
-  else if (mouse.down) { const dx = mouse.x - player.x, dy = mouse.y - player.y, d = len(dx, dy); if (d > 1) { ax = dx / d; ay = dy / d; firing = true; } }
+  else if (mouse.down) { const dx = mouse.x - (player.x - camX), dy = mouse.y - (player.y - camY), d = len(dx, dy); if (d > 1) { ax = dx / d; ay = dy / d; firing = true; } }
   return { mx, my, ax, ay, firing };
 }
 
@@ -612,6 +603,7 @@ function update(dt) {
   // esquive / dash
   if (dashCD > 0) dashCD -= dt;
   if (dashT > 0) { dashT -= dt; moveAxis(player, dashDir.x * 880 * dt, 0); moveAxis(player, 0, dashDir.y * 880 * dt); }
+  { const c = camClamp(); camX += (c.tx - camX) * Math.min(1, dt * 9); camY += (c.ty - camY) * Math.min(1, dt * 9); } // camara sigue al taco
   // tienda
   if (shop) { const near = len(shop.x - player.x, shop.y - player.y) < player.r + 28; if (near && !shopLock) { state = "shop"; return; } if (!near) shopLock = false; }
   if (player.inv > 0) player.inv -= dt;
@@ -732,8 +724,8 @@ function drawBlock(g, px, py, s, col) {
   g.fillStyle = shade(col, 1.15); g.beginPath(); g.arc(px + s / 2, py + s / 2, s * 0.22, 0, 7); g.fill();
 }
 function buildDungeonCache() {
-  dcanvas.width = Math.ceil(cols * TS * DPR); dcanvas.height = Math.ceil(rows * TS * DPR);
-  dctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  dcanvas.width = cols * TS; dcanvas.height = rows * TS;
+  dctx.setTransform(1, 0, 0, 1, 0, 0);
   dctx.fillStyle = theme.floor; dctx.fillRect(0, 0, cols * TS, rows * TS);
   dctx.fillStyle = theme.stud;
   for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) if (!solid(x, y)) dctx.fillRect(x * TS + TS / 2 - 2, y * TS + TS / 2 - 2, 4, 4);
@@ -933,11 +925,16 @@ function drawQuiz() {
 }
 
 function render() {
+  // fondo (espacio de pantalla)
+  ctx.fillStyle = theme.floor; ctx.fillRect(0, 0, W, H);
+  const bgGlow = ctx.createRadialGradient(W / 2, H * 0.42, 40, W / 2, H * 0.42, Math.max(W, H) * 0.62);
+  bgGlow.addColorStop(0, hexA(theme.stud, 0.12)); bgGlow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = bgGlow; ctx.fillRect(0, 0, W, H);
+  // MUNDO con camara
   ctx.save();
-  if (shake > 0) ctx.translate(rand(-shake, shake), rand(-shake, shake));
-  drawDungeon();
-  for (const a of ambient) { ctx.globalAlpha = 0.2 + 0.28 * (0.5 + 0.5 * Math.sin(t * 2 + a.tw)); ctx.fillStyle = theme.stud; ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, 7); ctx.fill(); }
-  ctx.globalAlpha = 1;
+  let _ox = camX, _oy = camY; if (shake > 0) { _ox -= rand(-shake, shake); _oy -= rand(-shake, shake); }
+  ctx.translate(-_ox, -_oy);
+  if (dcanvas.width > 0) ctx.drawImage(dcanvas, 0, 0, cols * TS, rows * TS);
   for (const pr of props) drawProp(pr);
   for (const g of gems) drawGem(g.x, g.y);
   for (const h of heals) drawHeal(h.x, h.y);
@@ -957,6 +954,9 @@ function render() {
   for (const f of floaters) { ctx.globalAlpha = clamp(f.life, 0, 1); text(f.txt, f.x, f.y, 17, f.col, "center"); }
   ctx.globalAlpha = 1;
   ctx.restore();
+  // polvo de ambiente (espacio de pantalla, parallax)
+  for (const a of ambient) { ctx.globalAlpha = 0.2 + 0.26 * (0.5 + 0.5 * Math.sin(t * 2 + a.tw)); ctx.fillStyle = theme.stud; ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, 7); ctx.fill(); }
+  ctx.globalAlpha = 1;
 
   // Viñeta + destello (4D)
   const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.32, W / 2, H / 2, Math.max(W, H) * 0.72);

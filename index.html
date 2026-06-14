@@ -95,12 +95,14 @@ const sRight = () => { [659, 988, 1319].forEach((f, i) => setTimeout(() => beep(
 const sWrong = () => beep(180, 0.3, "square", 0.07);
 
 // ---------- Datos ----------
+// Dimensiones tipo Roblox: cada una con su nombre y paleta VIVA
 const PALETTES = [
-  { wall: "#404a5c", floor: "#1e1f2a", stud: "#2a2c38" },
-  { wall: "#3c6042", floor: "#1c261e", stud: "#28382c" },
-  { wall: "#62466e", floor: "#241e2c", stud: "#362a3c" },
-  { wall: "#70523a", floor: "#28201c", stud: "#3a2e26" },
-  { wall: "#405c70", floor: "#1c222c", stud: "#28343c" },
+  { name: "CAVERNA", wall: "#4a73d6", floor: "#1a2030", stud: "#6b90e6" },
+  { name: "BOSQUE",  wall: "#39a85a", floor: "#142318", stud: "#5fd07e" },
+  { name: "ARCANO",  wall: "#9a52e0", floor: "#221830", stud: "#bd84ff" },
+  { name: "VOLCAN",  wall: "#e0653a", floor: "#2a1610", stud: "#ff9060" },
+  { name: "HIELO",   wall: "#3ec0d8", floor: "#10222a", stud: "#7fe6f5" },
+  { name: "NEON",    wall: "#e0479a", floor: "#220f1c", stud: "#ff86c4" },
 ];
 let theme = PALETTES[0];
 
@@ -163,6 +165,7 @@ let shake = 0, t = 0;
 let quiz = null; // {prompt, options[], correct, sel, fb}
 // Juice 4D: texto flotante, combo de bajas, destello de pantalla
 let floaters = [], combo = 0, comboT = 0, flashT = 0, flashMax = 0.001, flashCol = "255,255,255";
+let walkPhase = 0, playerMoving = false; // animacion del taco humanoide
 function floatText(x, y, txt, col) { floaters.push({ x, y, txt, col, life: 1.0 }); }
 function flash(col, dur) { flashCol = col; flashT = dur; flashMax = dur; }
 
@@ -339,7 +342,7 @@ function answerQuiz(i) {
   saveL();
   quiz.fb = 1.9;
 }
-function nextLevel() { level++; score += 120; player.hp = Math.min(MAXHP, player.hp + 30); genLevel(); state = "play"; flash("245,205,70", 0.3); floatText(player.x, player.y - 32, "NIVEL " + level, "#f5cd46"); sLevel(); }
+function nextLevel() { level++; score += 120; player.hp = Math.min(MAXHP, player.hp + 30); genLevel(); state = "play"; flash("245,205,70", 0.3); floatText(player.x, player.y - 34, "DIMENSION " + level + "  " + theme.name, "#f5cd46"); sLevel(); }
 
 function addParts(x, y, n, col, spd) { for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, s = spd * (0.3 + Math.random()); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.5, max: 0.5, col, r: 2 + Math.random() * 3 }); } }
 
@@ -381,6 +384,8 @@ function update(dt) {
   const inp = readInput();
   const SP = 240;
   moveAxis(player, inp.mx * SP * dt, 0); moveAxis(player, 0, inp.my * SP * dt);
+  playerMoving = (Math.abs(inp.mx) + Math.abs(inp.my)) > 0.12;
+  walkPhase += dt * (playerMoving ? 13 : 2.5);
   if (player.inv > 0) player.inv -= dt;
   pShield = Math.max(0, pShield - dt); pTriple = Math.max(0, pTriple - dt); pRapid = Math.max(0, pRapid - dt);
   if (comboT > 0) { comboT -= dt; if (comboT <= 0) combo = 0; }
@@ -458,17 +463,46 @@ function drawPower(x, y, kind) {
 }
 function drawPortal(x, y) { const r = 22 + Math.sin(t * 4) * 3; for (let i = 3; i >= 0; i--) { ctx.fillStyle = "rgba(180,128,255," + (0.18 + i * 0.12) + ")"; ctx.beginPath(); ctx.arc(x, y, r - i * 4, 0, 7); ctx.fill(); } ctx.fillStyle = "#0c0c12"; ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill(); }
 
-function drawTaco(x, y, size) {
-  ctx.save(); ctx.translate(x, y);
-  const w = size, h = size * 0.62;
-  if (pShield > 0) { let a = 0.3 + 0.22 * Math.sin(t * 8); if (pShield < 1.5) a *= 0.4 + 0.6 * Math.abs(Math.sin(t * 20)); ctx.globalAlpha = a; ctx.fillStyle = "#5eead4"; ctx.beginPath(); ctx.arc(0, 0, w * 0.85, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+function drawLimb(x, y, dx, dy, col, r) { ctx.strokeStyle = col; ctx.lineWidth = r * 1.5; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx, y + dy); ctx.stroke(); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x + dx, y + dy, r, 0, 7); ctx.fill(); }
+function drawTaco(x, y, size, lvl) {
+  const L = lvl || 1;
+  const grow = 1 + Math.min(L - 1, 10) * 0.05;        // crece con el nivel
+  const stage = Math.min(Math.floor((L - 1) / 3), 3); // evolucion 0..3 (corona/aura)
+  const s = size * grow, w = s, h = s * 0.62;
+  const wlk = Math.sin(walkPhase), sw = playerMoving ? wlk : 0;
+  const bob = playerMoving ? Math.abs(wlk) * s * 0.05 : Math.sin(t * 3) * s * 0.025;
+  ctx.save(); ctx.translate(x, y + bob);
+  // aura de evolucion
+  if (stage >= 2) { ctx.globalAlpha = 0.12 + 0.08 * Math.sin(t * 5); ctx.fillStyle = stage >= 3 ? "#ffd84a" : "#b48cff"; ctx.beginPath(); ctx.arc(0, 0, s, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+  // sombra
+  ctx.fillStyle = "rgba(0,0,0,0.28)"; ctx.beginPath(); ctx.ellipse(0, s * 0.52, s * 0.34, s * 0.11, 0, 0, 7); ctx.fill();
+  // piernas + pies (caminata alternada)
+  drawLimb(-s * 0.15, s * 0.16, -s * 0.02, s * 0.34 + sw * s * 0.14, "#d89a3a", s * 0.095);
+  drawLimb(s * 0.15, s * 0.16, s * 0.02, s * 0.34 - sw * s * 0.14, "#d89a3a", s * 0.095);
+  // brazos + manos (oscilan opuesto)
+  drawLimb(-s * 0.36, -s * 0.06, -s * 0.12, s * 0.18 - sw * s * 0.12, "#f0c255", s * 0.085);
+  drawLimb(s * 0.36, -s * 0.06, s * 0.12, s * 0.18 + sw * s * 0.12, "#f0c255", s * 0.085);
+  // escudo
+  if (pShield > 0) { let a = 0.3 + 0.22 * Math.sin(t * 8); if (pShield < 1.5) a *= 0.4 + 0.6 * Math.abs(Math.sin(t * 20)); ctx.globalAlpha = a; ctx.fillStyle = "#5eead4"; ctx.beginPath(); ctx.arc(0, 0, w * 0.9, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+  // cuerpo: tortilla con relleno
   ctx.fillStyle = "#f5b938"; ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.5, 0, Math.PI, false); ctx.fill();
   ctx.fillStyle = "#d08a26"; ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.5, 0.15, Math.PI - 0.15, false); ctx.arc(0, -h * 0.1, w * 0.42, Math.PI - 0.15, 0.15, true); ctx.fill();
   ctx.fillStyle = "#e2342a"; ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.36, Math.PI + 0.2, -0.2, false); ctx.fill();
   ctx.fillStyle = "#ffd650"; ctx.beginPath(); ctx.arc(-w * 0.12, -h * 0.18, w * 0.13, 0, 7); ctx.fill();
   ctx.fillStyle = "#60d040"; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.arc(i * w * 0.16, -h * 0.34, w * 0.11, Math.PI, 0, false); ctx.fill(); }
-  ctx.fillStyle = "#3a2410"; ctx.beginPath(); ctx.arc(-w * 0.12, -h * 0.02, 2.4, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(w * 0.12, -h * 0.02, 2.4, 0, 7); ctx.fill();
-  ctx.strokeStyle = "#3a2410"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, h * 0.02, w * 0.14, 0.15, Math.PI - 0.15, false); ctx.stroke();
+  // ojos
+  ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(-w * 0.12, -h * 0.04, w * 0.075, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(w * 0.12, -h * 0.04, w * 0.075, 0, 7); ctx.fill();
+  ctx.fillStyle = "#2a1808"; ctx.beginPath(); ctx.arc(-w * 0.10, -h * 0.03, w * 0.038, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(w * 0.14, -h * 0.03, w * 0.038, 0, 7); ctx.fill();
+  // boca animada (habla/camina)
+  const mo = (0.5 + 0.5 * Math.sin(t * 6)) * (playerMoving ? 1 : 0.45);
+  ctx.fillStyle = "#3a1810"; ctx.beginPath(); ctx.ellipse(0, h * 0.07, w * 0.12, w * (0.035 + 0.06 * mo), 0, 0, 7); ctx.fill();
+  ctx.fillStyle = "#ff7a8a"; ctx.beginPath(); ctx.ellipse(0, h * 0.09, w * 0.06, w * (0.015 + 0.03 * mo), 0, 0, 7); ctx.fill();
+  // corona de evolucion
+  if (stage >= 1) {
+    ctx.fillStyle = stage >= 3 ? "#ffd84a" : stage >= 2 ? "#e6c0ff" : "#cfd3e0";
+    const cy = -h * 0.46 - s * 0.16, cw = s * 0.32;
+    ctx.beginPath(); ctx.moveTo(-cw, cy + s * 0.13); ctx.lineTo(-cw, cy); ctx.lineTo(-cw * 0.5, cy + s * 0.07); ctx.lineTo(0, cy - s * 0.05); ctx.lineTo(cw * 0.5, cy + s * 0.07); ctx.lineTo(cw, cy); ctx.lineTo(cw, cy + s * 0.13); ctx.closePath(); ctx.fill();
+  }
   ctx.restore();
 }
 
@@ -498,7 +532,7 @@ function drawHUD() {
   text(score, W / 2, 40 + tp, 30, "#fff", "center");
   text("RECORD " + best, W / 2, 60 + tp, 13, "#9a9ab0", "center");
   if (combo >= 2) text("COMBO x" + (1 + Math.min(Math.floor(combo / 3), 4)) + "  (" + combo + ")", W / 2, 84 + tp, 17, "#ff9b3c", "center");
-  text("NIVEL " + level + "   ING " + words, 16, 26 + tp, 15, "#b480ff", "left");
+  text("DIM " + level + "  " + theme.name + "   ·   ING " + words, 16, 26 + tp, 14, "#7fd6ff", "left");
   bar(16, 36 + tp, 180, 14, player.hp / MAXHP, player.hp > 50 ? "#eb5046" : player.hp > 25 ? "#f0aa3c" : "#dc322d");
   let cx = 16;
   [[0, pShield, 7], [1, pTriple, 9], [2, pRapid, 9]].forEach(([k, v, mx]) => { if (v > 0) { const w = 78; bar(cx, 60 + tp, w, 16, v / mx, powerCol(k)); text(powerName(k), cx + 4, 73 + tp, 11, "#0c0c12", "left"); cx += w + 8; } });
@@ -559,7 +593,7 @@ function render() {
   if (portal) drawPortal(portal.x, portal.y);
   for (const b of bullets) { ctx.fillStyle = "#ff8c32"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill(); ctx.fillStyle = "#ffe896"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.5, 0, 7); ctx.fill(); }
   for (const e of enemies) { drawBlock(ctx, e.x - e.r, e.y - e.r, e.r * 2, e.flash > 0 ? "#ffffff" : e.col); if (e.hp < e.maxhp && !e.boss) bar(e.x - e.r, e.y - e.r - 8, e.r * 2, 4, e.hp / e.maxhp, "#60d050"); }
-  if (!(player.inv > 0 && Math.floor(t * 20) % 2)) drawTaco(player.x, player.y, player.r * 2.4);
+  if (!(player.inv > 0 && Math.floor(t * 20) % 2)) drawTaco(player.x, player.y, player.r * 2.2, level);
   for (const p of parts) { ctx.globalAlpha = clamp(p.life / p.max, 0, 1); ctx.fillStyle = p.col; ctx.fillRect(p.x - p.r / 2, p.y - p.r / 2, p.r, p.r); }
   for (const f of floaters) { ctx.globalAlpha = clamp(f.life, 0, 1); text(f.txt, f.x, f.y, 17, f.col, "center"); }
   ctx.globalAlpha = 1;
@@ -576,12 +610,13 @@ function render() {
   if (state === "quiz") drawQuiz();
   if (paused && state === "play") { ctx.fillStyle = "rgba(6,6,12,0.6)"; ctx.fillRect(0, 0, W, H); text("PAUSA", W / 2, H / 2, 48, "#f5cd46", "center"); text("toca II para seguir", W / 2, H / 2 + 40, 16, "#9a9ab0", "center"); drawButtons(); }
   if (state === "title") {
-    ctx.fillStyle = "rgba(8,8,16,0.6)"; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(8,8,16,0.62)"; ctx.fillRect(0, 0, W, H);
+    drawTaco(W / 2, H / 2 - 140, Math.min(70, W / 6), 7); // taco evolucionado de muestra
     text("CATACOMB", W / 2, H / 2 - 50, Math.min(72, W / 7), "#f5cd46", "center");
     text("el taco en la catacumba", W / 2, H / 2 - 8, 18, "#96c8eb", "center");
     text("TOCA PARA JUGAR", W / 2, H / 2 + 52, 22, "#f5cd46", "center");
     text("izq: mover   der: apuntar y disparar", W / 2, H / 2 + 88, 14, "#8a8aa0", "center");
-    text("junta gemas, cruza el portal y aprende INGLES y CHINO (con frases)", W / 2, H / 2 + 112, 13, "#7a7a90", "center");
+    text("viaja por DIMENSIONES, crece y aprende INGLES y CHINO (frases)", W / 2, H / 2 + 112, 13, "#7a7a90", "center");
   }
   if (state === "over") {
     ctx.fillStyle = "rgba(6,6,12,0.8)"; ctx.fillRect(0, 0, W, H);

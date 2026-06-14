@@ -101,15 +101,36 @@ const WEAPONS = [
   { name: "RAFAGA", cd: 0.08, speed: 780, pellets: 1, spread: 7, life: 0.7, r: 5, dmg: 1 },
 ];
 
-// Banco de palabras (portales de ingles)
-const WORDS = [
-  ["GATO", "CAT"], ["PERRO", "DOG"], ["CASA", "HOUSE"], ["AGUA", "WATER"], ["FUEGO", "FIRE"],
-  ["LLAVE", "KEY"], ["SOL", "SUN"], ["LUNA", "MOON"], ["LIBRO", "BOOK"], ["ROJO", "RED"],
-  ["VERDE", "GREEN"], ["AZUL", "BLUE"], ["COMER", "EAT"], ["CORRER", "RUN"], ["SALTAR", "JUMP"],
-  ["AMIGO", "FRIEND"], ["NOCHE", "NIGHT"], ["DIA", "DAY"], ["MANO", "HAND"], ["OJO", "EYE"],
-  ["LECHE", "MILK"], ["PAN", "BREAD"], ["GRANDE", "BIG"], ["PEQUENO", "SMALL"], ["FELIZ", "HAPPY"],
-  ["RAPIDO", "FAST"], ["LENTO", "SLOW"], ["ARRIBA", "UP"], ["ABAJO", "DOWN"], ["TACO", "TACO"],
+// Banco de palabras por nivel de dificultad [es, en, tier]
+const WORDBANK = [
+  ["GATO", "CAT", 1], ["PERRO", "DOG", 1], ["SOL", "SUN", 1], ["LUNA", "MOON", 1], ["AGUA", "WATER", 1],
+  ["CASA", "HOUSE", 1], ["ROJO", "RED", 1], ["AZUL", "BLUE", 1], ["DIA", "DAY", 1], ["MANO", "HAND", 1],
+  ["OJO", "EYE", 1], ["PAN", "BREAD", 1],
+  ["LECHE", "MILK", 2], ["AMIGO", "FRIEND", 2], ["NOCHE", "NIGHT", 2], ["LIBRO", "BOOK", 2], ["COMER", "EAT", 2],
+  ["CORRER", "RUN", 2], ["VERDE", "GREEN", 2], ["FUEGO", "FIRE", 2], ["LLAVE", "KEY", 2], ["GRANDE", "BIG", 2],
+  ["PEQUENO", "SMALL", 2], ["ARRIBA", "UP", 2],
+  ["FELIZ", "HAPPY", 3], ["RAPIDO", "FAST", 3], ["LENTO", "SLOW", 3], ["SALTAR", "JUMP", 3], ["PELIGRO", "DANGER", 3],
+  ["FUERTE", "STRONG", 3], ["VALIENTE", "BRAVE", 3], ["TESORO", "TREASURE", 3], ["OSCURO", "DARK", 3], ["MUNDO", "WORLD", 3],
 ];
+
+// "Neural": dominio por palabra guardado (repeticion espaciada + dificultad adaptativa, sutil).
+let engStats = {}; try { engStats = JSON.parse(localStorage.getItem("catacomb_eng") || "{}"); } catch (e) { engStats = {}; }
+function saveEng() { try { localStorage.setItem("catacomb_eng", JSON.stringify(engStats)); } catch (e) {} }
+function estat(en) { return engStats[en] || (engStats[en] = { seen: 0, ok: 0, streak: 0 }); }
+function isMastered(en) { const s = engStats[en]; return !!s && s.streak >= 3; }
+function masteredAt(tier) { let n = 0; for (const w of WORDBANK) if (w[2] === tier && isMastered(w[1])) n++; return n; }
+function masteredTotal() { let n = 0; for (const w of WORDBANK) if (isMastered(w[1])) n++; return n; }
+function engTier() { return masteredAt(1) >= 5 ? (masteredAt(2) >= 5 ? 3 : 2) : 1; } // sube al dominar ~5 del nivel
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = randi(0, i + 1); const tmp = a[i]; a[i] = a[j]; a[j] = tmp; } return a; }
+function pickWord() {
+  const tier = engTier();
+  const pool = WORDBANK.filter(w => w[2] <= tier);
+  const weights = pool.map(w => { const s = engStats[w[1]]; let wt = !s || s.seen === 0 ? 3 : s.streak === 0 ? 5 : s.streak < 3 ? 3 : 1; if (w[2] === tier) wt += 1; return wt; });
+  let total = 0; for (const x of weights) total += x;
+  let r = Math.random() * total;
+  for (let i = 0; i < pool.length; i++) { r -= weights[i]; if (r <= 0) return pool[i]; }
+  return pool[pool.length - 1];
+}
 
 // ---------- Estado ----------
 let state = "title";  // title | play | quiz | over
@@ -121,6 +142,10 @@ let gems = [], enemies = [], bullets = [], parts = [], heals = [], powerDrops = 
 let pShield = 0, pTriple = 0, pRapid = 0, weapon = 0;
 let shake = 0, t = 0;
 let quiz = null; // {prompt, options[], correct, sel, fb}
+// Juice 4D: texto flotante, combo de bajas, destello de pantalla
+let floaters = [], combo = 0, comboT = 0, flashT = 0, flashMax = 0.001, flashCol = "255,255,255";
+function floatText(x, y, txt, col) { floaters.push({ x, y, txt, col, life: 1.0 }); }
+function flash(col, dur) { flashCol = col; flashT = dur; flashMax = dur; }
 
 function solid(tx, ty) { if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) return true; return grid[ty * cols + tx] === 1; }
 function isFloor(px, py) { return !solid(Math.floor(px / TS), Math.floor(py / TS)); }
@@ -272,25 +297,27 @@ function readInput() {
 }
 
 // ---------- Flujo ----------
-function startOrRestart() { level = 1; score = 0; words = 0; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; genLevel(); state = "play"; sLevel(); }
+function startOrRestart() { level = 1; score = 0; words = 0; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; genLevel(); state = "play"; sLevel(); }
 
 function openQuiz() {
-  const w = WORDS[randi(0, WORDS.length)];
+  const w = pickWord();
   const opts = [w[1]];
-  while (opts.length < 3) { const o = WORDS[randi(0, WORDS.length)][1]; if (opts.indexOf(o) < 0) opts.push(o); }
-  // mezclar
-  for (let i = opts.length - 1; i > 0; i--) { const j = randi(0, i + 1); const tmp = opts[i]; opts[i] = opts[j]; opts[j] = tmp; }
-  quiz = { prompt: w[0], options: opts, correct: opts.indexOf(w[1]), sel: -1, fb: 0 };
+  const cand = WORDBANK.filter(x => x[1] !== w[1]);
+  while (opts.length < 3) { const o = cand[randi(0, cand.length)][1]; if (opts.indexOf(o) < 0) opts.push(o); }
+  shuffle(opts);
+  quiz = { prompt: w[0], en: w[1], options: opts, correct: opts.indexOf(w[1]), sel: -1, fb: 0 };
   state = "quiz";
 }
 function answerQuiz(i) {
   if (!quiz || quiz.sel >= 0) return;
   quiz.sel = i;
-  if (i === quiz.correct) { score += 100 * (1 + level * 0); score += 80; words++; sRight(); }
-  else { sWrong(); }
-  quiz.fb = 1.4;
+  const s = estat(quiz.en); s.seen++;
+  if (i === quiz.correct) { s.ok++; s.streak++; score += 80; words++; floatText(player.x, player.y - 30, "+80 INGLES", "#60d050"); sRight(); }
+  else { s.streak = 0; sWrong(); }
+  saveEng();
+  quiz.fb = 1.6;
 }
-function nextLevel() { level++; score += 120; player.hp = Math.min(MAXHP, player.hp + 30); genLevel(); state = "play"; sLevel(); }
+function nextLevel() { level++; score += 120; player.hp = Math.min(MAXHP, player.hp + 30); genLevel(); state = "play"; flash("245,205,70", 0.3); floatText(player.x, player.y - 32, "NIVEL " + level, "#f5cd46"); sLevel(); }
 
 function addParts(x, y, n, col, spd) { for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, s = spd * (0.3 + Math.random()); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.5, max: 0.5, col, r: 2 + Math.random() * 3 }); } }
 
@@ -313,13 +340,15 @@ const powerName = k => k === 0 ? "ESCUDO" : k === 1 ? "TRIPLE" : "RAPIDO";
 
 function hurt(d) {
   if (player.inv > 0 || pShield > 0) return;
-  player.hp -= d; player.inv = 0.7; shake = Math.min(shake + 8, 14); sHurt(); addParts(player.x, player.y, 14, "#eb5040", 200);
-  if (player.hp <= 0) { player.hp = 0; best = Math.max(best, score); localStorage.setItem("catacomb_best", best); state = "over"; }
+  player.hp -= d; player.inv = 0.7; shake = Math.min(shake + 8, 14); flash("235,80,64", 0.22); sHurt(); addParts(player.x, player.y, 14, "#eb5040", 200);
+  if (player.hp <= 0) { player.hp = 0; combo = 0; best = Math.max(best, score); localStorage.setItem("catacomb_best", best); state = "over"; }
 }
 
 function update(dt) {
   t += dt;
   if (shake > 0) shake = Math.max(0, shake - dt * 30);
+  if (flashT > 0) flashT -= dt;
+  for (let i = floaters.length - 1; i >= 0; i--) { const f = floaters[i]; f.life -= dt * 1.1; f.y -= 26 * dt; if (f.life <= 0) floaters.splice(i, 1); }
 
   if (state === "quiz") {
     if (quiz && quiz.sel >= 0) { quiz.fb -= dt; if (quiz.fb <= 0) nextLevel(); }
@@ -332,15 +361,16 @@ function update(dt) {
   moveAxis(player, inp.mx * SP * dt, 0); moveAxis(player, 0, inp.my * SP * dt);
   if (player.inv > 0) player.inv -= dt;
   pShield = Math.max(0, pShield - dt); pTriple = Math.max(0, pTriple - dt); pRapid = Math.max(0, pRapid - dt);
+  if (comboT > 0) { comboT -= dt; if (comboT <= 0) combo = 0; }
   player.fire -= dt;
   if (inp.firing && player.fire <= 0) fire(inp.ax, inp.ay);
 
-  for (let i = gems.length - 1; i >= 0; i--) if (len(gems[i].x - player.x, gems[i].y - player.y) < player.r + 14) { addParts(gems[i].x, gems[i].y, 10, "#5eead4", 150); gems.splice(i, 1); score += 10; sGem(); }
+  for (let i = gems.length - 1; i >= 0; i--) if (len(gems[i].x - player.x, gems[i].y - player.y) < player.r + 14) { addParts(gems[i].x, gems[i].y, 10, "#5eead4", 150); floatText(gems[i].x, gems[i].y, "+10", "#5eead4"); gems.splice(i, 1); score += 10; sGem(); }
   if (gems.length === 0 && !portal) portal = farFree(player.x, player.y);
   if (portal && len(portal.x - player.x, portal.y - player.y) < player.r + 22) { openQuiz(); return; }
 
-  for (let i = heals.length - 1; i >= 0; i--) if (len(heals[i].x - player.x, heals[i].y - player.y) < player.r + 14) { player.hp = Math.min(MAXHP, player.hp + 25); addParts(heals[i].x, heals[i].y, 10, "#60d050", 150); heals.splice(i, 1); sGem(); }
-  for (let i = powerDrops.length - 1; i >= 0; i--) { const pd = powerDrops[i]; if (len(pd.x - player.x, pd.y - player.y) < player.r + 16) { applyPower(pd.kind); addParts(pd.x, pd.y, 18, powerCol(pd.kind), 240); shake = Math.min(shake + 4, 14); powerDrops.splice(i, 1); } }
+  for (let i = heals.length - 1; i >= 0; i--) if (len(heals[i].x - player.x, heals[i].y - player.y) < player.r + 14) { player.hp = Math.min(MAXHP, player.hp + 25); addParts(heals[i].x, heals[i].y, 10, "#60d050", 150); floatText(heals[i].x, heals[i].y, "+VIDA", "#60d050"); heals.splice(i, 1); sGem(); }
+  for (let i = powerDrops.length - 1; i >= 0; i--) { const pd = powerDrops[i]; if (len(pd.x - player.x, pd.y - player.y) < player.r + 16) { applyPower(pd.kind); addParts(pd.x, pd.y, 18, powerCol(pd.kind), 240); floatText(pd.x, pd.y, powerName(pd.kind) + "!", powerCol(pd.kind)); flash("94,234,212", 0.18); shake = Math.min(shake + 4, 14); powerDrops.splice(i, 1); } }
 
   for (const e of enemies) {
     const dx = player.x - e.x, dy = player.y - e.y, d = len(dx, dy) || 1;
@@ -357,7 +387,11 @@ function update(dt) {
       if (len(e.x - b.x, e.y - b.y) < e.r + b.r) {
         e.hp -= b.dmg; e.flash = 0.12; addParts(b.x, b.y, 5, "#ff7a40", 140); sHit();
         if (e.hp <= 0) {
-          score += e.bounty; addParts(e.x, e.y, e.boss ? 60 : 22, "#ffa040", e.boss ? 420 : 280); shake = Math.min(shake + (e.boss ? 12 : 5), 16); sKill();
+          combo++; comboT = 2.6; const mult = 1 + Math.min(Math.floor(combo / 3), 4);
+          const gain = e.bounty * mult; score += gain;
+          floatText(e.x, e.y, "+" + gain + (mult > 1 ? " x" + mult : ""), e.boss ? "#ce82ff" : "#ffb060");
+          addParts(e.x, e.y, e.boss ? 60 : 22, "#ffa040", e.boss ? 420 : 280); shake = Math.min(shake + (e.boss ? 12 : 5), 16);
+          if (e.boss) flash("206,130,255", 0.25); sKill();
           if (e.boss) { for (let k = 0; k < 5; k++) heals.push({ x: e.x + rand(-50, 50), y: e.y + rand(-50, 50) }); powerDrops.push({ x: e.x, y: e.y - 30, kind: randi(0, 3) }); }
           else { if (Math.random() < 0.3) heals.push({ x: e.x, y: e.y }); if (Math.random() < 0.18) powerDrops.push({ x: e.x, y: e.y, kind: randi(0, 3) }); }
           enemies.splice(j, 1);
@@ -435,6 +469,7 @@ function drawButtons() {
 function drawHUD() {
   text(score, W / 2, 40, 30, "#fff", "center");
   text("RECORD " + best, W / 2, 60, 13, "#9a9ab0", "center");
+  if (combo >= 2) text("COMBO x" + (1 + Math.min(Math.floor(combo / 3), 4)) + "  (" + combo + ")", W / 2, 84, 17, "#ff9b3c", "center");
   text("NIVEL " + level + "   ING " + words, 16, 26, 15, "#b480ff", "left");
   bar(16, 36, 180, 14, player.hp / MAXHP, player.hp > 50 ? "#eb5046" : player.hp > 25 ? "#f0aa3c" : "#dc322d");
   // chips de power-ups
@@ -454,7 +489,8 @@ function drawQuiz() {
   ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(0, 0, W, H);
   const p = quizPanelRect();
   ctx.fillStyle = "#181a26"; ctx.strokeStyle = "#b480ff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 14); ctx.fill(); ctx.stroke();
-  text("PORTAL DE INGLES", W / 2, p.y + 38, 18, "#b480ff", "center");
+  const tiers = ["BASICO", "MEDIO", "AVANZADO"];
+  text("PORTAL DE INGLES   -   " + tiers[engTier() - 1], W / 2, p.y + 38, 17, "#b480ff", "center");
   text("Como se dice en ingles:", W / 2, p.y + 80, 15, "#9a9ab0", "center");
   text('"' + quiz.prompt + '"', W / 2, p.y + 122, 30, "#fff", "center");
   for (let i = 0; i < quiz.options.length; i++) {
@@ -478,8 +514,15 @@ function render() {
   for (const e of enemies) { drawBlock(ctx, e.x - e.r, e.y - e.r, e.r * 2, e.flash > 0 ? "#ffffff" : e.col); if (e.hp < e.maxhp && !e.boss) bar(e.x - e.r, e.y - e.r - 8, e.r * 2, 4, e.hp / e.maxhp, "#60d050"); }
   if (!(player.inv > 0 && Math.floor(t * 20) % 2)) drawTaco(player.x, player.y, player.r * 2.4);
   for (const p of parts) { ctx.globalAlpha = clamp(p.life / p.max, 0, 1); ctx.fillStyle = p.col; ctx.fillRect(p.x - p.r / 2, p.y - p.r / 2, p.r, p.r); }
+  for (const f of floaters) { ctx.globalAlpha = clamp(f.life, 0, 1); text(f.txt, f.x, f.y, 17, f.col, "center"); }
   ctx.globalAlpha = 1;
   ctx.restore();
+
+  // Viñeta + destello (4D)
+  const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.32, W / 2, H / 2, Math.max(W, H) * 0.72);
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.42)");
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  if (flashT > 0) { ctx.fillStyle = "rgba(" + flashCol + "," + (0.4 * flashT / flashMax) + ")"; ctx.fillRect(0, 0, W, H); }
 
   if (state === "play" || state === "quiz") { drawHUD(); }
   if (state === "play") { drawStick(stickL, "rgba(94,234,212,0.5)"); drawStick(stickR, "rgba(255,150,60,0.6)"); drawButtons(); }
@@ -496,9 +539,10 @@ function render() {
   if (state === "over") {
     ctx.fillStyle = "rgba(6,6,12,0.8)"; ctx.fillRect(0, 0, W, H);
     text("GAME OVER", W / 2, H / 2 - 30, Math.min(64, W / 8), "#eb5040", "center");
-    text("PUNTAJE  " + score, W / 2, H / 2 + 24, 26, "#fff", "center");
-    text("INGLES  " + words + "    RECORD  " + best, W / 2, H / 2 + 56, 16, "#9a9ab0", "center");
-    text("TOCA PARA REINTENTAR", W / 2, H / 2 + 102, 20, "#f5cd46", "center");
+    text("PUNTAJE  " + score, W / 2, H / 2 + 22, 26, "#fff", "center");
+    text("PALABRAS " + words + "    DOMINADAS " + masteredTotal() + "/" + WORDBANK.length, W / 2, H / 2 + 52, 15, "#60d050", "center");
+    text("RECORD  " + best, W / 2, H / 2 + 76, 15, "#9a9ab0", "center");
+    text("TOCA PARA REINTENTAR", W / 2, H / 2 + 110, 20, "#f5cd46", "center");
   }
 }
 

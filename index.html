@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v65 - el BONO tambien da ITEM a la bodega + mejoras ELITE: al reclamar el bono ahora ademas de monedas y subir de mundo te da un ITEM sorpresa a la BODEGA; el cartel ¡NUEVO MUNDO! es elite (glow pulsante + destellos giratorios + lista premio/item) y el chip del bono pulsa con brillo cuando esta LISTO; el reconocimiento brilla. Sobre v64: bono cronometrado (sube de mundo + premio por ciclos de tiempo)";
+const VERSION = "v66 - CONFETI de celebracion + ajuste del bono: al reclamar el bono (o subir de mundo en la ciudad) cae confeti multicolor; bono mas agil (cada 75s) y premio mayor (15 + mundo x5) ademas del item a la bodega. Sobre v65: bono da item + cartel elite con glow/destellos";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -222,7 +222,8 @@ let achToast = null, achT = 0, lpanel = null; // aviso de logro + timer de chequ
 let mirador = null; // MIRADOR: vista panoramica (normal + infrarroja), se desbloquea por nivel
 let menuMsg = "", menuMsgT = 0; // aviso "se desbloquea en el mundo N" al tocar algo bloqueado
 const ISO_LV = 3; // mundo necesario para la DIMENSION 3D (portal + menu)
-let worldToast = null, recogToast = null; // aviso de NUEVO MUNDO desbloqueado + reconocimiento (refuerzo positivo)
+let worldToast = null, recogToast = null, confetti = []; // aviso NUEVO MUNDO + reconocimiento + confeti de celebracion
+function fireConfetti(n) { const cols = ["#ffd84a", "#62e074", "#7fd6ff", "#ff6b8a", "#b480ff", "#fff3b0"]; for (let i = 0; i < (n || 60); i++) confetti.push({ x: W / 2 + rand(-40, 40), y: H * 0.2 + safeT, vx: rand(-200, 200), vy: rand(-280, -60), g: rand(320, 480), col: cols[randi(0, cols.length)], r: rand(0, 6.28), vr: rand(-9, 9), s: rand(4, 9), life: rand(1.3, 2.4) }); }
 // que se abre en cada mundo (texto neutro: aprende sin etiquetar las materias)
 const WORLD_UNLOCKS = {
   2: ["mas retos del tutor", "KPIs y Logros", "Mirador", "Juegos del mall"],
@@ -231,15 +232,15 @@ const WORLD_UNLOCKS = {
 };
 // BONO del tutor: se CARGA con el tiempo de juego; se reclama completando un juego en la ACADEMIA
 // (da premio + sube de mundo) y luego vuelve a cargar. Asi el premio es "solo un tiempo, no siempre".
-const BONO_CD = 90; // segundos de juego para que el bono este listo otra vez
+const BONO_CD = 75; // segundos de juego para que el bono este listo otra vez
 function bonoReady() { return (kpi.bono || 0) >= BONO_CD; }
 function claimBono() {
   kpi.bono = 0; kpiDirty = true;
   const nw = maxWorld + 1; maxWorld = nw; lset("maxworld", maxWorld);
-  const prize = 12 + nw * 4; bank += prize; lset("bank", bank);
+  const prize = 15 + nw * 5; bank += prize; lset("bank", bank);
   const pick = INV_KINDS[Math.floor(Math.random() * INV_KINDS.length)]; invAdd(pick.k, 1); // item sorpresa a la BODEGA
   worldToast = { world: nw, items: WORLD_UNLOCKS[nw] || ["nuevas sorpresas"], prize: prize, item: pick.name, t: 6.5 };
-  try { sPower(); flash("255,216,74", 0.3); speak("Premio del tutor! Subiste de mundo", "es-ES"); } catch (e) {}
+  try { sPower(); flash("255,216,74", 0.3); fireConfetti(80); speak("Premio del tutor! Subiste de mundo", "es-ES"); } catch (e) {}
 }
 // reconocimiento por esfuerzo/progreso (neurolinguistico: elogia el intento, sin nombrar materias)
 function recognize(correct, total) {
@@ -567,7 +568,7 @@ function genLevel() {
   buildWorld();
   buildMission();
   weather.kind = ["sol", "sol", "sol", "nubes", "nubes", "lluvia"][randi(0, 6)]; rain.length = 0; // clima del nivel
-  if (level > maxWorld) { maxWorld = level; lset("maxworld", maxWorld); const items = WORLD_UNLOCKS[level]; if (items) { worldToast = { world: level, items: items, t: 5.5 }; try { sPower(); speak("Nuevo mundo desbloqueado", "es-ES"); } catch (e) {} } } else { maxWorld = Math.max(maxWorld, level); lset("maxworld", maxWorld); }
+  if (level > maxWorld) { maxWorld = level; lset("maxworld", maxWorld); const items = WORLD_UNLOCKS[level]; if (items) { worldToast = { world: level, items: items, t: 5.5 }; try { sPower(); fireConfetti(60); speak("Nuevo mundo desbloqueado", "es-ES"); } catch (e) {} } } else { maxWorld = Math.max(maxWorld, level); lset("maxworld", maxWorld); }
   // recompensa: 1 skin gratis cada 2 mundos
   const freeSkins = Math.min(Math.floor(maxWorld / 2), OUTFITS.length - 1); let newSkin = false;
   for (let i = 1; i <= freeSkins; i++) if (!unlocked[i]) { unlocked[i] = true; newSkin = true; }
@@ -1313,6 +1314,11 @@ function drawRecogToast() {
   text("RECONOCIMIENTO", x + 42, y + 18, 9, "#9be7c0", "left"); fitTextLeft(recogToast.msg, x + 42, y + 34, w - 54, 13, "#eafff2");
   ctx.globalAlpha = 1;
 }
+function drawConfetti() {
+  if (!confetti.length) return;
+  for (const c of confetti) { ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, c.life)); ctx.translate(c.x, c.y); ctx.rotate(c.r); ctx.fillStyle = c.col; ctx.fillRect(-c.s / 2, -c.s / 2, c.s, c.s * 0.6); ctx.restore(); }
+  ctx.globalAlpha = 1;
+}
 // ---- MIRADOR: vista panoramica de TODA la ciudad, normal e INFRARROJA (ver en la oscuridad). Se gana por nivel. ----
 const MIR_PANO_LV = 2, MIR_IR_LV = 4; // mundos necesarios para desbloquear panorama / infrarrojo
 function openMirador(back) { mirador = { back: back || "menu", mode: 0, msg: "", msgT: 0, zoom: 1, panX: 0, panY: 0, drag: null, pinch: null }; state = "mirador"; }
@@ -1573,6 +1579,7 @@ function update(dt) {
   if (curPlayer && (state === "play" || state === "academia") && !paused && !bonoReady()) kpi.bono = Math.min(BONO_CD, (kpi.bono || 0) + dt);
   if (worldToast) { worldToast.t -= dt; if (worldToast.t <= 0) worldToast = null; }
   if (recogToast) { recogToast.t -= dt; if (recogToast.t <= 0) recogToast = null; }
+  for (let i = confetti.length - 1; i >= 0; i--) { const c = confetti[i]; c.life -= dt; c.vy += c.g * dt; c.x += c.vx * dt; c.y += c.vy * dt; c.r += c.vr * dt; if (c.life <= 0) confetti.splice(i, 1); }
   tod = (daySec % dayLen) / dayLen;
   nightAmt = 0.5 - 0.5 * Math.cos(tod * 2 * Math.PI); // 0 = mediodia, 1 = medianoche
   const tbase = weather.kind === "sol" ? 27 : weather.kind === "nubes" ? 20 : 16;
@@ -3507,6 +3514,7 @@ function render() {
   drawAchToast();
   drawWorldToast();
   drawRecogToast();
+  drawConfetti();
   if (state === "play") { drawMinimap(); drawStick(stickL, "rgba(94,234,212,0.5)"); drawStick(stickR, "rgba(255,150,60,0.6)"); drawButtons(); }
   if (bannerT > 0 && (state === "play" || state === "quiz")) { const a = clamp(bannerT / 0.6, 0, 1) * clamp((2.4 - bannerT) / 0.3, 0, 1); ctx.globalAlpha = a; text("MUNDO " + level, W / 2, H * 0.3, Math.min(46, W / 9), "#fff", "center"); text(theme.name, W / 2, H * 0.3 + 38, Math.min(32, W / 11), hexA(theme.stud, 1), "center"); text("MISION: " + (mission ? mission.text : "junta las gemas"), W / 2, H * 0.3 + 70, 14, "#f5cd46", "center"); ctx.globalAlpha = 1; }
   if (state === "quiz") drawQuiz();

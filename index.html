@@ -1604,7 +1604,13 @@ function eduCloseRect() { return { x: W - 92, y: 14 + safeT, w: 78, h: 34 }; }
 function eduCloseBtn() { const c = eduCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); text("SALIR", c.x + c.w / 2, c.y + c.h / 2 + 5, 13, "#ff9bb0", "center"); }
 function eduHeader(title, sub, col) { ctx.fillStyle = "rgba(8,8,18,0.94)"; ctx.fillRect(0, 0, W, H); text(title, W / 2, 40 + safeT, 20, col, "center"); if (sub) text(sub, W / 2, 64 + safeT, 12, "#9aa0b4", "center"); }
 function eduOptRect(i, n) { const bw = Math.min(W - 48, 420), bh = 52, gap = 12, x = (W - bw) / 2, top = H * 0.46; return { x, y: top + i * (bh + gap), w: bw, h: bh }; }
-function eduDoneScreen(msg, sub) { text(msg, W / 2, H / 2 - 8, 24, "#60d050", "center"); if (sub) text(sub, W / 2, H / 2 + 22, 15, "#cfd3e0", "center"); text("tocá para volver", W / 2, H / 2 + 54, 13, "#9aa0b4", "center"); }
+function eduReplayRect() { return { x: W / 2 - 150, y: H / 2 + 44, w: 140, h: 46 }; }
+function eduExitRect() { return { x: W / 2 + 10, y: H / 2 + 44, w: 140, h: 46 }; }
+function eduDoneScreen(msg, sub) {
+  text(msg, W / 2, H / 2 - 26, 24, "#60d050", "center"); if (sub) text(sub, W / 2, H / 2 + 4, 15, "#cfd3e0", "center");
+  const rr = eduReplayRect(); ctx.fillStyle = "#1d3a24"; ctx.beginPath(); ctx.roundRect(rr.x, rr.y, rr.w, rr.h, 12); ctx.fill(); ctx.strokeStyle = "#62e074"; ctx.lineWidth = 2; ctx.stroke(); text("OTRA VEZ", rr.x + rr.w / 2, rr.y + rr.h / 2 + 6, 16, "#9be7c0", "center");
+  const ee = eduExitRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(ee.x, ee.y, ee.w, ee.h, 12); ctx.fill(); ctx.strokeStyle = "#ff9bb0"; ctx.lineWidth = 2; ctx.stroke(); text("SALIR", ee.x + ee.w / 2, ee.y + ee.h / 2 + 6, 16, "#ff9bb0", "center");
+}
 function eduTickTip(dt) { if (nTip.life > 0) nTip.life -= dt; }
 function eduPool(L) { const top = langTierIdx(L), pool = []; for (let i = 0; i <= top && i < L.levels.length; i++) for (const it of L.levels[i].items) pool.push(it); return pool.length ? pool : L.levels[0].items.slice(); }
 function nhelpBtnRect() { const bh = 250, by = H / 2 - 130; return { x: W / 2 - 92, y: by + bh - 54, w: 184, h: 42 }; }
@@ -1639,7 +1645,7 @@ function triviaAnswer(i) {
   else { s.streak = 0; saveL(); sWrong(); trivia.requeue = it; neuralHelp(it[0] + "  =  " + dispOf(L, it), ["En " + L.name + " se dice:", "“" + it[1] + "”" + (L.code === "zh-CN" ? "   (" + it[2] + ")" : ""), "Escuchá 🔊 y repetilo. Te la vuelvo a preguntar."], it[1], L.code, triviaNext); }
 }
 function updateTrivia(dt) { eduTickTip(dt); if (nhelp || !trivia || trivia.done) return; if (trivia.locked) { if (trivia.lastOk) { trivia.fbT -= dt; if (trivia.fbT <= 0) triviaNext(); } return; } trivia.time -= dt; if (trivia.time <= 0) triviaAnswer(-1); }
-function triviaTapAt(px, py) { if (nhelp) { nhelpTapAt(px, py); return; } if (trivia.done || inRect(px, py, eduCloseRect())) { state = interior ? "interior" : "play"; return; } if (trivia.locked) return; for (let i = 0; i < trivia.opts.length; i++) if (inRect(px, py, eduOptRect(i, trivia.opts.length))) { triviaAnswer(i); return; } }
+function triviaTapAt(px, py) { if (nhelp) { nhelpTapAt(px, py); return; } if (trivia.done) { if (inRect(px, py, eduReplayRect())) openTrivia(); else state = interior ? "interior" : "play"; return; } if (inRect(px, py, eduCloseRect())) { state = interior ? "interior" : "play"; return; } if (trivia.locked) return; for (let i = 0; i < trivia.opts.length; i++) if (inRect(px, py, eduOptRect(i, trivia.opts.length))) { triviaAnswer(i); return; } }
 function drawTrivia() {
   eduHeader("TRIVIA NEURAL · " + trivia.L.name, "Elegí la traducción correcta", "#7fd6ff");
   text("✓ " + trivia.correct + " / " + trivia.total, W / 2, 92 + safeT, 14, "#9be7c0", "center");
@@ -1669,7 +1675,8 @@ function anagAudioRect() { return { x: W / 2 - 26, y: H * 0.26, w: 52, h: 40 }; 
 function anagDelRect() { return { x: W / 2 - 70, y: H * 0.70, w: 140, h: 42 }; }
 function anagTapAt(px, py) {
   if (nhelp) { nhelpTapAt(px, py); return; }
-  if (anag.done || inRect(px, py, eduCloseRect())) { state = interior ? "interior" : "play"; return; }
+  if (anag.done) { if (inRect(px, py, eduReplayRect())) openAnagram(); else state = interior ? "interior" : "play"; return; }
+  if (inRect(px, py, eduCloseRect())) { state = interior ? "interior" : "play"; return; }
   if (inRect(px, py, anagAudioRect())) { speak(anag.it[1], anag.L.code); return; }
   if (anag.locked) return;
   if (inRect(px, py, anagDelRect())) { anag.built.pop(); return; }
@@ -1717,7 +1724,7 @@ function mathAnswer(i) {
   else { mathq.streak = 0; sWrong(); neuralHelp("La respuesta es  " + c.ans, c.help, null, null, mathNext); }
 }
 function updateMath(dt) { eduTickTip(dt); if (nhelp || !mathq || mathq.done) return; if (mathq.locked) { if (mathq.lastOk) { mathq.fbT -= dt; if (mathq.fbT <= 0) mathNext(); } return; } mathq.time -= dt; if (mathq.time <= 0) mathAnswer(-1); }
-function mathTapAt(px, py) { if (nhelp) { nhelpTapAt(px, py); return; } if (mathq.done || inRect(px, py, eduCloseRect())) { state = interior ? "interior" : "play"; return; } if (mathq.locked) return; for (let i = 0; i < mathq.cur.opts.length; i++) if (inRect(px, py, eduOptRect(i, 4))) { mathAnswer(i); return; } }
+function mathTapAt(px, py) { if (nhelp) { nhelpTapAt(px, py); return; } if (mathq.done) { if (inRect(px, py, eduReplayRect())) openMath(); else state = interior ? "interior" : "play"; return; } if (inRect(px, py, eduCloseRect())) { state = interior ? "interior" : "play"; return; } if (mathq.locked) return; for (let i = 0; i < mathq.cur.opts.length; i++) if (inRect(px, py, eduOptRect(i, 4))) { mathAnswer(i); return; } }
 function drawMath() {
   eduHeader("MATEMÁTICAS NEURAL", "Resolvé la operación · nivel " + mathLvl(), "#5eead4");
   text("✓ " + mathq.correct + " / " + mathq.total + "    ·    racha " + mathq.streak, W / 2, 92 + safeT, 14, "#9be7c0", "center");
@@ -1749,7 +1756,7 @@ function seqAnswer(i) {
   else { seqg.streak = 0; sWrong(); neuralHelp("Sigue el  " + c.ans, [c.rule, c.arr.join(",  ") + ",  " + c.ans], null, null, seqNext); }
 }
 function updateSeq(dt) { eduTickTip(dt); if (nhelp || !seqg || seqg.done) return; if (seqg.locked) { if (seqg.lastOk) { seqg.fbT -= dt; if (seqg.fbT <= 0) seqNext(); } } }
-function seqTapAt(px, py) { if (nhelp) { nhelpTapAt(px, py); return; } if (seqg.done || inRect(px, py, eduCloseRect())) { state = interior ? "interior" : "play"; return; } if (seqg.locked) return; for (let i = 0; i < seqg.cur.opts.length; i++) if (inRect(px, py, eduOptRect(i, 4))) { seqAnswer(i); return; } }
+function seqTapAt(px, py) { if (nhelp) { nhelpTapAt(px, py); return; } if (seqg.done) { if (inRect(px, py, eduReplayRect())) openSeq(); else state = interior ? "interior" : "play"; return; } if (inRect(px, py, eduCloseRect())) { state = interior ? "interior" : "play"; return; } if (seqg.locked) return; for (let i = 0; i < seqg.cur.opts.length; i++) if (inRect(px, py, eduOptRect(i, 4))) { seqAnswer(i); return; } }
 function drawSeq() {
   eduHeader("SECUENCIAS NEURAL", "¿Qué número sigue el patrón?", "#ff9b3c");
   text("✓ " + seqg.correct + " / " + seqg.total, W / 2, 92 + safeT, 14, "#9be7c0", "center");

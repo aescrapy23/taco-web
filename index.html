@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v46 - MODO ELITE (cine): color grade + vineta + grano + letterbox (Opciones -> MODO ELITE) + briefs de Nano Banana para el arte elite (scripts/nanobanana)";
+const VERSION = "v47 - IA EN LA NUBE (Gemini/Nano Banana) con tu API key guardada SOLO en tu dispositivo: Tutor IA (consejos) + Nano Banana (genera arte). Menu/Opciones -> IA EN LA NUBE";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -505,6 +505,7 @@ addEventListener("keydown", e => {
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { if (k === "escape") state = uiBack; return; }
   if (state === "menu") { if (k === "escape") state = "play"; return; }
+  if (state === "ia") { if (k === "escape") state = iaHub.back; return; }
   if (state === "interior") { if (k === "escape") { if (interior.popup) interior.popup = null; else exitInterior(); } return; }
   if (state === "store") { if (k === "escape") exitStore(); return; }
   if (state === "build") { if (k === "escape") state = interior ? "interior" : "play"; return; }
@@ -530,6 +531,7 @@ canvas.addEventListener("mousedown", e => {
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { optTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "menu") { menuTapAt(e.clientX, e.clientY); mouse.down = false; return; }
+  if (state === "ia") { iaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "interior") { interiorTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "store") { storeTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "build") { buildTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -560,6 +562,7 @@ function onTouchStart(e) {
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { for (const tch of e.changedTouches) optTapAt(tch.clientX, tch.clientY); return; }
   if (state === "menu") { for (const tch of e.changedTouches) menuTapAt(tch.clientX, tch.clientY); return; }
+  if (state === "ia") { for (const tch of e.changedTouches) iaTapAt(tch.clientX, tch.clientY); return; }
   if (state === "interior") { for (const tch of e.changedTouches) { if (interiorTapAt(tch.clientX, tch.clientY)) return; if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
   if (state === "store") { for (const tch of e.changedTouches) { if (storeTapAt(tch.clientX, tch.clientY)) return; if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
   if (state === "build") { for (const tch of e.changedTouches) buildTapAt(tch.clientX, tch.clientY); return; }
@@ -934,6 +937,7 @@ function optRows() {
     { label: "GRAFICOS", val: settings.quality ? "ALTA" : "BAJA", act: () => { settings.quality = settings.quality ? 0 : 1; } },
     { label: "ASISTENTE IA", val: settings.ai ? "SI" : "NO", act: () => { settings.ai = settings.ai ? 0 : 1; ai.t = 0; } },
     { label: "MODO ELITE (cine)", val: settings.elite ? "SI" : "NO", act: () => { settings.elite = settings.elite ? 0 : 1; } },
+    { label: "IA EN LA NUBE", val: aiKey() ? "OK" : "►", act: () => { openIA("options"); } },
     { label: "DIFICULTAD", val: ["FACIL", "NORMAL", "DIFICIL"][settings.difficulty], act: () => { settings.difficulty = (settings.difficulty + 1) % 3; } },
     { label: "IDIOMA", val: lang === "ZH" ? "CHINO" : "INGLES", act: () => { cycleLang(); } },
     { label: "PANTALLA COMPLETA", val: "►", act: () => { try { if (!document.fullscreenElement) (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen).call(document.documentElement); else document.exitFullscreen(); } catch (e) {} } },
@@ -941,9 +945,10 @@ function optRows() {
     { label: "BORRAR PROGRESO", val: "⚠", act: () => { let ok = false; try { ok = confirm("Borrar TODO el progreso?"); } catch (e) {} if (ok) { try { localStorage.clear(); } catch (e) {} try { location.reload(); } catch (e) {} } } },
   ];
 }
-function optRect() { const w = Math.min(500, W - 28), h = Math.min(540, H - 28); return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
-function optRowRect(i) { const p = optRect(); return { x: p.x + 22, y: p.y + 76 + i * 47, w: p.w - 44, h: 41 }; }
-function optCloseRect() { const p = optRect(); return { x: p.x + p.w / 2 - 80, y: p.y + p.h - 46, w: 160, h: 36 }; }
+function optRowH() { const n = optRows().length, avail = H - 28 - 76 - 50; return clamp(Math.floor(avail / n), 30, 44); }
+function optRect() { const w = Math.min(500, W - 28), n = optRows().length, h = Math.min(H - 20, 76 + n * optRowH() + 52); return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
+function optRowRect(i) { const p = optRect(), rh = optRowH(); return { x: p.x + 22, y: p.y + 70 + i * rh, w: p.w - 44, h: rh - 6 }; }
+function optCloseRect() { const p = optRect(); return { x: p.x + p.w / 2 - 80, y: p.y + p.h - 44, w: 160, h: 34 }; }
 function optTapAt(px, py) {
   const rows = optRows();
   for (let i = 0; i < rows.length; i++) { const r = optRowRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { rows[i].act(); saveSettings(); sRight(); return; } }
@@ -966,6 +971,7 @@ function menuRows() {
   return [
     { label: "CONTINUAR", col: "#5eead4", act: () => { state = "play"; } },
     { label: "DIMENSION 3D (ISO)", col: "#b480ff", act: () => { gotoIso(); } },
+    { label: "IA EN LA NUBE (Gemini)", col: "#c8a0ff", act: () => { openIA("menu"); } },
     { label: "OPCIONES", col: "#7fd6ff", act: () => { openOptions("menu"); } },
     { label: "VESTUARIO", col: "#f5cd46", act: () => { openWb("menu"); } },
     { label: "CAMBIAR JUGADOR", col: "#9be7c0", act: () => { openPlayers(); } },
@@ -1617,6 +1623,63 @@ function drawBuild() {
   for (let i = 0; i < OSHA_ITEMS.length; i++) { const r = oshaRect(i), it = OSHA_ITEMS[i], on = build.osha[it.key]; ctx.fillStyle = on ? "#1d3a24" : "#23273a"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 9); ctx.fill(); ctx.strokeStyle = on ? "#62e074" : it.col; ctx.lineWidth = 2; ctx.stroke(); text((on ? "✓ " : "") + it.name, r.x + r.w / 2, r.y + r.h / 2 + 5, fitFont((on ? "✓ " : "") + it.name, r.w - 12, 13), on ? "#9be7c0" : it.col, "center"); }
   const g = buildGoRect(), can = buildSafety() >= 75 && !build.done; ctx.fillStyle = can ? "#3a3320" : "#2a2530"; ctx.beginPath(); ctx.roundRect(g.x, g.y, g.w, g.h, 12); ctx.fill(); ctx.strokeStyle = build.done ? "#62e074" : "#ffd84a"; ctx.lineWidth = 2; ctx.stroke(); text(build.done ? "OBRA LISTA ✓" : "CONSTRUIR ETAPA", g.x + g.w / 2, g.y + g.h / 2 + 6, 16, build.done ? "#62e074" : "#ffd84a", "center");
   text(build.msg, W / 2, 66 + safeT, 13, build.done ? "#62e074" : "#9be7c0", "center");
+}
+
+// ---- IA EN LA NUBE (Gemini / Nano Banana) con tu API key guardada SOLO en este dispositivo ----
+const IA_TEXT_MODEL = "gemini-2.0-flash", IA_IMG_MODEL = "gemini-2.5-flash-image-preview";
+let iaHub = null;
+function aiKey() { try { return localStorage.getItem("gemini_key") || ""; } catch (e) { return ""; } }
+function openIA(back) { iaHub = { busy: false, text: "", img: null, err: "", back: back || "title" }; state = "ia"; }
+function iaSetKey() { let k = null; try { k = prompt("Pega tu API key de Google AI Studio (Gemini / Nano Banana).\nSe guarda SOLO en este dispositivo (no se sube a internet).", aiKey()); } catch (e) {} if (k != null) { try { localStorage.setItem("gemini_key", k.trim()); } catch (e) {} } }
+async function iaCallText(prompt) {
+  const key = aiKey(); if (!key) { iaHub.err = "Configura tu API key primero."; return; }
+  iaHub.busy = true; iaHub.err = ""; iaHub.text = ""; iaHub.img = null;
+  try {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + IA_TEXT_MODEL + ":generateContent?key=" + encodeURIComponent(key), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
+    const j = await r.json(); if (!r.ok) throw new Error((j.error && j.error.message) || ("HTTP " + r.status));
+    const parts = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts || [];
+    iaHub.text = (parts.map(p => p.text || "").join(" ") || "(sin respuesta)").trim();
+  } catch (e) { iaHub.err = "Error: " + e.message; }
+  iaHub.busy = false;
+}
+async function iaCallImage(prompt) {
+  const key = aiKey(); if (!key) { iaHub.err = "Configura tu API key primero."; return; }
+  iaHub.busy = true; iaHub.err = ""; iaHub.text = ""; iaHub.img = null;
+  try {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + IA_IMG_MODEL + ":generateContent?key=" + encodeURIComponent(key), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
+    const j = await r.json(); if (!r.ok) throw new Error((j.error && j.error.message) || ("HTTP " + r.status));
+    const parts = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts || []; let b64 = null;
+    for (const p of parts) { const d = (p.inlineData || p.inline_data); if (d && d.data) { b64 = d.data; break; } }
+    if (!b64) throw new Error("El modelo no devolvio imagen. Proba otro modelo de imagen en IA_IMG_MODEL.");
+    const im = new Image(); im.onload = () => { iaHub.img = im; }; im.onerror = () => { iaHub.err = "No se pudo cargar la imagen."; }; im.src = "data:image/png;base64," + b64;
+  } catch (e) { iaHub.err = "Error: " + e.message; }
+  iaHub.busy = false;
+}
+function iaTutorPrompt() { const age = profile ? profile.age : 10, lng = lang === "ZH" ? "chino mandarin" : "ingles"; return "Sos un tutor de idiomas divertido para un nino de " + age + " anos que aprende " + lng + " jugando un juego del taco. En ESPANOL, en 2 frases cortas: dale animo y un consejo para aprender mejor, y al final una palabra nueva en " + lng + " con su traduccion para practicar. Sin markdown."; }
+function iaNanoPrompt() { const O = OUTFITS[outfit]; return "Genera un POSTER cuadrado estilo 3D alegre de juego movil: un taco humanoide heroe (tortilla amarilla doblada con relleno de lechuga/tomate/queso, ojos grandes) con " + (O && O.name ? "look " + O.name : "gorro") + ", en una ciudad colorida al atardecer con un portal magico violeta. Iluminacion cinematografica, brillante, sin texto."; }
+function iaRect(i) { const w = Math.min(380, W - 36), x = (W - w) / 2; return { x, y: 92 + safeT + i * 50, w, h: 42 }; }
+function iaBackRect() { return { x: W / 2 - 80, y: H - 54 - safeB, w: 160, h: 40 }; }
+function iaPanel() { const w = Math.min(420, W - 36), py0 = iaRect(2).y + 56; return { x: (W - w) / 2, y: py0, w, h: iaBackRect().y - py0 - 12 }; }
+function wrapText(str, cx, y, maxW, size, col) { ctx.font = "700 " + size + "px -apple-system,Segoe UI,sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = col; const words = ("" + (str || "")).split(/\s+/); let line = "", yy = y; const x = cx - maxW / 2; for (const w of words) { const test = line ? line + " " + w : w; if (ctx.measureText(test).width > maxW && line) { ctx.fillText(line, x, yy); line = w; yy += size + 5; } else line = test; } if (line) ctx.fillText(line, x, yy); }
+function iaTapAt(px, py) {
+  for (let i = 0; i < 3; i++) { const r = iaRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { if (i === 0) iaSetKey(); else if (i === 1) iaCallText(iaTutorPrompt()); else iaCallImage(iaNanoPrompt()); return; } }
+  const b = iaBackRect(); if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) { state = iaHub.back; }
+}
+function drawIA() {
+  ctx.fillStyle = "#0c0f16"; ctx.fillRect(0, 0, W, H);
+  text("IA EN LA NUBE  ·  Gemini / Nano Banana", W / 2, 40 + safeT, 18, "#b480ff", "center");
+  const has = !!aiKey(); text(has ? "API key: configurada en ESTE dispositivo ✓" : "API key: NO configurada (toca CONFIGURAR)", W / 2, 66 + safeT, 12, has ? "#62e074" : "#eb6050", "center");
+  const labels = [has ? "CAMBIAR API KEY" : "CONFIGURAR API KEY", "TUTOR IA: dame un consejo", "NANO BANANA: generar arte"], cols2 = ["#7fd6ff", "#62e074", "#ffd84a"];
+  for (let i = 0; i < 3; i++) { const r = iaRect(i); ctx.fillStyle = "#1b2030"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.strokeStyle = cols2[i]; ctx.lineWidth = 2; ctx.stroke(); text(labels[i], r.x + r.w / 2, r.y + r.h / 2 + 5, fitFont(labels[i], r.w - 16, 15), cols2[i], "center"); }
+  const p = iaPanel(); ctx.fillStyle = "#12151d"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 12); ctx.fill(); ctx.strokeStyle = "#2a3040"; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.save(); ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 12); ctx.clip();
+  if (iaHub.busy) text("Pensando... (consultando la IA)", W / 2, p.y + p.h / 2, 15, "#9aa0b4", "center");
+  else if (iaHub.err) wrapText(iaHub.err, W / 2, p.y + 24, p.w - 24, 13, "#eb6050");
+  else if (iaHub.img) { const iw = iaHub.img.width, ih = iaHub.img.height, s = Math.min((p.w - 16) / iw, (p.h - 16) / ih); ctx.drawImage(iaHub.img, W / 2 - iw * s / 2, p.y + (p.h - ih * s) / 2, iw * s, ih * s); }
+  else if (iaHub.text) wrapText(iaHub.text, W / 2, p.y + 26, p.w - 24, 14, "#dfe2ea");
+  else text("Configura tu key y pedí un consejo o generá arte.", W / 2, p.y + p.h / 2, 13, "#8a8aa0", "center");
+  ctx.restore();
+  const b = iaBackRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 10); ctx.fill(); text("VOLVER", b.x + b.w / 2, b.y + b.h / 2 + 6, 16, "#ff9bb0", "center");
 }
 
 // ---- MINIJUEGO: RULETA DE PREMIOS ----
@@ -2710,6 +2773,7 @@ function render() {
   if (state === "wardrobe") drawWardrobe();
   if (state === "options") drawOptions();
   if (state === "menu") drawMenu();
+  if (state === "ia") drawIA();
   if (state === "interior") drawInterior();
   if (state === "store") drawStore();
   if (state === "build") drawBuild();

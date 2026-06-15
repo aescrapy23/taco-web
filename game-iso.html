@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#1b2a4a">
-<title>TACO CITY ISO · jugable (milestone 2)</title>
+<title>TACO CITY ISO · jugable (milestone 3)</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
@@ -171,6 +171,43 @@
   #bankVal { font-size: clamp(13px, 3.2vw, 16px); font-weight: 900; color: #ffe14d; line-height: 1; }
   #bankUnit { font-size: clamp(9px, 2.4vw, 11px); font-weight: 800; color: #cfe0ff; opacity: 0.85; }
   #bankShared { font-size: 9px; font-weight: 700; color: #8fe9ff; opacity: 0.85; margin-top: 1px; }
+
+  /* Weapon + power-up HUD (under the bank badge) */
+  #armaWrap {
+    position: fixed; z-index: 11; pointer-events: none;
+    top: calc(env(safe-area-inset-top, 0px) + 108px);
+    left: calc(env(safe-area-inset-left, 0px) + 10px);
+    text-shadow: 0 2px 4px rgba(0,0,0,0.6);
+  }
+  #armaRow {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(20,30,55,0.58); border-radius: 10px; padding: 5px 9px;
+    box-shadow: inset 0 0 0 1.5px rgba(143,233,255,0.45);
+  }
+  #armaLabel { font-size: 9px; font-weight: 800; color: #cfe0ff; letter-spacing: 1px; }
+  #armaName { font-size: clamp(12px, 3.1vw, 15px); font-weight: 900; color: #8fe9ff; line-height: 1; }
+  #puRow { display: flex; gap: 5px; margin-top: 5px; flex-wrap: wrap; max-width: 180px; }
+  .puChip {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: rgba(20,30,55,0.6); border-radius: 8px; padding: 3px 7px;
+    font-size: 11px; font-weight: 900; color: #fff;
+  }
+  .puDot { width: 9px; height: 9px; border-radius: 50%; }
+
+  /* ARMA switch button (mobile) — sits left of the ENTER button area */
+  #armaBtn {
+    position: fixed; z-index: 16; pointer-events: auto; cursor: pointer;
+    right: calc(env(safe-area-inset-right, 0px) + 14px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 150px);
+    width: 78px; padding: 9px 6px; border: none; border-radius: 14px;
+    font-size: 10px; font-weight: 800; letter-spacing: 1px; color: #06212b; text-align: center;
+    background: linear-gradient(180deg, #8fe9ff, #5db4ff);
+    box-shadow: 0 5px 0 #2a6ea0, 0 8px 18px rgba(0,0,0,0.4);
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  }
+  #armaBtn b { display: block; font-size: 14px; font-weight: 900; margin-top: 2px; }
+  #armaBtn:active { transform: translateY(3px); box-shadow: 0 2px 0 #2a6ea0, 0 5px 12px rgba(0,0,0,0.4); }
+  #armaBtn.hidden { display: none; }
 </style>
 </head>
 <body>
@@ -185,6 +222,15 @@
     <span id="bankUnit">mon</span>
   </div>
   <div id="bankShared">Banco compartido</div>
+</div>
+
+<!-- weapon + active power-ups (under the bank badge) -->
+<div id="armaWrap">
+  <div id="armaRow">
+    <span id="armaLabel">ARMA</span>
+    <span id="armaName">SALSA</span>
+  </div>
+  <div id="puRow"></div>
 </div>
 
 <div id="hud">
@@ -214,6 +260,7 @@
 </div>
 
 <button id="enterBtn">ENTRAR AL MALL</button>
+<button id="armaBtn" class="hidden">ARMA<br><b id="armaBtnName">SALSA</b></button>
 
 <div class="stickZone" id="moveZone">
   <div class="stickBase" id="moveBase"></div>
@@ -226,14 +273,15 @@
 <div id="aimHint">Toca derecha = apuntar y disparar</div>
 
 <div class="overlay" id="titleOverlay">
-  <h1>TACO CITY <span>ISO</span><br>· jugable (milestone 2)</h1>
-  <div class="sub">Twin-stick · OLEADAS · día/noche · MALL iso</div>
+  <h1>TACO CITY <span>ISO</span><br>· jugable (milestone 3)</h1>
+  <div class="sub">Twin-stick · OLEADAS · ARMAS · POWER-UPS · MALL iso</div>
   <div class="help">
     <b>Mover:</b> WASD / flechas o stick izquierdo (táctil)<br>
-    <b>Apuntar y disparar salsa:</b> mouse (clic sostenido) o stick derecho (táctil)<br>
+    <b>Apuntar y disparar:</b> mouse (clic sostenido) o stick derecho (táctil)<br>
+    <b>Cambiar arma:</b> botón ARMA, tecla <b>Q</b> o <b>1/2/3</b> &middot; SALSA · ESCOPETA · RÁFAGA<br>
+    Junta <b>power-ups</b> (escudo, triple, rápido, vida) que sueltan los enemigos y el JEFE.<br>
     Sobrevive <b>oleadas</b> cada vez más duras &middot; cada 5 hay un <b>JEFE</b>.<br>
-    De <b>noche</b> se encienden las luces. Entra al <b>MALL</b> (cartel rosa) para curarte y ganar monedas.<br>
-    Tu <b>BANCO</b> es el mismo que en el juego principal &middot; &larr; VOLVER
+    Tu <b>taco</b> luce el diseño del juego principal &middot; tu <b>BANCO</b> es el mismo &middot; &larr; VOLVER
   </div>
   <button class="bigBtn" id="startBtn">JUGAR</button>
 </div>
@@ -281,6 +329,303 @@
   }
 
   loadBank();
+
+  // ============================================================
+  //  COSMETIC CARRYOVER  (the look the player designed in index.html)
+  //  index.html stores, per player:
+  //    pl_<name>_outfit  -> index into OUTFITS (shirts / themed suits)
+  //    pl_<name>_face    -> index into FACES   (expressions)
+  //    pl_<name>_acc     -> index into ACCS    (hats / glasses / helmets)
+  //    pl_<name>_mount   -> index into MOUNTS  (skates / bike / scooter ...)
+  //  We copy the very SAME arrays + the SAME 2D taco drawing code so the
+  //  hero looks EXACTLY the same in the iso city + mall. Drawn as a flat
+  //  sprite centered on the projected screen point (depth-sort handled by
+  //  the caller).  Defaults mirror index.html (outfit 0, face 0, acc 1).
+  // ============================================================
+  var look = { outfit: 0, face: 0, acc: 1, mount: 0 };
+
+  function clampI(v, a, b) { return v < a ? a : v > b ? b : v; }
+
+  // --- cosmetic data, copied verbatim from index.html ---
+  var OUTFITS = [
+    { name: "CLASICO", cost: 0 },
+    { name: "MEXICO", c1: "#1f8a4c", c2: "#ffffff", band: "#d62828", cost: 10 },
+    { name: "USA", c1: "#1e3a8a", c2: "#ffffff", band: "#d62828", cost: 10 },
+    { name: "CANADA", c1: "#d62828", c2: "#ffffff", band: "#ffffff", cost: 10 },
+    { name: "ARGENTINA", c1: "#74c0e8", c2: "#ffffff", band: "#f5cd46", cost: 18 },
+    { name: "BRASIL", c1: "#f5d000", c2: "#1f8a4c", band: "#2540a0", cost: 18 },
+    { name: "URUGUAY", c1: "#5aa9e6", c2: "#ffffff", band: "#111111", cost: 22 },
+    { name: "COLOMBIA", c1: "#f5d000", c2: "#1e3a8a", band: "#d62828", cost: 22 },
+    { name: "CHILE", c1: "#d62828", c2: "#1e3a8a", band: "#ffffff", cost: 22 },
+    { name: "ECUADOR", c1: "#f5d000", c2: "#1e3a8a", band: "#d62828", cost: 24 },
+    { name: "PERU", c1: "#ffffff", c2: "#d62828", band: "#d62828", cost: 24 },
+    { name: "PARAGUAY", c1: "#d62828", c2: "#1e3a8a", band: "#ffffff", cost: 26 },
+    { name: "ESPANA", c1: "#d62828", c2: "#f5cd46", band: "#1a1a1a", cost: 24 },
+    { name: "FRANCIA", c1: "#1e3a8a", c2: "#ffffff", band: "#d62828", cost: 24 },
+    { name: "PORTUGAL", c1: "#c81e3a", c2: "#1f6b3a", band: "#f5cd46", cost: 24 },
+    { name: "ALEMANIA", c1: "#1a1a1a", c2: "#ffffff", band: "#f5cd46", cost: 24 },
+    { name: "INGLATERRA", c1: "#ffffff", c2: "#1e3a8a", band: "#d62828", cost: 24 },
+    { name: "ITALIA", c1: "#2c6fd6", c2: "#ffffff", band: "#1a1a1a", cost: 26 },
+    { name: "PAISES BAJOS", c1: "#ee7711", c2: "#ffffff", band: "#1a1a1a", cost: 26 },
+    { name: "BELGICA", c1: "#c0392b", c2: "#f5d000", band: "#1a1a1a", cost: 26 },
+    { name: "CROACIA", c1: "#d62828", c2: "#ffffff", band: "#1e3a8a", cost: 28 },
+    { name: "SUIZA", c1: "#d62828", c2: "#ffffff", band: "#ffffff", cost: 28 },
+    { name: "POLONIA", c1: "#ffffff", c2: "#d62828", band: "#d62828", cost: 30 },
+    { name: "DINAMARCA", c1: "#c0392b", c2: "#ffffff", band: "#ffffff", cost: 30 },
+    { name: "SUECIA", c1: "#f5d000", c2: "#1e3a8a", band: "#1e3a8a", cost: 30 },
+    { name: "NORUEGA", c1: "#c0392b", c2: "#1e3a8a", band: "#ffffff", cost: 30 },
+    { name: "MARRUECOS", c1: "#c0392b", c2: "#1f6b3a", band: "#1f6b3a", cost: 26 },
+    { name: "SENEGAL", c1: "#1f8a4c", c2: "#ffffff", band: "#f5d000", cost: 28 },
+    { name: "NIGERIA", c1: "#1f8a4c", c2: "#ffffff", band: "#1f8a4c", cost: 28 },
+    { name: "GHANA", c1: "#ffffff", c2: "#1f8a4c", band: "#d62828", cost: 30 },
+    { name: "EGIPTO", c1: "#c0392b", c2: "#ffffff", band: "#1a1a1a", cost: 30 },
+    { name: "COSTA DE MARFIL", c1: "#ee7711", c2: "#ffffff", band: "#1f6b3a", cost: 32 },
+    { name: "JAPON", c1: "#1e3a8a", c2: "#ffffff", band: "#d62828", cost: 28 },
+    { name: "COREA", c1: "#c0392b", c2: "#1e3a8a", band: "#1a1a1a", cost: 30 },
+    { name: "AUSTRALIA", c1: "#f5d000", c2: "#1f8a4c", band: "#1f8a4c", cost: 30 },
+    { name: "ARABIA SAUDI", c1: "#1f8a4c", c2: "#ffffff", band: "#ffffff", cost: 32 },
+    { name: "QATAR", c1: "#7a1030", c2: "#ffffff", band: "#ffffff", cost: 32 },
+    { name: "COSTA RICA", c1: "#c0392b", c2: "#1e3a8a", band: "#ffffff", cost: 30 },
+    { name: "PANAMA", c1: "#c0392b", c2: "#1e3a8a", band: "#ffffff", cost: 32 },
+    { name: "ARCOIRIS", c1: "#ff4d4d", c2: "#4dd2ff", band: "#f5d000", cost: 45 },
+    { name: "ORO MUNDIAL", c1: "#f5cd46", c2: "#ffe896", band: "#caa23a", cost: 60 },
+    { name: "ASTRONAUTA", c1: "#e8eef7", c2: "#9aa6c0", suit: "astro", cost: 70 },
+    { name: "SUPERHEROE", c1: "#2353d6", c2: "#ffd84a", cape: "#c01a2a", suit: "hero", cost: 75 },
+    { name: "NINJA", c1: "#22242e", c2: "#c01a2a", suit: "ninja", cost: 65 },
+    { name: "ROBOT", c1: "#8a93a8", c2: "#5a86c0", suit: "robot", cost: 70 },
+    { name: "MAGO", c1: "#3a2a6a", c2: "#7a4ad6", suit: "mago", cost: 72 },
+    { name: "PIRATA", c1: "#6a3030", c2: "#c01a2a", suit: "pirata", cost: 68 },
+    { name: "BUZO", c1: "#1aa0a0", c2: "#0e6a6a", suit: "buzo", cost: 66 },
+    { name: "CONSTRUCTOR", c1: "#ff7a1a", c2: "#f2c200", suit: "obra", cost: 64 }
+  ];
+  var FACES = [
+    { name: "FELIZ" }, { name: "GUINO" }, { name: "GENIAL" }, { name: "SORPRESA" },
+    { name: "RISA" }, { name: "ENOJON" }, { name: "AMOR" }, { name: "ROBOT" }
+  ];
+  var ACCS = [
+    { name: "NADA" }, { name: "GORRO RANA" }, { name: "GAFAS DE SOL" }, { name: "MONIO" },
+    { name: "SOMBRERO" }, { name: "AUDIFONOS" }, { name: "FLOR" }, { name: "ANTIFAZ" }, { name: "GORRA" },
+    { name: "CASCO OBRA" }, { name: "ANTIPARRAS" }, { name: "OREJERAS" }
+  ];
+  var MOUNTS = [
+    { name: "A PIE", speed: 1, cost: 0 },
+    { name: "PATINES", speed: 1.35, cost: 20 },
+    { name: "PATINETA", speed: 1.5, cost: 35 },
+    { name: "SCOOTER", speed: 1.7, cost: 55 },
+    { name: "BICI", speed: 1.9, cost: 85 }
+  ];
+
+  function lookKey(k) { return "pl_" + playerName + "_" + k; }
+  function loadLook() {
+    function rd(k, d) { try { var n = parseInt(localStorage.getItem(lookKey(k)), 10); return isNaN(n) ? d : n; } catch (e) { return d; } }
+    look.outfit = clampI(rd("outfit", 0), 0, OUTFITS.length - 1);
+    look.face = clampI(rd("face", 0), 0, FACES.length - 1);
+    // index.html default acc is 1 (GORRO RANA) when the key is absent
+    var rawAcc = null; try { rawAcc = localStorage.getItem(lookKey("acc")); } catch (e) {}
+    look.acc = clampI(rawAcc == null ? 1 : (parseInt(rawAcc, 10) || 0), 0, ACCS.length - 1);
+    look.mount = clampI(rd("mount", 0), 0, MOUNTS.length - 1);
+  }
+  loadLook();
+
+  // ---- color helpers used ONLY by the copied taco art ----
+  // NOTE: index.html's shade(hex,f) is a *multiplier*; the iso file already
+  // has its own shade(hex,amt). Rename to shadeM to avoid the clash.
+  function shadeM(hex, f) {
+    if (hex.charAt(0) !== "#") return hex;
+    var n = parseInt(hex.slice(1), 16);
+    var r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    r = clampI(Math.round(r * f), 0, 255); g = clampI(Math.round(g * f), 0, 255); b = clampI(Math.round(b * f), 0, 255);
+    return "rgb(" + r + "," + g + "," + b + ")";
+  }
+  function tacoLimb(x, y, dx, dy, col, r) {
+    ctx.strokeStyle = col; ctx.lineWidth = r * 1.5; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx, y + dy); ctx.stroke();
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x + dx, y + dy, r, 0, 7); ctx.fill();
+  }
+  function tacoHeart(cx, cy, r) {
+    ctx.beginPath(); ctx.moveTo(cx, cy + r * 0.4);
+    ctx.bezierCurveTo(cx - r, cy - r * 0.4, cx - r * 0.5, cy - r, cx, cy - r * 0.3);
+    ctx.bezierCurveTo(cx + r * 0.5, cy - r, cx + r, cy - r * 0.4, cx, cy + r * 0.4); ctx.fill();
+  }
+  function tacoStar(cx, cy, r) {
+    ctx.beginPath();
+    for (var i = 0; i < 10; i++) { var a = i * Math.PI / 5 - Math.PI / 2, rr = i % 2 ? r * 0.5 : r, px = cx + Math.cos(a) * rr, py = cy + Math.sin(a) * rr; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+    ctx.closePath(); ctx.fill();
+  }
+
+  // FACE / ACCESSORY / SUIT / CAPE / MOUNT — copied from index.html
+  // (heart->tacoHeart, star5->tacoStar, shade->shadeM; t = TACO_T anim clock)
+  function drawFace(f, w, h, mo) {
+    var ex = w * 0.12, ey = -h * 0.04, er = w * 0.075, pr = w * 0.038;
+    ctx.lineCap = "round";
+    if (f === 1) {
+      ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(-ex, ey, er, 0, 7); ctx.fill();
+      ctx.fillStyle = "#2a1808"; ctx.beginPath(); ctx.arc(-ex + w * 0.02, ey + w * 0.01, pr, 0, 7); ctx.fill();
+      ctx.strokeStyle = "#2a1808"; ctx.lineWidth = w * 0.03; ctx.beginPath(); ctx.arc(ex, ey, er, 0.2, Math.PI - 0.2, false); ctx.stroke();
+    } else if (f === 2) {
+      for (var s2 = -1; s2 <= 1; s2 += 2) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(s2 * ex, ey, er, 0, 7); ctx.fill(); ctx.fillStyle = "#2a1808"; ctx.beginPath(); ctx.arc(s2 * ex + w * 0.01, ey + w * 0.015, pr, 0, 7); ctx.fill(); }
+      ctx.fillStyle = "#f5b938"; ctx.fillRect(-ex - er, ey - er, (ex + er) * 2, er);
+    } else if (f === 3) {
+      for (var s3 = -1; s3 <= 1; s3 += 2) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(s3 * ex, ey, er * 1.3, 0, 7); ctx.fill(); ctx.fillStyle = "#2a1808"; ctx.beginPath(); ctx.arc(s3 * ex, ey, pr, 0, 7); ctx.fill(); }
+    } else if (f === 4) {
+      ctx.strokeStyle = "#2a1808"; ctx.lineWidth = w * 0.03; for (var s4 = -1; s4 <= 1; s4 += 2) { ctx.beginPath(); ctx.arc(s4 * ex, ey + w * 0.02, er, Math.PI + 0.3, -0.3, false); ctx.stroke(); }
+    } else if (f === 5) {
+      for (var s5 = -1; s5 <= 1; s5 += 2) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(s5 * ex, ey, er, 0, 7); ctx.fill(); ctx.fillStyle = "#2a1808"; ctx.beginPath(); ctx.arc(s5 * ex, ey, pr, 0, 7); ctx.fill(); }
+      ctx.strokeStyle = "#2a1808"; ctx.lineWidth = w * 0.035; ctx.beginPath(); ctx.moveTo(-ex - er, ey - er * 1.4); ctx.lineTo(-ex + er * 0.3, ey - er * 0.4); ctx.moveTo(ex + er, ey - er * 1.4); ctx.lineTo(ex - er * 0.3, ey - er * 0.4); ctx.stroke();
+    } else if (f === 6) {
+      ctx.fillStyle = "#ff4d6d"; for (var s6 = -1; s6 <= 1; s6 += 2) tacoHeart(s6 * ex, ey, er * 1.2);
+    } else if (f === 7) {
+      for (var s7 = -1; s7 <= 1; s7 += 2) { ctx.fillStyle = "#7fd6ff"; ctx.fillRect(s7 * ex - er, ey - er * 0.7, er * 2, er * 1.4); ctx.fillStyle = "#0c2030"; ctx.fillRect(s7 * ex - pr, ey - pr, pr * 2, pr * 2); }
+    } else {
+      ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(-ex, ey, er, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(ex, ey, er, 0, 7); ctx.fill();
+      ctx.fillStyle = "#2a1808"; ctx.beginPath(); ctx.arc(-ex + w * 0.02, ey + w * 0.01, pr, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(ex + w * 0.02, ey + w * 0.01, pr, 0, 7); ctx.fill();
+    }
+    if (f === 3) { ctx.fillStyle = "#3a1810"; ctx.beginPath(); ctx.arc(0, h * 0.08, w * 0.07, 0, 7); ctx.fill(); }
+    else if (f === 5) { ctx.strokeStyle = "#3a1810"; ctx.lineWidth = w * 0.03; ctx.beginPath(); ctx.arc(0, h * 0.16, w * 0.12, Math.PI + 0.4, -0.4, false); ctx.stroke(); }
+    else if (f === 7) { ctx.fillStyle = "#3a1810"; ctx.fillRect(-w * 0.12, h * 0.07, w * 0.24, w * 0.03); }
+    else if (f === 4 || f === 6) { ctx.fillStyle = "#3a1810"; ctx.beginPath(); ctx.ellipse(0, h * 0.08, w * 0.14, w * (0.06 + 0.05 * mo), 0, 0, 7); ctx.fill(); ctx.fillStyle = "#ff7a8a"; ctx.beginPath(); ctx.ellipse(0, h * 0.10, w * 0.07, w * 0.03, 0, 0, 7); ctx.fill(); }
+    else { ctx.fillStyle = "#3a1810"; ctx.beginPath(); ctx.ellipse(0, h * 0.07, w * 0.12, w * (0.035 + 0.06 * mo), 0, 0, 7); ctx.fill(); ctx.fillStyle = "#ff7a8a"; ctx.beginPath(); ctx.ellipse(0, h * 0.09, w * 0.06, w * (0.015 + 0.03 * mo), 0, 0, 7); ctx.fill(); }
+  }
+  function drawAccessory(a, w, h, s) {
+    if (!a) return;
+    var hy = -h * 0.1 - w * 0.46, ey = -h * 0.04, ex = w * 0.12, sgn;
+    if (a === 1) {
+      ctx.fillStyle = "#2f8a3a"; ctx.beginPath(); ctx.ellipse(0, hy + w * 0.16, w * 0.46, w * 0.12, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = "#3aa84a"; ctx.beginPath(); ctx.ellipse(0, hy + w * 0.14, w * 0.46, w * 0.1, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = "#3aa84a"; ctx.beginPath(); ctx.moveTo(-w * 0.3, hy + w * 0.16); ctx.lineTo(-w * 0.24, hy - w * 0.14); ctx.quadraticCurveTo(0, hy - w * 0.26, w * 0.24, hy - w * 0.14); ctx.lineTo(w * 0.3, hy + w * 0.16); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.18)"; ctx.beginPath(); ctx.ellipse(-w * 0.1, hy - w * 0.05, w * 0.12, w * 0.08, -0.4, 0, 7); ctx.fill();
+      for (sgn = -1; sgn <= 1; sgn += 2) { ctx.fillStyle = "#3aa84a"; ctx.beginPath(); ctx.arc(sgn * w * 0.16, hy - w * 0.2, w * 0.12, 0, 7); ctx.fill(); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(sgn * w * 0.16, hy - w * 0.22, w * 0.075, 0, 7); ctx.fill(); ctx.fillStyle = "#15240f"; ctx.beginPath(); ctx.arc(sgn * w * 0.16, hy - w * 0.22, w * 0.035, 0, 7); ctx.fill(); }
+    } else if (a === 2) {
+      var r2 = w * 0.11; ctx.fillStyle = "#15161f"; for (sgn = -1; sgn <= 1; sgn += 2) { ctx.beginPath(); ctx.roundRect(sgn * ex - r2, ey - r2 * 0.8, r2 * 2, r2 * 1.5, 4); ctx.fill(); }
+      ctx.strokeStyle = "#15161f"; ctx.lineWidth = w * 0.03; ctx.beginPath(); ctx.moveTo(-ex + r2, ey); ctx.lineTo(ex - r2, ey); ctx.stroke();
+      ctx.fillStyle = "rgba(255,255,255,0.25)"; ctx.fillRect(-ex - r2 * 0.6, ey - r2 * 0.6, r2 * 0.6, r2 * 0.4); ctx.fillRect(ex - r2 * 0.4, ey - r2 * 0.6, r2 * 0.6, r2 * 0.4);
+    } else if (a === 3) {
+      var by = hy + w * 0.06; ctx.fillStyle = "#e0479a"; ctx.beginPath(); ctx.moveTo(0, by); ctx.lineTo(-w * 0.2, by - w * 0.1); ctx.lineTo(-w * 0.2, by + w * 0.1); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(0, by); ctx.lineTo(w * 0.2, by - w * 0.1); ctx.lineTo(w * 0.2, by + w * 0.1); ctx.closePath(); ctx.fill(); ctx.fillStyle = "#ff86c4"; ctx.beginPath(); ctx.arc(0, by, w * 0.06, 0, 7); ctx.fill();
+    } else if (a === 4) {
+      var ty4 = hy + w * 0.14; ctx.fillStyle = "#2a2230"; ctx.fillRect(-w * 0.3, ty4, w * 0.6, w * 0.06); ctx.fillRect(-w * 0.2, ty4 - w * 0.28, w * 0.4, w * 0.3); ctx.fillStyle = "#c0392b"; ctx.fillRect(-w * 0.2, ty4 - w * 0.06, w * 0.4, w * 0.05);
+    } else if (a === 5) {
+      ctx.strokeStyle = "#2a2c38"; ctx.lineWidth = w * 0.05; ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.5, Math.PI * 1.16, Math.PI * 1.84, false); ctx.stroke();
+      ctx.fillStyle = "#7fd6ff"; for (sgn = -1; sgn <= 1; sgn += 2) { ctx.beginPath(); ctx.roundRect(sgn * w * 0.46 - w * 0.06, -h * 0.16, w * 0.12, w * 0.18, 4); ctx.fill(); }
+    } else if (a === 6) {
+      var fy = hy + w * 0.2, cols2 = ["#ff6b8a", "#ffd84a", "#7fd6ff", "#b48cff", "#ff9b3c"]; for (var i6 = -2; i6 <= 2; i6++) { var cx6 = i6 * w * 0.16; ctx.fillStyle = cols2[i6 + 2]; for (var k6 = 0; k6 < 5; k6++) { var a2 = k6 / 5 * 6.28; ctx.beginPath(); ctx.arc(cx6 + Math.cos(a2) * w * 0.05, fy + Math.sin(a2) * w * 0.05, w * 0.04, 0, 7); ctx.fill(); } ctx.fillStyle = "#fff3a0"; ctx.beginPath(); ctx.arc(cx6, fy, w * 0.03, 0, 7); ctx.fill(); }
+    } else if (a === 7) {
+      ctx.fillStyle = "#2540c0"; ctx.beginPath(); ctx.roundRect(-w * 0.26, ey - w * 0.1, w * 0.52, w * 0.16, 6); ctx.fill(); ctx.fillStyle = "#fff"; for (sgn = -1; sgn <= 1; sgn += 2) { ctx.beginPath(); ctx.ellipse(sgn * ex, ey, w * 0.06, w * 0.04, 0, 0, 7); ctx.fill(); }
+    } else if (a === 8) {
+      var ty8 = hy + w * 0.18; ctx.fillStyle = "#d62828"; ctx.beginPath(); ctx.arc(0, ty8, w * 0.26, Math.PI, 0, false); ctx.fill(); ctx.fillStyle = "#a81f1f"; ctx.fillRect(0, ty8 - w * 0.02, w * 0.34, w * 0.07); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, ty8 - w * 0.12, w * 0.04, 0, 7); ctx.fill();
+    } else if (a === 9) {
+      var ty9 = hy + w * 0.14; ctx.fillStyle = "#f2c200"; ctx.beginPath(); ctx.arc(0, ty9, w * 0.32, Math.PI, 0, false); ctx.fill(); ctx.fillRect(-w * 0.38, ty9 - 2, w * 0.76, w * 0.07); ctx.fillStyle = "#d9a800"; ctx.fillRect(-w * 0.05, ty9 - w * 0.32, w * 0.1, w * 0.2); ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.beginPath(); ctx.arc(-w * 0.1, ty9 - w * 0.12, w * 0.08, Math.PI, Math.PI * 1.5); ctx.fill();
+    } else if (a === 10) {
+      ctx.fillStyle = "rgba(180,230,255,0.6)"; for (sgn = -1; sgn <= 1; sgn += 2) { ctx.beginPath(); ctx.roundRect(sgn * ex - w * 0.11, ey - w * 0.08, w * 0.22, w * 0.16, 5); ctx.fill(); } ctx.strokeStyle = "#caa23a"; ctx.lineWidth = w * 0.025; ctx.beginPath(); ctx.moveTo(-ex + w * 0.1, ey); ctx.lineTo(ex - w * 0.1, ey); ctx.stroke();
+    } else if (a === 11) {
+      ctx.strokeStyle = "#2a2c38"; ctx.lineWidth = w * 0.05; ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.48, Math.PI * 1.18, Math.PI * 1.82, false); ctx.stroke(); ctx.fillStyle = "#f2c200"; for (sgn = -1; sgn <= 1; sgn += 2) { ctx.beginPath(); ctx.roundRect(sgn * w * 0.44 - w * 0.07, -h * 0.16, w * 0.14, w * 0.2, 5); ctx.fill(); }
+    }
+  }
+  function drawCape(w, h, s, col) {
+    var sway = Math.sin(TACO_T * 3) * w * 0.05; ctx.fillStyle = col || "#c01a2a";
+    ctx.beginPath(); ctx.moveTo(-w * 0.3, -h * 0.2); ctx.quadraticCurveTo(-w * 0.52 + sway, h * 0.4, -w * 0.24 + sway, s * 0.55); ctx.lineTo(w * 0.24 - sway, s * 0.55); ctx.quadraticCurveTo(w * 0.52 - sway, h * 0.4, w * 0.3, -h * 0.2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = shadeM(col || "#c01a2a", 0.78); ctx.fillRect(-w * 0.3, -h * 0.22, w * 0.6, h * 0.06);
+  }
+  function drawSuitFront(suit, w, h, s, O) {
+    if (!suit) return;
+    var ey = -h * 0.04, ex = w * 0.12, hy = -h * 0.1 - w * 0.46, sgn;
+    if (suit === "astro") {
+      ctx.strokeStyle = "#cfe8ff"; ctx.lineWidth = w * 0.05; ctx.beginPath(); ctx.arc(0, -h * 0.05, w * 0.55, 0, 7); ctx.stroke();
+      ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = w * 0.022; ctx.beginPath(); ctx.arc(-w * 0.18, -h * 0.12, w * 0.2, Math.PI, Math.PI * 1.5); ctx.stroke();
+      ctx.fillStyle = "#cfe8ff"; ctx.fillRect(-w * 0.02, hy - w * 0.1, w * 0.04, w * 0.12); ctx.beginPath(); ctx.arc(0, hy - w * 0.12, w * 0.05, 0, 7); ctx.fill();
+    } else if (suit === "hero") {
+      ctx.fillStyle = O.c2 || "#ffd84a"; ctx.beginPath(); ctx.moveTo(0, h * 0.0); ctx.lineTo(w * 0.1, h * 0.12); ctx.lineTo(0, h * 0.22); ctx.lineTo(-w * 0.1, h * 0.12); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = O.cape || "#c01a2a"; ctx.beginPath(); ctx.roundRect(-w * 0.24, ey - w * 0.085, w * 0.48, w * 0.15, 5); ctx.fill(); ctx.fillStyle = "#fff"; for (sgn = -1; sgn <= 1; sgn += 2) { ctx.beginPath(); ctx.ellipse(sgn * ex, ey, w * 0.05, w * 0.035, 0, 0, 7); ctx.fill(); }
+    } else if (suit === "ninja") {
+      ctx.fillStyle = O.c2 || "#c01a2a"; ctx.fillRect(-w * 0.46, -h * 0.17, w * 0.92, h * 0.06);
+      ctx.beginPath(); ctx.moveTo(-w * 0.46, -h * 0.15); ctx.lineTo(-w * 0.66, -h * 0.04); ctx.lineTo(-w * 0.46, -h * 0.06); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = shadeM(O.c2 || "#c01a2a", 0.8); ctx.fillRect(-w * 0.46, -h * 0.17, w * 0.92, h * 0.015);
+    } else if (suit === "robot") {
+      ctx.strokeStyle = "#9aa6c0"; ctx.lineWidth = w * 0.03; ctx.beginPath(); ctx.moveTo(0, hy + w * 0.05); ctx.lineTo(0, hy - w * 0.1); ctx.stroke(); ctx.fillStyle = "#ff5c5c"; ctx.beginPath(); ctx.arc(0, hy - w * 0.12, w * 0.045, 0, 7); ctx.fill();
+      ctx.fillStyle = "#9aa6c0"; ctx.fillRect(-w * 0.16, h * 0.05, w * 0.32, w * 0.05); ctx.fillStyle = "#7a86a0"; for (sgn = -1; sgn <= 1; sgn += 2) { ctx.beginPath(); ctx.arc(sgn * w * 0.27, ey + w * 0.02, w * 0.03, 0, 7); ctx.fill(); }
+    } else if (suit === "mago") {
+      var hyp = hy + w * 0.08; ctx.fillStyle = O.c2 || "#7a4ad6"; ctx.beginPath(); ctx.moveTo(0, hyp - w * 0.55); ctx.lineTo(-w * 0.27, hyp); ctx.lineTo(w * 0.27, hyp); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#ffd84a"; tacoStar(0, hyp - w * 0.55, w * 0.06); for (var k = 0; k < 3; k++) { ctx.fillStyle = "#ffe79a"; tacoStar(-w * 0.1 + k * w * 0.1, hyp - w * 0.32 + (k % 2) * w * 0.1, w * 0.045); }
+    } else if (suit === "pirata") {
+      var hyb = hy + w * 0.16; ctx.fillStyle = O.c2 || "#c01a2a"; ctx.beginPath(); ctx.arc(0, hyb, w * 0.34, Math.PI, 0, false); ctx.fill(); ctx.fillRect(-w * 0.34, hyb - 2, w * 0.68, w * 0.06); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(-w * 0.12, hyb - w * 0.08, w * 0.02, 0, 7); ctx.fill();
+      ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.arc(ex, ey, w * 0.08, 0, 7); ctx.fill(); ctx.strokeStyle = "#15161f"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(ex - w * 0.06, ey - w * 0.06); ctx.lineTo(-w * 0.46, ey - w * 0.12); ctx.stroke();
+    } else if (suit === "buzo") {
+      ctx.strokeStyle = "#0e6a6a"; ctx.lineWidth = w * 0.045; ctx.beginPath(); ctx.roundRect(-w * 0.27, ey - w * 0.1, w * 0.54, w * 0.2, 8); ctx.stroke(); ctx.fillStyle = "rgba(150,210,255,0.45)"; ctx.beginPath(); ctx.roundRect(-w * 0.25, ey - w * 0.085, w * 0.5, w * 0.17, 7); ctx.fill();
+      ctx.fillStyle = "#0e6a6a"; ctx.fillRect(w * 0.24, ey + w * 0.05, w * 0.12, w * 0.04);
+    } else if (suit === "obra") {
+      ctx.fillStyle = "#d9d9d9"; ctx.fillRect(-w * 0.46, h * 0.02, w * 0.92, h * 0.045); ctx.fillRect(-w * 0.46, h * 0.16, w * 0.92, h * 0.045);
+      ctx.fillStyle = "#7a8088"; ctx.fillRect(-w * 0.46, h * 0.02, w * 0.92, h * 0.012);
+      var tyo = hy + w * 0.14; ctx.fillStyle = "#f2c200"; ctx.beginPath(); ctx.arc(0, tyo, w * 0.32, Math.PI, 0, false); ctx.fill(); ctx.fillRect(-w * 0.38, tyo - 2, w * 0.76, w * 0.07); ctx.fillStyle = "#d9a800"; ctx.fillRect(-w * 0.05, tyo - w * 0.32, w * 0.1, w * 0.2); ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.beginPath(); ctx.arc(-w * 0.1, tyo - w * 0.12, w * 0.08, Math.PI, Math.PI * 1.5); ctx.fill();
+    }
+  }
+  function drawMount(m, w, h, s, moving, walkPhaseV) {
+    if (!m) return;
+    var fy = s * 0.52, spin = moving ? walkPhaseV * 2 : TACO_T, sgn, kk;
+    function wheel(wx, wr) { ctx.fillStyle = "#1a1a1f"; ctx.beginPath(); ctx.arc(wx, fy, wr, 0, 7); ctx.fill(); ctx.fillStyle = "#555"; ctx.beginPath(); ctx.arc(wx, fy, wr * 0.45, 0, 7); ctx.fill(); ctx.strokeStyle = "#999"; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(wx + Math.cos(spin) * wr * 0.4, fy + Math.sin(spin) * wr * 0.4); ctx.lineTo(wx - Math.cos(spin) * wr * 0.4, fy - Math.sin(spin) * wr * 0.4); ctx.stroke(); }
+    if (m === 1) {
+      for (sgn = -1; sgn <= 1; sgn += 2) { ctx.fillStyle = "#e0479a"; ctx.beginPath(); ctx.roundRect(sgn * s * 0.2 - s * 0.1, fy - s * 0.1, s * 0.22, s * 0.12, 3); ctx.fill(); for (kk = -1; kk <= 1; kk++) { ctx.fillStyle = "#1a1a1f"; ctx.beginPath(); ctx.arc(sgn * s * 0.2 + kk * s * 0.06, fy + s * 0.05, s * 0.035, 0, 7); ctx.fill(); } }
+    } else if (m === 2) {
+      ctx.fillStyle = "#3a2a18"; ctx.beginPath(); ctx.roundRect(-s * 0.34, fy - s * 0.03, s * 0.68, s * 0.07, 4); ctx.fill();
+      ctx.fillStyle = "#ff6b3c"; ctx.fillRect(-s * 0.3, fy - s * 0.02, s * 0.6, s * 0.025);
+      wheel(-s * 0.22, s * 0.06); wheel(s * 0.22, s * 0.06);
+    } else if (m === 3) {
+      ctx.fillStyle = "#2a2c38"; ctx.fillRect(-s * 0.3, fy - s * 0.02, s * 0.6, s * 0.06);
+      ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = s * 0.05; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(s * 0.28, fy); ctx.lineTo(s * 0.34, fy - s * 0.6); ctx.lineTo(s * 0.46, fy - s * 0.6); ctx.stroke();
+      wheel(-s * 0.26, s * 0.08); wheel(s * 0.3, s * 0.08);
+    } else if (m === 4) {
+      ctx.strokeStyle = "#4aa3e0"; ctx.lineWidth = s * 0.04; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(-s * 0.3, fy); ctx.lineTo(0, fy - s * 0.05); ctx.lineTo(s * 0.3, fy); ctx.lineTo(0, fy); ctx.closePath(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(s * 0.3, fy); ctx.lineTo(s * 0.34, fy - s * 0.5); ctx.lineTo(s * 0.46, fy - s * 0.5); ctx.stroke();
+      wheel(-s * 0.3, s * 0.16); wheel(s * 0.3, s * 0.16);
+    }
+  }
+
+  // animation clock for the cosmetic taco (cape sway, gloss, mouth, etc.)
+  var TACO_T = 0;
+
+  // ---- the designed hero, drawn as a flat sprite centered on (cx, groundY) ----
+  // groundY = projected ground point; the sprite stands on it (feet at groundY).
+  // shieldOn => draw the powerup shield bubble (reuses index.html's halo look).
+  function drawDesignedTaco(cx, groundY, facing, walkPhaseV, moving, shieldOn) {
+    var size = 34;                 // sprite scale tuned to match the old iso taco
+    var s = size, w = s, h = s * 0.62;
+    var wlk = Math.sin(walkPhaseV), sw = moving ? wlk : 0;
+    var bob = moving ? Math.abs(wlk) * s * 0.05 : Math.sin(TACO_T * 3) * s * 0.025;
+    var lean = moving ? wlk * 0.06 : 0;
+    var y = groundY - s * 0.52;    // lift so the feet/shadow sit on the ground point
+    // ground shadow (kept, like the old iso taco)
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.beginPath(); ctx.ellipse(cx, groundY + 1, 15, 7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.save();
+    ctx.translate(cx, y + bob); ctx.rotate(lean); ctx.scale(facing < 0 ? -1 : 1, 1);
+    var O = OUTFITS[look.outfit];
+    drawMount(look.mount, w, h, s, moving, walkPhaseV);
+    tacoLimb(-s * 0.15, s * 0.16, -s * 0.02, s * 0.34 + sw * s * 0.14, "#d89a3a", s * 0.095);
+    tacoLimb(s * 0.15, s * 0.16, s * 0.02, s * 0.34 - sw * s * 0.14, "#d89a3a", s * 0.095);
+    tacoLimb(-s * 0.36, -s * 0.06, -s * 0.12, s * 0.18 - sw * s * 0.12, "#f0c255", s * 0.085);
+    tacoLimb(s * 0.36, -s * 0.06, s * 0.12, s * 0.18 + sw * s * 0.12, "#f0c255", s * 0.085);
+    if (shieldOn) { var a = 0.3 + 0.22 * Math.sin(TACO_T * 8); ctx.globalAlpha = a; ctx.fillStyle = "#5eead4"; ctx.beginPath(); ctx.arc(0, 0, w * 0.9, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+    if (O.suit === "hero") drawCape(w, h, s, O.cape);
+    var bg = ctx.createRadialGradient(-w * 0.18, -h * 0.32, w * 0.08, 0, -h * 0.1, w * 0.62);
+    bg.addColorStop(0, "#ffdd80"); bg.addColorStop(0.55, "#f5b938"); bg.addColorStop(1, "#d2901c");
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.5, 0, Math.PI, false); ctx.fill();
+    ctx.fillStyle = "#d08a26"; ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.5, 0.15, Math.PI - 0.15, false); ctx.arc(0, -h * 0.1, w * 0.42, Math.PI - 0.15, 0.15, true); ctx.fill();
+    ctx.fillStyle = "#e2342a"; ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.36, Math.PI + 0.2, -0.2, false); ctx.fill();
+    ctx.fillStyle = "#ffd650"; ctx.beginPath(); ctx.arc(-w * 0.12, -h * 0.18, w * 0.13, 0, 7); ctx.fill();
+    ctx.fillStyle = "#60d040"; for (var i = -2; i <= 2; i++) { ctx.beginPath(); ctx.arc(i * w * 0.16, -h * 0.34, w * 0.11, Math.PI, 0, false); ctx.fill(); }
+    ctx.globalAlpha = 0.22; ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.ellipse(-w * 0.16, -h * 0.16, w * 0.22, w * 0.1, -0.5, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+    if (O.c1) {
+      ctx.save(); ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.47, 0, Math.PI, false); ctx.clip();
+      ctx.fillStyle = O.c1; ctx.fillRect(-w * 0.5, 0, w, h * 0.55);
+      if (O.c2) { ctx.fillStyle = O.c2; ctx.fillRect(-w * 0.5, h * 0.14, w, h * 0.07); }
+      ctx.restore();
+      if (O.band) { ctx.fillStyle = O.band; ctx.fillRect(-w * 0.46, -h * 0.14, w * 0.92, h * 0.05); }
+    }
+    var mo = (0.5 + 0.5 * Math.sin(TACO_T * 6)) * (moving ? 1 : 0.45);
+    drawFace(look.face, w, h, mo);
+    drawSuitFront(O.suit, w, h, s, O);
+    drawAccessory(look.acc, w, h, s);
+    ctx.restore();
+  }
 
   // ============================================================
   //  Canvas / DPR setup
@@ -519,14 +864,29 @@
     tx: 0.5, ty: 0.5, speed: 3.2, facing: 1,
     walkPhase: 0, moving: false,
     hp: 100, maxHp: 100, aimAngle: 0, // aim in TILE space (radians)
-    fireCd: 0, hurtFlash: 0, invuln: 0
+    fireCd: 0, hurtFlash: 0, invuln: 0,
+    // ---- power-up timers (seconds remaining; 0 = inactive) ----
+    shield: 0, triple: 0, rapid: 0
   };
 
-  var bullets = [];   // {tx,ty,vx,vy,life}
+  var bullets = [];   // {tx,ty,vx,vy,life,dmg}
   var enemies = [];   // {tx,ty,hp,maxHp,wob,hurt,die}
   var gems = [];      // {tx,ty,phase,collected}
+  var powerups = [];  // {tx,ty,kind,phase,life}
   var particles = []; // {tx,ty,tz,vx,vy,vz,life,maxLife,col,size}
   var floaters = [];  // {tx,ty,tz,vy,life,text,col}
+
+  // ============================================================
+  //  WEAPONS — 3 guns, switch with the ARMA button / Q / 1-3.
+  //  Each has its own cadence (cd), damage (dmg), bullet speed (spd)
+  //  and pellet pattern.  HUD shows the current one.
+  // ============================================================
+  var WEAPONS = [
+    { name: "SALSA",    col: "#ff3b3b", cd: 0.16, dmg: 1, spd: 9.5, pellets: 1, spread: 0 },
+    { name: "ESCOPETA", col: "#ffae5d", cd: 0.52, dmg: 1, spd: 8.5, pellets: 5, spread: 0.42 },
+    { name: "RAFAGA",   col: "#8fe9ff", cd: 0.07, dmg: 1, spd: 11,  pellets: 1, spread: 0.05 }
+  ];
+  var curWeapon = 0;
 
   var score = 0;
   var spawnTimer = 0;
@@ -658,7 +1018,9 @@
     taco.tx = s.x; taco.ty = s.y;
     taco.hp = taco.maxHp; taco.facing = 1; taco.walkPhase = 0;
     taco.aimAngle = 0; taco.fireCd = 0; taco.hurtFlash = 0; taco.invuln = 0;
-    bullets = []; enemies = []; gems = []; particles = []; floaters = [];
+    taco.shield = 0; taco.triple = 0; taco.rapid = 0;
+    curWeapon = 0;
+    bullets = []; enemies = []; gems = []; powerups = []; particles = []; floaters = [];
     score = 0; spawnTimer = 1.0; enemyKills = 0; gemsCollected = 0;
     wave = 0; waveToSpawn = 0; waveAlive = 0; waveBannerT = 0;
     betweenWaves = false; betweenT = 0; bossWave = false; bossSpawned = false;
@@ -695,6 +1057,13 @@
   }
   window.addEventListener("keydown", function (e) {
     if (e.repeat) { if (setKey(e.code, true)) e.preventDefault(); return; }
+    // weapon switch: Q cycles, 1/2/3 selects (only while playing)
+    if (state === STATE_PLAY) {
+      if (e.code === "KeyQ") { switchWeapon(1); e.preventDefault(); return; }
+      if (e.code === "Digit1" || e.code === "Numpad1") { setWeapon(0); e.preventDefault(); return; }
+      if (e.code === "Digit2" || e.code === "Numpad2") { setWeapon(1); e.preventDefault(); return; }
+      if (e.code === "Digit3" || e.code === "Numpad3") { setWeapon(2); e.preventDefault(); return; }
+    }
     if (setKey(e.code, true)) { ensureAudio(); e.preventDefault(); }
   }, { passive: false });
   window.addEventListener("keyup", function (e) {
@@ -793,34 +1162,71 @@
   }
 
   // ============================================================
-  //  Firing
+  //  Firing — driven by the selected WEAPON, modified by power-ups:
+  //    RAPID  -> cadence x2 (halve cd)
+  //    TRIPLE -> +2 extra fan bullets per shot
   // ============================================================
-  var FIRE_INTERVAL = 0.16;
-  var BULLET_SPEED = 9.5;   // tiles/sec
   var BULLET_LIFE = 0.9;
 
-  function fire() {
-    var ang = taco.aimAngle;
-    var vx = Math.cos(ang) * BULLET_SPEED;
-    var vy = Math.sin(ang) * BULLET_SPEED;
-    // spawn slightly ahead of taco
+  function curFireInterval() {
+    var cd = WEAPONS[curWeapon].cd;
+    if (taco.rapid > 0) cd *= 0.5;
+    return cd;
+  }
+
+  function spawnBullet(ang, w) {
     bullets.push({
       tx: taco.tx + Math.cos(ang) * 0.3,
       ty: taco.ty + Math.sin(ang) * 0.3,
-      vx: vx, vy: vy, life: BULLET_LIFE
+      vx: Math.cos(ang) * w.spd, vy: Math.sin(ang) * w.spd,
+      life: BULLET_LIFE, dmg: w.dmg, col: w.col
     });
-    // muzzle particles (screen-space scatter via tz puff)
-    for (var i = 0; i < 4; i++) {
+  }
+
+  function fire() {
+    var w = WEAPONS[curWeapon];
+    var base = taco.aimAngle;
+    // build the spread pattern for this weapon
+    var pellets = w.pellets, spread = w.spread;
+    var angs = [];
+    if (pellets <= 1) {
+      angs.push(base + (Math.random() - 0.5) * spread);
+    } else {
+      for (var i = 0; i < pellets; i++) {
+        var t = pellets === 1 ? 0 : (i / (pellets - 1) - 0.5);
+        angs.push(base + t * spread);
+      }
+    }
+    // TRIPLE power-up: add 2 wider bullets around the aim
+    if (taco.triple > 0) {
+      angs.push(base + 0.32);
+      angs.push(base - 0.32);
+    }
+    for (var k = 0; k < angs.length; k++) spawnBullet(angs[k], w);
+    // muzzle particles (screen-space scatter via tz puff), tinted to weapon
+    for (var m = 0; m < 4; m++) {
       particles.push({
-        tx: taco.tx + Math.cos(ang) * 0.3, ty: taco.ty + Math.sin(ang) * 0.3, tz: 18,
-        vx: (rnd() - 0.5) * 1.2 + Math.cos(ang) * 1.5,
-        vy: (rnd() - 0.5) * 1.2 + Math.sin(ang) * 1.5,
+        tx: taco.tx + Math.cos(base) * 0.3, ty: taco.ty + Math.sin(base) * 0.3, tz: 18,
+        vx: (rnd() - 0.5) * 1.2 + Math.cos(base) * 1.5,
+        vy: (rnd() - 0.5) * 1.2 + Math.sin(base) * 1.5,
         vz: rnd() * 20, life: 0.18, maxLife: 0.18,
         col: "#ffd24d", size: 3
       });
     }
-    addShake(1.4);
+    addShake(curWeapon === 1 ? 2.6 : 1.4);
     sndShoot();
+  }
+
+  // cycle to the next weapon (button / key)
+  function switchWeapon(dir) {
+    curWeapon = (curWeapon + (dir || 1) + WEAPONS.length) % WEAPONS.length;
+    taco.fireCd = Math.max(taco.fireCd, 0.05);
+    sndGem();
+    updateWeaponHUD();
+  }
+  function setWeapon(i) {
+    if (i < 0 || i >= WEAPONS.length) return;
+    curWeapon = i; sndGem(); updateWeaponHUD();
   }
 
   // ============================================================
@@ -1093,62 +1499,20 @@
     ctx.lineTo(p.x, p.y - z + 4); ctx.lineTo(tp(left).x + 4, tp(left).y); ctx.closePath(); ctx.fill();
   }
 
-  // ---- the Taco hero (kept reconcizable from iso.html) ----
+  // ---- the Taco hero — now the player's DESIGNED taco (carryover) ----
   function drawTaco(tx, ty) {
     var p = worldToScreen(tx, ty, 0);
-    var bob = Math.sin(taco.walkPhase) * (taco.moving ? 3 : 0.8);
-    var legSwing = Math.sin(taco.walkPhase) * (taco.moving ? 4 : 0);
-    var cx = p.x, groundY = p.y, bodyY = groundY - 20 + bob, dir = taco.facing;
-
-    ctx.fillStyle = "rgba(0,0,0,0.28)";
-    ctx.beginPath(); ctx.ellipse(cx, groundY + 2, 15, 7, 0, 0, Math.PI * 2); ctx.fill();
-
-    ctx.fillStyle = "#5a3a1c";
-    ctx.beginPath(); ctx.ellipse(cx - 6 + legSwing, groundY - 1, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(cx + 6 - legSwing, groundY - 1, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
-
-    ctx.strokeStyle = "#e7b740"; ctx.lineWidth = 4; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(cx - 12, bodyY + 6); ctx.lineTo(cx - 18 - legSwing * 0.5, bodyY + 12 + bob); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx + 12, bodyY + 6); ctx.lineTo(cx + 18 + legSwing * 0.5, bodyY + 12 - bob); ctx.stroke();
-
-    var bw = 16, bh = 18;
-    // hurt flash tints the shell white briefly
-    var shellCol = taco.hurtFlash > 0 ? "#ffffff" : "#f2c44d";
-    ctx.fillStyle = shellCol;
-    ctx.beginPath();
-    ctx.moveTo(cx - bw, bodyY - bh * 0.2);
-    ctx.quadraticCurveTo(cx - bw, bodyY + bh, cx, bodyY + bh);
-    ctx.quadraticCurveTo(cx + bw, bodyY + bh, cx + bw, bodyY - bh * 0.2);
-    ctx.quadraticCurveTo(cx + bw * 0.6, bodyY - bh * 0.55, cx, bodyY - bh * 0.55);
-    ctx.quadraticCurveTo(cx - bw * 0.6, bodyY - bh * 0.55, cx - bw, bodyY - bh * 0.2);
-    ctx.closePath(); ctx.fill();
-
-    ctx.fillStyle = "rgba(180,120,30,0.25)";
-    ctx.beginPath();
-    ctx.moveTo(cx + bw, bodyY - bh * 0.2);
-    ctx.quadraticCurveTo(cx + bw, bodyY + bh, cx, bodyY + bh);
-    ctx.quadraticCurveTo(cx + bw * 0.5, bodyY + bh * 0.4, cx + bw * 0.4, bodyY - bh * 0.2);
-    ctx.closePath(); ctx.fill();
-
-    ctx.fillStyle = "#5fd16f";
-    for (var i = -1; i <= 1; i++) { ctx.beginPath(); ctx.arc(cx + i * 7, bodyY - bh * 0.5, 5, 0, Math.PI * 2); ctx.fill(); }
-    ctx.fillStyle = "#ff6b5e";
-    ctx.beginPath(); ctx.arc(cx - 3, bodyY - bh * 0.55, 3.2, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx + 5, bodyY - bh * 0.5, 3, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#ffe07a";
-    ctx.fillRect(cx - 8, bodyY - bh * 0.42, 3, 3);
-    ctx.fillRect(cx + 2, bodyY - bh * 0.38, 3, 3);
-
-    var eyeY = bodyY + 1, eo = dir * 1.5;
-    ctx.fillStyle = "#ffffff";
-    ctx.beginPath(); ctx.arc(cx - 5 + eo, eyeY, 4.2, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx + 5 + eo, eyeY, 4.2, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#222";
-    ctx.beginPath(); ctx.arc(cx - 5 + eo + dir, eyeY, 2, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx + 5 + eo + dir, eyeY, 2, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = "#7a3b1c"; ctx.lineWidth = 1.8;
-    ctx.beginPath(); ctx.arc(cx + eo, eyeY + 5, 4, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
-
+    var cx = p.x, groundY = p.y, bodyY = groundY - 22, dir = taco.facing;
+    // designed sprite (outfit + face + accessory + mount) from index.html look
+    drawDesignedTaco(cx, groundY, dir, taco.walkPhase, taco.moving, taco.shield > 0);
+    // hurt flash: brief white overlay on the body
+    if (taco.hurtFlash > 0) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(0.55, taco.hurtFlash * 0.7);
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath(); ctx.arc(cx, bodyY - 4, 18, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
     // aim reticle: small salsa nozzle pointing in aim dir (screen-space)
     var aimSx = Math.cos(taco.aimAngle) - Math.sin(taco.aimAngle); // (tx-ty)
     var aimSy = Math.cos(taco.aimAngle) + Math.sin(taco.aimAngle); // (tx+ty)
@@ -1156,7 +1520,7 @@
     var nx = aimSx / al, ny = aimSy / al;
     ctx.fillStyle = "#ff3b3b";
     ctx.beginPath();
-    ctx.arc(cx + nx * 20, bodyY + 4 + ny * 10, 3.5, 0, Math.PI * 2);
+    ctx.arc(cx + nx * 22, bodyY + 4 + ny * 11, 3.5, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -1255,6 +1619,53 @@
     ctx.closePath(); ctx.stroke();
   }
 
+  // floating power-up capsule with a per-kind icon (color + glyph)
+  function drawPowerup(pu) {
+    var def = PU[pu.kind], col = def.col;
+    var p = worldToScreen(pu.tx, pu.ty, 0);
+    var bob = Math.sin(pu.phase) * 4;
+    var cx = p.x, cy = p.y - 16 + bob;
+    var blink = pu.life < 3 ? (0.4 + 0.6 * Math.abs(Math.sin(performance.now() / 120))) : 1;
+    // shadow
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.beginPath(); ctx.ellipse(p.x, p.y + 1, 8, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.save();
+    ctx.globalAlpha = blink;
+    // glow
+    var gl = ctx.createRadialGradient(cx, cy, 1, cx, cy, 18);
+    gl.addColorStop(0, hexToRGBA(col, 0.55)); gl.addColorStop(1, hexToRGBA(col, 0));
+    ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(cx, cy, 18, 0, Math.PI * 2); ctx.fill();
+    // capsule
+    ctx.fillStyle = "#1c2438";
+    ctx.beginPath(); ctx.arc(cx, cy, 11, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 2.4; ctx.strokeStyle = col; ctx.stroke();
+    // icon glyph per kind
+    ctx.fillStyle = col; ctx.strokeStyle = col;
+    if (pu.kind === "shield") {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 7); ctx.lineTo(cx + 6, cy - 4); ctx.lineTo(cx + 6, cy + 2);
+      ctx.quadraticCurveTo(cx + 6, cy + 6, cx, cy + 8);
+      ctx.quadraticCurveTo(cx - 6, cy + 6, cx - 6, cy + 2);
+      ctx.lineTo(cx - 6, cy - 4); ctx.closePath(); ctx.fill();
+    } else if (pu.kind === "triple") {
+      ctx.lineWidth = 2; ctx.lineCap = "round";
+      for (var d = -1; d <= 1; d++) { ctx.beginPath(); ctx.moveTo(cx + d * 4, cy + 5); ctx.lineTo(cx + d * 6, cy - 6); ctx.stroke(); }
+    } else if (pu.kind === "rapid") {
+      ctx.beginPath();
+      ctx.moveTo(cx + 2, cy - 8); ctx.lineTo(cx - 5, cy + 1); ctx.lineTo(cx - 1, cy + 1);
+      ctx.lineTo(cx - 2, cy + 8); ctx.lineTo(cx + 5, cy - 1); ctx.lineTo(cx + 1, cy - 1);
+      ctx.closePath(); ctx.fill();
+    } else { // life = cross
+      ctx.fillRect(cx - 2, cy - 6, 4, 12); ctx.fillRect(cx - 6, cy - 2, 12, 4);
+    }
+    ctx.restore();
+  }
+  // small hex->rgba helper for power-up glows
+  function hexToRGBA(hex, a) {
+    var n = parseInt(hex.slice(1), 16);
+    return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")";
+  }
+
   // glowing entrance pad on the street in front of the mall
   function drawMallDoor() {
     var p = worldToScreen(mall.door.tx, mall.door.ty, 0);
@@ -1294,8 +1705,8 @@
     var gp = worldToScreen(b.tx, b.ty, 0);
     ctx.fillStyle = "rgba(0,0,0,0.18)";
     ctx.beginPath(); ctx.ellipse(gp.x, gp.y, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
-    // salsa blob
-    ctx.fillStyle = "#ff3b3b";
+    // salsa blob (tinted to the active weapon)
+    ctx.fillStyle = b.col || "#ff3b3b";
     ctx.beginPath(); ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = "rgba(255,170,120,0.8)";
     ctx.beginPath(); ctx.arc(p.x - 1.2, p.y - 1.2, 1.8, 0, Math.PI * 2); ctx.fill();
@@ -1351,6 +1762,13 @@
         list.push({ depth: g.tx + g.ty, sub: 2.5, tx: g.tx, ty: g.ty, h: 0,
           draw: function () { drawGem(g); } });
       })(gems[gi]);
+    }
+
+    for (var ui = 0; ui < powerups.length; ui++) {
+      (function (pu) {
+        list.push({ depth: pu.tx + pu.ty, sub: 2.6, tx: pu.tx, ty: pu.ty, h: 0,
+          draw: function () { drawPowerup(pu); } });
+      })(powerups[ui]);
     }
 
     for (var ei = 0; ei < enemies.length; ei++) {
@@ -1599,7 +2017,7 @@
     taco.fireCd -= dt;
     if (aim.firing && taco.fireCd <= 0) {
       fire();
-      taco.fireCd = FIRE_INTERVAL;
+      taco.fireCd = curFireInterval();
     }
 
     // ---- bullets ----
@@ -1616,8 +2034,8 @@
         for (var j = 0; j < enemies.length; j++) {
           var e = enemies[j];
           if (Math.hypot(b.tx - e.tx, b.ty - e.ty) < 0.42) {
-            e.hp -= 1; e.hurt = 0.12;
-            burst(b.tx, b.ty, 14, 6, "#ff5d5d", 2.4);
+            e.hp -= (b.dmg || 1); e.hurt = 0.12;
+            burst(b.tx, b.ty, 14, 6, b.col || "#ff5d5d", 2.4);
             addShake(0.8);
             sndHit();
             hit = true;
@@ -1680,6 +2098,17 @@
       }
     }
 
+    // ---- power-ups: bob, expire, pickup ----
+    for (var ui = powerups.length - 1; ui >= 0; ui--) {
+      var pu = powerups[ui];
+      pu.phase += dt * 3; pu.life -= dt;
+      if (pu.life <= 0) { powerups.splice(ui, 1); continue; }
+      if (Math.hypot(taco.tx - pu.tx, taco.ty - pu.ty) < 0.55) {
+        applyPowerup(pu.kind);
+        powerups.splice(ui, 1);
+      }
+    }
+
     // ---- particles ----
     for (var pi = particles.length - 1; pi >= 0; pi--) {
       var pt = particles[pi];
@@ -1699,6 +2128,11 @@
     // ---- timers ----
     if (taco.hurtFlash > 0) taco.hurtFlash -= dt * 2.5;
     if (taco.invuln > 0) taco.invuln -= dt;
+    // power-up timers (refresh HUD as they tick down / expire)
+    if (taco.shield > 0) taco.shield = Math.max(0, taco.shield - dt);
+    if (taco.triple > 0) taco.triple = Math.max(0, taco.triple - dt);
+    if (taco.rapid > 0) taco.rapid = Math.max(0, taco.rapid - dt);
+    updatePowerupHUD();
 
     // ---- WAVE management ----
     if (waveBannerT > 0) {
@@ -1757,6 +2191,48 @@
     cam.y += (targetCamY - cam.y) * lerp;
   }
 
+  // ============================================================
+  //  POWER-UPS — dropped by enemies (always by the boss). Walk over
+  //  one to grab it.  Effects are applied on pickup.
+  //    SHIELD -> immune for a few seconds
+  //    TRIPLE -> fire 3 bullets
+  //    RAPID  -> cadence x2
+  //    LIFE   -> heal
+  // ============================================================
+  var PU = {
+    shield: { col: "#5eead4", label: "ESCUDO", dur: 6 },
+    triple: { col: "#ffae5d", label: "TRIPLE", dur: 8 },
+    rapid:  { col: "#8fe9ff", label: "RÁPIDO", dur: 8 },
+    life:   { col: "#7ee08a", label: "VIDA",  dur: 0 }
+  };
+  var PU_KINDS = ["shield", "triple", "rapid", "life"];
+
+  function spawnPowerup(tx, ty, forceKind) {
+    var kind = forceKind || PU_KINDS[Math.floor(rnd() * PU_KINDS.length)];
+    powerups.push({ tx: tx, ty: ty, kind: kind, phase: rnd() * 6.28, life: 14 });
+  }
+
+  // chance an enemy drops a power-up; scales gently with the wave
+  function maybeDropPowerup(e) {
+    if (e.boss) { spawnPowerup(e.tx, e.ty, null); return; } // boss ALWAYS drops
+    var chance = 0.06 + Math.min(0.18, wave * 0.012);
+    if (rnd() < chance) spawnPowerup(e.tx, e.ty, null);
+  }
+
+  function applyPowerup(kind) {
+    var def = PU[kind];
+    if (kind === "life") {
+      taco.hp = Math.min(taco.maxHp, taco.hp + 35);
+      updateHUD();
+    } else {
+      taco[kind] = Math.max(taco[kind], def.dur);
+    }
+    addFloater(taco.tx, taco.ty, def.label + "!", def.col);
+    burst(taco.tx, taco.ty, 14, 12, def.col, 2.6);
+    sndGem();
+    updatePowerupHUD();
+  }
+
   function killEnemy(index) {
     var e = enemies[index];
     if (e.boss) {
@@ -1774,6 +2250,7 @@
       addShake(2.5);
       score += 25;
     }
+    maybeDropPowerup(e); // boss always, others by chance
     sndDeath();
     if (e.fromWave) waveAlive = Math.max(0, waveAlive - 1);
     enemies.splice(index, 1);
@@ -1784,6 +2261,7 @@
 
   function damageTaco(amt) {
     if (taco.invuln > 0) return;
+    if (taco.shield > 0) { addShake(1.5); return; } // SHIELD: no damage
     taco.hp -= amt;
     taco.hurtFlash = 0.8;
     taco.invuln = 0.35;
@@ -1864,6 +2342,7 @@
     mallEnterCd = 0.6;
     centerMallCam();
     if (enterBtn) enterBtn.classList.remove("show");
+    if (armaBtn) armaBtn.classList.add("hidden"); // no shooting in the mall
     enterShown = false;
     sndGem();
   }
@@ -1873,6 +2352,7 @@
     // drop the taco just OFF the door pad so it doesn't instantly re-trigger
     taco.tx = mallReturn.tx; taco.ty = mallReturn.ty + 0.9;
     if (!canStand(taco.tx, taco.ty, 0.24)) { taco.tx = mallReturn.tx; taco.ty = mallReturn.ty; }
+    if (armaBtn) armaBtn.classList.remove("hidden");
     mallEnterCd = 1.2;
     // snap city camera back onto the taco
     var tp = (taco.tx - taco.ty) * halfW, tpy = (taco.tx + taco.ty) * halfH;
@@ -2098,39 +2578,10 @@
     ctx.textAlign = "left";
   }
 
-  // taco hero inside the mall (reuse the city drawTaco logic via a local copy)
+  // taco hero inside the mall — same DESIGNED sprite as the city
   function drawMallTaco() {
     var p = mallW2S(mallTaco.tx, mallTaco.ty, 0);
-    var bob = Math.sin(mallTaco.walkPhase) * (mallTaco.moving ? 3 : 0.8);
-    var cx = p.x, groundY = p.y, bodyY = groundY - 20 + bob, dir = mallTaco.facing;
-    ctx.fillStyle = "rgba(0,0,0,0.28)";
-    ctx.beginPath(); ctx.ellipse(cx, groundY + 2, 15, 7, 0, 0, Math.PI * 2); ctx.fill();
-    var legSwing = Math.sin(mallTaco.walkPhase) * (mallTaco.moving ? 4 : 0);
-    ctx.fillStyle = "#5a3a1c";
-    ctx.beginPath(); ctx.ellipse(cx - 6 + legSwing, groundY - 1, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(cx + 6 - legSwing, groundY - 1, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
-    var bw = 16, bh = 18;
-    ctx.fillStyle = "#f2c44d";
-    ctx.beginPath();
-    ctx.moveTo(cx - bw, bodyY - bh * 0.2);
-    ctx.quadraticCurveTo(cx - bw, bodyY + bh, cx, bodyY + bh);
-    ctx.quadraticCurveTo(cx + bw, bodyY + bh, cx + bw, bodyY - bh * 0.2);
-    ctx.quadraticCurveTo(cx + bw * 0.6, bodyY - bh * 0.55, cx, bodyY - bh * 0.55);
-    ctx.quadraticCurveTo(cx - bw * 0.6, bodyY - bh * 0.55, cx - bw, bodyY - bh * 0.2);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle = "#5fd16f";
-    for (var i = -1; i <= 1; i++) { ctx.beginPath(); ctx.arc(cx + i * 7, bodyY - bh * 0.5, 5, 0, Math.PI * 2); ctx.fill(); }
-    ctx.fillStyle = "#ff6b5e";
-    ctx.beginPath(); ctx.arc(cx - 3, bodyY - bh * 0.55, 3.2, 0, Math.PI * 2); ctx.fill();
-    var eyeY = bodyY + 1, eo = dir * 1.5;
-    ctx.fillStyle = "#ffffff";
-    ctx.beginPath(); ctx.arc(cx - 5 + eo, eyeY, 4.2, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx + 5 + eo, eyeY, 4.2, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#222";
-    ctx.beginPath(); ctx.arc(cx - 5 + eo + dir, eyeY, 2, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx + 5 + eo + dir, eyeY, 2, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = "#7a3b1c"; ctx.lineWidth = 1.8;
-    ctx.beginPath(); ctx.arc(cx + eo, eyeY + 5, 4, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+    drawDesignedTaco(p.x, p.y, mallTaco.facing, mallTaco.walkPhase, mallTaco.moving, false);
   }
 
   function renderMall() {
@@ -2204,6 +2655,34 @@
   var elWaveSub = document.getElementById("waveBannerSub");
   var enterBtn = document.getElementById("enterBtn");
   var enterShown = false;
+  var elArmaName = document.getElementById("armaName");
+  var elArmaBtnName = document.getElementById("armaBtnName");
+  var elPuRow = document.getElementById("puRow");
+  var armaBtn = document.getElementById("armaBtn");
+
+  function updateWeaponHUD() {
+    var w = WEAPONS[curWeapon];
+    if (elArmaName) { elArmaName.textContent = w.name; elArmaName.style.color = w.col; }
+    if (elArmaBtnName) elArmaBtnName.textContent = w.name;
+  }
+
+  // active power-up chips with a remaining-seconds countdown.
+  // Only touch the DOM when the rendered string actually changes (60fps-safe).
+  var _puHTML = "";
+  function updatePowerupHUD() {
+    if (!elPuRow) return;
+    var html = "";
+    function chip(kind, secs) {
+      if (secs <= 0) return "";
+      var def = PU[kind];
+      return '<span class="puChip"><span class="puDot" style="background:' + def.col + '"></span>' +
+             def.label + " " + Math.ceil(secs) + "s</span>";
+    }
+    html += chip("shield", taco.shield);
+    html += chip("triple", taco.triple);
+    html += chip("rapid", taco.rapid);
+    if (html !== _puHTML) { _puHTML = html; elPuRow.innerHTML = html; }
+  }
 
   function updateWaveHUD() {
     if (elWaveText) elWaveText.textContent = (bossWave ? "JEFE · OLEADA " : "OLEADA ") + Math.max(1, wave);
@@ -2240,6 +2719,9 @@
     state = STATE_PLAY;
     titleOverlay.classList.add("hidden");
     overOverlay.classList.add("hidden");
+    updateWeaponHUD();
+    updatePowerupHUD();
+    if (armaBtn) armaBtn.classList.remove("hidden");
   }
 
   function gameOver(victory) {
@@ -2255,6 +2737,7 @@
     overOverlay.classList.remove("hidden");
     // hide contextual UI
     if (enterBtn) enterBtn.classList.remove("show"); enterShown = false;
+    if (armaBtn) armaBtn.classList.add("hidden");
     if (waveBanner) waveBanner.classList.remove("show");
   }
 
@@ -2280,6 +2763,12 @@
   enterBtn.addEventListener("click", function (e) { e.preventDefault(); enterMall(); });
   enterBtn.addEventListener("touchend", function (e) { e.preventDefault(); enterMall(); }, { passive: false });
 
+  // ARMA (weapon switch) button — cycles SALSA -> ESCOPETA -> RÁFAGA
+  if (armaBtn) {
+    armaBtn.addEventListener("click", function (e) { e.preventDefault(); if (state === STATE_PLAY) switchWeapon(1); });
+    armaBtn.addEventListener("touchend", function (e) { e.preventDefault(); if (state === STATE_PLAY) switchWeapon(1); }, { passive: false });
+  }
+
   // ============================================================
   //  Main loop
   // ============================================================
@@ -2288,6 +2777,7 @@
     var dt = (now - last) / 1000;
     if (dt > 0.05) dt = 0.05;
     last = now;
+    TACO_T += dt; // animation clock for the designed taco (cape sway, gloss, mouth)
 
     if (state === STATE_MALL) {
       updateMall(dt);
@@ -2322,6 +2812,8 @@
   updateHUD();
   updateWaveHUD();
   updateBankHUD();
+  updateWeaponHUD();
+  updatePowerupHUD();
   requestAnimationFrame(frame);
 
 })();

@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v63 - FIX no se podia salir de la ACADEMIA (al cerrar quedabas sobre la puerta y se reabria sola: ahora se re-arma solo cuando te alejas) + progreso visible: el hub muestra PALABRAS VISTAS (que si se mueve cada partida) ademas de las dominadas (que requieren 3 aciertos seguidos por palabra). Sobre v62: tutor adaptativo";
+const VERSION = "v64 - BONO del tutor cronometrado: practicar en la ACADEMIA ahora SUBE DE MUNDO y da PREMIO (monedas al banco), pero no siempre: el bono se CARGA con el tiempo de juego (~90s), lo reclamas al completar un juego, y despues vuelve a cargar (ciclo). El hub muestra si el bono esta LISTO o el tiempo que falta. Sobre v63: fix salir de la academia + palabras vistas";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -229,12 +229,24 @@ const WORLD_UNLOCKS = {
   3: ["Dimension 3D", "nuevos desafios del tutor", "Casino del mall"],
   4: ["Cine", "Vision infrarroja del mirador"],
 };
+// BONO del tutor: se CARGA con el tiempo de juego; se reclama completando un juego en la ACADEMIA
+// (da premio + sube de mundo) y luego vuelve a cargar. Asi el premio es "solo un tiempo, no siempre".
+const BONO_CD = 90; // segundos de juego para que el bono este listo otra vez
+function bonoReady() { return (kpi.bono || 0) >= BONO_CD; }
+function claimBono() {
+  kpi.bono = 0; kpiDirty = true;
+  const nw = maxWorld + 1; maxWorld = nw; lset("maxworld", maxWorld);
+  const prize = 12 + nw * 4; bank += prize; lset("bank", bank);
+  worldToast = { world: nw, items: WORLD_UNLOCKS[nw] || ["nuevas sorpresas"], prize: prize, t: 6 };
+  try { sPower(); speak("Premio del tutor! Subiste de mundo", "es-ES"); } catch (e) {}
+}
 // reconocimiento por esfuerzo/progreso (neurolinguistico: elogia el intento, sin nombrar materias)
 function recognize(correct, total) {
   const ratio = total ? correct / total : 0; lastEduRatio = ratio;
   const msg = ratio >= 0.9 ? "Increible! Tu mente esta brillando." : ratio >= 0.6 ? "Muy bien! Cada intento te hace mas fuerte." : "Buen esfuerzo! Equivocarse tambien es aprender.";
   recogToast = { msg: msg, t: 3.6 };
   try { speak(msg, "es-ES"); } catch (e) {}
+  if (eduReturn === "academia" && bonoReady()) claimBono(); // premio cronometrado: solo si el bono estaba listo
 }
 function saveCosmetics() { lset("face", face); lset("acc", acc); lset("mount", mount); lset("uface", JSON.stringify(uFace)); lset("uacc", JSON.stringify(uAcc)); lset("umount", JSON.stringify(uMount)); }
 let wbScroll = 0, wbDrag = null;
@@ -1276,7 +1288,7 @@ function drawWorldToast() {
   const n = worldToast.items.length, w = Math.min(360, W - 32), h = 64 + n * 22, x = (W - w) / 2, y = H * 0.22 + safeT;
   ctx.fillStyle = "rgba(12,16,26,0.96)"; ctx.beginPath(); ctx.roundRect(x, y, w, h, 14); ctx.fill(); ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 3; ctx.stroke();
   text("¡NUEVO MUNDO " + worldToast.world + "!", W / 2, y + 28, 21, "#ffd84a", "center");
-  text("Desbloqueaste:", W / 2, y + 48, 12, "#9aa6c0", "center");
+  text(worldToast.prize ? "Premio del tutor: +" + worldToast.prize + " al banco" : "Desbloqueaste:", W / 2, y + 48, 12, worldToast.prize ? "#ffd84a" : "#9aa6c0", "center");
   for (let i = 0; i < n; i++) text("· " + worldToast.items[i], W / 2, y + 68 + i * 22, 13, "#dfe7fa", "center");
   ctx.globalAlpha = 1;
 }
@@ -1393,8 +1405,8 @@ function academiaGreeting() {
 }
 function openAcademia(back) { academia = { back: back || "play", rec: academiaRec(), greet: academiaGreeting(), msg: "", msgT: 0 }; academiaArmed = false; academiaDwell = 0; state = "academia"; sPower(); try { saveKpi(); } catch (e) {} try { speak(academia.greet, "es-ES"); } catch (e) {} }
 function updateAcademia(dt) { if (academia.msgT > 0) academia.msgT -= dt; }
-function acaRect() { const n = ACADEMIA_SUBJECTS.length, w = Math.min(460, W - 24), h = Math.min(H - 14, 130 + n * 56 + 50); return { x: (W - w) / 2, y: Math.max(12 + safeT, (H - h) / 2), w, h }; }
-function acaRowRect(i) { const p = acaRect(); return { x: p.x + 18, y: p.y + 128 + i * 56, w: p.w - 36, h: 50 }; }
+function acaRect() { const n = ACADEMIA_SUBJECTS.length, w = Math.min(460, W - 24), h = Math.min(H - 14, 154 + n * 56 + 50); return { x: (W - w) / 2, y: Math.max(10 + safeT, (H - h) / 2), w, h }; }
+function acaRowRect(i) { const p = acaRect(); return { x: p.x + 18, y: p.y + 152 + i * 56, w: p.w - 36, h: 50 }; }
 function acaCloseRect() { const p = acaRect(); return { x: p.x + p.w / 2 - 90, y: p.y + p.h - 40, w: 180, h: 32 }; }
 function acaWrap(txt, x, y, maxW, size, col, lineH, maxLines) {
   ctx.font = "700 " + size + "px -apple-system, Segoe UI, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = col;
@@ -1424,6 +1436,10 @@ function drawAcademia() {
   { const ms = aiMastery(), ml = kpi.mathLvl || 0, mst = kpi.mathStreak || 0; const sy = p.y + 118;
     text("Mente: nivel " + ml + "/5 · racha " + mst, p.x + 18, sy, 11, "#ffd84a", "left");
     text("Palabras: " + wordsPracticed() + " vistas · " + ms.m + " dom", p.x + p.w - 18, sy, 11, "#62e074", "right"); }
+  // BONO del tutor (premio cronometrado): listo -> completá un juego para subir de mundo
+  { const ready = bonoReady(), by = p.y + 128;
+    ctx.fillStyle = ready ? "#2a2616" : "#171b26"; ctx.beginPath(); ctx.roundRect(p.x + 18, by, p.w - 36, 22, 7); ctx.fill(); ctx.strokeStyle = ready ? "#ffd84a" : "#33384a"; ctx.lineWidth = ready ? 1.5 : 1; ctx.stroke();
+    text(ready ? "BONO LISTO * completa un juego: +premio y subis de mundo" : "Bono del tutor en " + fmtTime(Math.max(0, BONO_CD - (kpi.bono || 0))), W / 2, by + 15, 11, ready ? "#ffd84a" : "#9aa6c0", "center"); }
   // materias (reusan actividades existentes); la sugerida queda resaltada
   for (let i = 0; i < ACADEMIA_SUBJECTS.length; i++) {
     const r = acaRowRect(i), s = ACADEMIA_SUBJECTS[i], locked = maxWorld < (s.lv || 1), rec = !locked && s.key === academia.rec;
@@ -1540,6 +1556,7 @@ function update(dt) {
   if (state === "play" && !paused) { daySec += dt; kpi.playSec = (kpi.playSec || 0) + dt; kpiDirty = true; achT -= dt; if (achT <= 0) { achT = 1.2; achCheck(); } }
   if (achToast) { achToast.t -= dt; if (achToast.t <= 0) achToast = null; }
   if (menuMsgT > 0) menuMsgT -= dt;
+  if (curPlayer && (state === "play" || state === "academia") && !paused && !bonoReady()) kpi.bono = Math.min(BONO_CD, (kpi.bono || 0) + dt);
   if (worldToast) { worldToast.t -= dt; if (worldToast.t <= 0) worldToast = null; }
   if (recogToast) { recogToast.t -= dt; if (recogToast.t <= 0) recogToast = null; }
   tod = (daySec % dayLen) / dayLen;

@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v42 - MODO CONSTRUCCION (cuadrilla con casco+chaleco, elegis diseno casa/tienda/torre, obra por etapas con EPP/OSHA) + edificios mas altos/3D";
+const VERSION = "v43 - TU EDIFICIO QUEDA EN LA CIUDAD: lo que construis en MODO OBRA se planta en tu ciudad (con cartel MI CASA/TIENDA/TORRE + puerta para entrar), guardado por jugador";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -211,6 +211,7 @@ const MOUNTS = [
   { name: "BICI", speed: 1.9, cost: 85 },
 ];
 let face = 0, acc = 1, mount = 0, uFace = { 0: true }, uAcc = { 0: true, 1: true }, uMount = { 0: true };
+let myBuilds = [], builtMarkers = []; // edificios que el jugador construyo (plantados en la ciudad)
 function saveCosmetics() { lset("face", face); lset("acc", acc); lset("mount", mount); lset("uface", JSON.stringify(uFace)); lset("uacc", JSON.stringify(uAcc)); lset("umount", JSON.stringify(uMount)); }
 let wbScroll = 0, wbDrag = null;
 let uiBack = "title"; // a donde vuelve "VOLVER" (title o menu del juego)
@@ -265,8 +266,10 @@ function loadPlayerData() {
   try { uFace = JSON.parse(lget("uface") || "{}"); } catch (e) { uFace = {}; } uFace[0] = true;
   try { uAcc = JSON.parse(lget("uacc") || "{}"); } catch (e) { uAcc = {}; } uAcc[0] = true; uAcc[1] = true;
   try { uMount = JSON.parse(lget("umount") || "{}"); } catch (e) { uMount = {}; } uMount[0] = true;
+  try { myBuilds = JSON.parse(lget("mybuilds") || "[]"); } catch (e) { myBuilds = []; }
   face = clamp(face, 0, FACES.length - 1); acc = clamp(acc, 0, ACCS.length - 1); mount = clamp(mount, 0, MOUNTS.length - 1);
 }
+function saveBuilds() { lset("mybuilds", JSON.stringify(myBuilds)); }
 function switchPlayer(name) { curPlayer = name; savePlayers(); loadPlayerData(); }
 function createPlayer() {
   let nm = null; try { nm = prompt("Nombre del jugador:", ""); } catch (e) {}
@@ -276,7 +279,7 @@ function createPlayer() {
   if (players.indexOf(nm) < 0) players.push(nm);
   curPlayer = nm; savePlayers();
   best = 0; bank = 0; outfit = 0; maxWorld = 1; unlocked = { 0: true }; lstats = {}; lang = "EN";
-  face = 0; acc = 1; mount = 0; uFace = { 0: true }; uAcc = { 0: true, 1: true }; uMount = { 0: true };
+  face = 0; acc = 1; mount = 0; uFace = { 0: true }; uAcc = { 0: true, 1: true }; uMount = { 0: true }; myBuilds = [];
   profile = { name: nm, age: age, eng: ageToTier(age, LESSONS.EN.levels.length - 1), zh: ageToTier(Math.max(6, age - 3), LESSONS.ZH.levels.length - 1) };
   lset("best", 0); lset("bank", 0); lset("outfit", 0); lset("maxworld", 1); lset("unlocked", JSON.stringify(unlocked)); lset("lstats", "{}"); lset("lang", "EN"); lset("profile", JSON.stringify(profile));
   saveCosmetics();
@@ -285,7 +288,7 @@ function createPlayer() {
 function deletePlayer(name) {
   const i = players.indexOf(name); if (i < 0) return;
   players.splice(i, 1);
-  try { ["best", "bank", "outfit", "maxworld", "lang", "unlocked", "lstats", "profile", "face", "acc", "mount", "uface", "uacc", "umount"].forEach(k => localStorage.removeItem("pl_" + name + "_" + k)); } catch (e) {}
+  try { ["best", "bank", "outfit", "maxworld", "lang", "unlocked", "lstats", "profile", "face", "acc", "mount", "uface", "uacc", "umount", "mybuilds", "run"].forEach(k => localStorage.removeItem("pl_" + name + "_" + k)); } catch (e) {}
   if (curPlayer === name) { curPlayer = players[0] || ""; if (curPlayer) loadPlayerData(); else profile = null; }
   savePlayers();
 }
@@ -399,6 +402,14 @@ function genLevel() {
       const isShop = !landmark && Math.random() < 0.5;
       cityBlocks.push({ x: bx, y: by, w: x1 - bx, h: y1 - by, tint, seed: randi(0, 9999), shop: isShop, awn: ["#d64545", "#3a8a4a", "#3a6ad6", "#e0a020", "#c050a0"][randi(0, 5)], landmark, neon });
     }
+  }
+  // EDIFICIOS CONSTRUIDOS por el jugador: plantarlos en la ciudad (con su color + cartel + puerta)
+  builtMarkers = [];
+  for (let i = 0; i < Math.min(myBuilds.length, cityBlocks.length); i++) {
+    const bk = cityBlocks[cityBlocks.length - 1 - i]; if (!bk || bk.built != null) continue;
+    const di = myBuilds[i], d = BUILD_DESIGNS[di];
+    bk.built = di; bk.shop = true; bk.landmark = di === 2; bk.tint = mixHex(d.col, "#5a6275", 0.12); bk.awn = "#62e074";
+    builtMarkers.push({ x: (bk.x + bk.w / 2) * TS, y: bk.y * TS, name: "MI " + d.name });
   }
   for (let y = sy - 1; y <= sy + 1; y++) for (let x = sx - 1; x <= sx + 1; x++) if (x > 0 && y > 0 && x < cols - 1 && y < rows - 1) grid[y * cols + x] = 0;
 
@@ -1557,7 +1568,7 @@ function buildStep() {
   if (buildSafety() < 75) { build.msg = "FALTA EPP! ponete el equipo de seguridad (OSHA)"; sWrong(); return; }
   if (build.done) return;
   build.stage++; build.workT = 0.6; sShoot(); shake = Math.min(shake + 3, 10);
-  if (build.stage >= BUILD_STAGES.length) { build.done = true; const d = BUILD_DESIGNS[build.design]; coins += d.reward; build.msg = "OBRA TERMINADA! seguridad " + buildSafety() + "% · +" + d.reward + " mon"; flash("96,208,80", 0.25); sPower(); }
+  if (build.stage >= BUILD_STAGES.length) { build.done = true; const d = BUILD_DESIGNS[build.design]; coins += d.reward; myBuilds.push(build.design); saveBuilds(); build.msg = "OBRA TERMINADA! +" + d.reward + " mon · tu " + d.name + " quedo en la CIUDAD"; flash("96,208,80", 0.25); sPower(); }
   else build.msg = "Etapa: " + BUILD_STAGES[build.stage] + "  (" + build.stage + "/4)";
 }
 function updateBuild(dt) { if (build.workT > 0) build.workT -= dt; }
@@ -2602,6 +2613,8 @@ function render() {
   ctx.translate(-_ox, -_oy);
   if (dcanvas.width > 0) ctx.drawImage(dcanvas, 0, 0, cols * TS, rows * TS);
   for (const pr of props) drawProp(pr);
+  // carteles de TUS edificios construidos (bandera + nombre flotante)
+  for (const m of builtMarkers) { const by = m.y - 14 - Math.sin(t * 2) * 2; ctx.strokeStyle = "#cfd3e0"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(m.x, by - 8); ctx.stroke(); ctx.fillStyle = "#62e074"; ctx.beginPath(); ctx.moveTo(m.x, by - 8); ctx.lineTo(m.x + 16 + Math.sin(t * 5) * 2, by - 4); ctx.lineTo(m.x, by); ctx.closePath(); ctx.fill(); ctx.fillStyle = "rgba(10,30,16,0.85)"; const tw = m.name.length * 7 + 6; ctx.fillRect(m.x - tw / 2 - 6, by - 24, tw + 12, 16); text(m.name, m.x, by - 12, 12, "#9be7c0", "center"); }
   for (const g of gems) drawGem(g.x, g.y);
   for (const h of heals) drawHeal(h.x, h.y);
   for (const pd of powerDrops) drawPower(pd.x, pd.y, pd.kind);

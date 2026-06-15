@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v62 - tutor adaptativo: al volver de una actividad el tutor da un mini-consejo personalizado segun tu desempeno (subiste de nivel / vas muy bien / vamos despacio), hablado y escrito, sin nombrar materias; el saludo del hub se refresca con tu progreso. Sobre v61: nombres ludicos (sin etiquetar materias), aviso ¡NUEVO MUNDO!, reconocimientos por esfuerzo";
+const VERSION = "v63 - FIX no se podia salir de la ACADEMIA (al cerrar quedabas sobre la puerta y se reabria sola: ahora se re-arma solo cuando te alejas) + progreso visible: el hub muestra PALABRAS VISTAS (que si se mueve cada partida) ademas de las dominadas (que requieren 3 aciertos seguidos por palabra). Sobre v62: tutor adaptativo";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -419,7 +419,7 @@ const MAXHP = 100;
 const player = { x: 0, y: 0, r: 18, vx: 0, vy: 0, hp: MAXHP, inv: 0, aimx: 1, aimy: 0, fire: 0 };
 let gems = [], enemies = [], bullets = [], parts = [], heals = [], powerDrops = [], eshots = [], portal = null;
 let isoPortal = null, isoPortalDwell = 0; // PORTAL fisico a la DIMENSION 3D (game-iso.html)
-let academiaSpot = null, academiaDwell = 0; // edificio ACADEMIA en la ciudad (tutor + materias)
+let academiaSpot = null, academiaDwell = 0, academiaArmed = true; // edificio ACADEMIA en la ciudad (tutor + materias)
 let academia = null, eduReturn = null, lastEduRatio = -1; // hub ACADEMIA / a donde vuelve una actividad / desempeno reciente
 // consejo adaptativo del tutor (segun el ultimo desempeno), sin nombrar materias
 function adaptiveTip() {
@@ -1385,12 +1385,13 @@ const ACADEMIA_SUBJECTS = [
 // lanza una materia: el tutor da un mini saludo hablado y abre la actividad (vuelve al tutor al terminar)
 function academiaStart(s) { eduReturn = "academia"; try { speak(s.say, "es-ES"); } catch (e) {} s.open(); }
 function academiaRec() { const ms = aiMastery(); const ratio = ms.tt ? ms.m / ms.tt : 0; return ratio < 0.35 ? "lang" : "math"; }
+function wordsPracticed() { let n = 0; for (const k in lstats) { const s = lstats[k]; if (s && (s.seen || 0) > 0) n++; } return n; }
 function academiaGreeting() {
   const ms = aiMastery(), rk = curRank(), nm = (profile && profile.name) || curPlayer || "amigo";
   const rec = academiaRec(), recName = (ACADEMIA_SUBJECTS.find(s => s.key === rec) || ACADEMIA_SUBJECTS[0]).name;
-  return "Hola " + nm + "! Soy tu tutor. Llevas " + ms.m + "/" + ms.tt + " palabras dominadas y rango " + rk.name + ". Hoy te sugiero: " + recName + ". Que practicamos?";
+  return "Hola " + nm + "! Soy tu tutor. Practicaste " + wordsPracticed() + " palabras (" + ms.m + " ya dominadas) y tu rango es " + rk.name + ". Hoy te sugiero: " + recName + ". Que practicamos?";
 }
-function openAcademia(back) { academia = { back: back || "play", rec: academiaRec(), greet: academiaGreeting(), msg: "", msgT: 0 }; state = "academia"; sPower(); try { saveKpi(); } catch (e) {} try { speak(academia.greet, "es-ES"); } catch (e) {} }
+function openAcademia(back) { academia = { back: back || "play", rec: academiaRec(), greet: academiaGreeting(), msg: "", msgT: 0 }; academiaArmed = false; academiaDwell = 0; state = "academia"; sPower(); try { saveKpi(); } catch (e) {} try { speak(academia.greet, "es-ES"); } catch (e) {} }
 function updateAcademia(dt) { if (academia.msgT > 0) academia.msgT -= dt; }
 function acaRect() { const n = ACADEMIA_SUBJECTS.length, w = Math.min(460, W - 24), h = Math.min(H - 14, 130 + n * 56 + 50); return { x: (W - w) / 2, y: Math.max(12 + safeT, (H - h) / 2), w, h }; }
 function acaRowRect(i) { const p = acaRect(); return { x: p.x + 18, y: p.y + 128 + i * 56, w: p.w - 36, h: 50 }; }
@@ -1422,7 +1423,7 @@ function drawAcademia() {
   // franja de stats: nivel de mates + mejor racha + palabras dominadas (feedback visible / neuro-adaptativo)
   { const ms = aiMastery(), ml = kpi.mathLvl || 0, mst = kpi.mathStreak || 0; const sy = p.y + 118;
     text("Mente: nivel " + ml + "/5 · racha " + mst, p.x + 18, sy, 11, "#ffd84a", "left");
-    text("Palabras: " + ms.m + "/" + ms.tt, p.x + p.w - 18, sy, 11, "#62e074", "right"); }
+    text("Palabras: " + wordsPracticed() + " vistas · " + ms.m + " dom", p.x + p.w - 18, sy, 11, "#62e074", "right"); }
   // materias (reusan actividades existentes); la sugerida queda resaltada
   for (let i = 0; i < ACADEMIA_SUBJECTS.length; i++) {
     const r = acaRowRect(i), s = ACADEMIA_SUBJECTS[i], locked = maxWorld < (s.lv || 1), rec = !locked && s.key === academia.rec;
@@ -1640,7 +1641,7 @@ function update(dt) {
   if (missionDone() && !portal) portal = farFree(player.x, player.y);
   if (portal && len(portal.x - player.x, portal.y - player.y) < player.r + 22) { openQuiz(); return; }
   if (isoPortal) { if (maxWorld >= ISO_LV && len(isoPortal.x - player.x, isoPortal.y - player.y) < player.r + 24) { isoPortalDwell += dt; if (isoPortalDwell > 0.4) { gotoIso(); return; } } else if (isoPortalDwell > 0) isoPortalDwell = 0; }
-  if (academiaSpot) { if (len(academiaSpot.x - player.x, academiaSpot.y - player.y) < player.r + 26) { academiaDwell += dt; if (academiaDwell > 0.4) { openAcademia("play"); return; } } else if (academiaDwell > 0) academiaDwell = 0; }
+  if (academiaSpot) { const near = len(academiaSpot.x - player.x, academiaSpot.y - player.y) < player.r + 26; if (!near) { academiaArmed = true; academiaDwell = 0; } else if (academiaArmed) { academiaDwell += dt; if (academiaDwell > 0.4) { academiaArmed = false; academiaDwell = 0; openAcademia("play"); return; } } }
 
   for (let i = heals.length - 1; i >= 0; i--) if (len(heals[i].x - player.x, heals[i].y - player.y) < player.r + 14) { player.hp = Math.min(MAXHP, player.hp + 25); addParts(heals[i].x, heals[i].y, 10, "#60d050", 150); floatText(heals[i].x, heals[i].y, "+VIDA", "#60d050"); heals.splice(i, 1); sGem(); }
   for (let i = powerDrops.length - 1; i >= 0; i--) { const pd = powerDrops[i]; if (len(pd.x - player.x, pd.y - player.y) < player.r + 16) { applyPower(pd.kind); addParts(pd.x, pd.y, 18, powerCol(pd.kind), 240); floatText(pd.x, pd.y, powerName(pd.kind) + "!", powerCol(pd.kind)); flash("94,234,212", 0.18); shake = Math.min(shake + 4, 14); powerDrops.splice(i, 1); } }

@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v35 - MINIJUEGO MEMORIA de vocabulario (parea espanol con el idioma, pronuncia al acertar) en el ARCADE del centro comercial";
+const VERSION = "v36 - MALL VIVO: vidrieras/locales, gente caminando, plantas, bancos, luces + estaciones CINE y COMIDA + minijuego UNO DE COLORES vs NPCs";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -316,7 +316,7 @@ let driving = null; // auto que el taco esta manejando (o null)
 let runSaveT = 0; // temporizador para autoguardar la partida en curso
 let daySec = 0, dayLen = 210, tod = 0, nightAmt = 0; // ciclo dia/noche
 let weather = { kind: "sol", temp: 24 }; // clima + temperatura
-let rain = [], cityLamps = []; // gotas de lluvia + posiciones de faroles (para que enciendan de noche)
+let rain = [], cityLamps = [], cityBeacons = []; // lluvia + faroles + balizas de landmarks (parpadean)
 let camX = 0, camY = 0; // camara (recorre el mundo grande)
 let shake = 0, t = 0;
 function camClamp() { const tx = clamp(player.x - W / 2, 0, Math.max(0, cols * TS - W)), ty = clamp(player.y - H / 2, 0, Math.max(0, rows * TS - H)); return { tx, ty }; }
@@ -386,9 +386,16 @@ function genLevel() {
       // no tapar el spawn: deja plaza alrededor del centro
       if (bx <= sx + 2 && x1 >= sx - 2 && by <= sy + 2 && y1 >= sy - 2) continue;
       for (let y = by; y < y1; y++) for (let x = bx; x < x1; x++) grid[y * cols + x] = 1;
-      const tint = mixHex(shadeHex(theme.wall, 0.55 + Math.random() * 0.3), "#6b7280", 0.35 + Math.random() * 0.25);
-      const isShop = Math.random() < 0.5;
-      cityBlocks.push({ x: bx, y: by, w: x1 - bx, h: y1 - by, tint, seed: randi(0, 9999), shop: isShop, awn: ["#d64545", "#3a8a4a", "#3a6ad6", "#e0a020", "#c050a0"][randi(0, 5)] });
+      // ~16% son LANDMARKS: torres altas de color neon con baliza = focos visuales que rompen la grilla
+      const landmark = Math.random() < 0.16;
+      const neon = ["#ff4d8a", "#36e0c8", "#ffd24a", "#8a6bff", "#46c8ff"][randi(0, 5)];
+      // tinte en clave del TEMA (no gris): mayoria pared, ~28% acento claro (stud); landmark = torre del color neon
+      const accent = Math.random() < 0.28;
+      const tint = landmark
+        ? mixHex(shadeHex(neon, 0.42), "#202840", 0.42)
+        : mixHex(shadeHex(accent ? theme.stud : theme.wall, 0.5 + Math.random() * 0.45), "#5a6275", 0.12 + Math.random() * 0.18);
+      const isShop = !landmark && Math.random() < 0.5;
+      cityBlocks.push({ x: bx, y: by, w: x1 - bx, h: y1 - by, tint, seed: randi(0, 9999), shop: isShop, awn: ["#d64545", "#3a8a4a", "#3a6ad6", "#e0a020", "#c050a0"][randi(0, 5)], landmark, neon });
     }
   }
   for (let y = sy - 1; y <= sy + 1; y++) for (let x = sx - 1; x <= sx + 1; x++) if (x > 0 && y > 0 && x < cols - 1 && y < rows - 1) grid[y * cols + x] = 0;
@@ -487,6 +494,7 @@ addEventListener("keydown", e => {
   if (state === "interior") { if (k === "escape") { if (interior.popup) interior.popup = null; else exitInterior(); } return; }
   if (state === "roulette") { if (k === "escape") state = interior ? "interior" : "play"; else if (k === " ") spinRoulette(); return; }
   if (state === "memory") { if (k === "escape") state = interior ? "interior" : "play"; return; }
+  if (state === "uno") { if (k === "escape") state = interior ? "interior" : "play"; return; }
   if (state === "players") { if (k === "escape" && profile) state = "title"; return; }
   if (state === "wardrobe") { if (k === "escape") state = uiBack; return; }
   if (state === "challenge") { if (k === "escape") state = "wardrobe"; else if (k >= "1" && k <= "3") answerChallenge(+k - 1); return; }
@@ -507,6 +515,7 @@ canvas.addEventListener("mousedown", e => {
   if (state === "interior") { interiorTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "roulette") { rouletteTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "memory") { memoryTapAt(e.clientX, e.clientY); mouse.down = false; return; }
+  if (state === "uno") { unoTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "players") { playersTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "wardrobe") { wbTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "shop") { shopTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -529,6 +538,7 @@ function onTouchStart(e) {
   if (state === "interior") { for (const tch of e.changedTouches) { if (interiorTapAt(tch.clientX, tch.clientY)) return; if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
   if (state === "roulette") { for (const tch of e.changedTouches) rouletteTapAt(tch.clientX, tch.clientY); return; }
   if (state === "memory") { for (const tch of e.changedTouches) memoryTapAt(tch.clientX, tch.clientY); return; }
+  if (state === "uno") { for (const tch of e.changedTouches) unoTapAt(tch.clientX, tch.clientY); return; }
   if (state === "players") { for (const tch of e.changedTouches) playersTapAt(tch.clientX, tch.clientY); return; }
   if (state === "wardrobe") { const tch = e.changedTouches[0]; if (tch) wbDrag = { id: tch.identifier, y0: tch.clientY, x0: tch.clientX, s0: wbScroll, moved: 0 }; return; }
   if (state === "challenge") { for (const tch of e.changedTouches) { const o = challengeOptAt(tch.clientX, tch.clientY); if (o >= 0) answerChallenge(o); } return; }
@@ -1012,6 +1022,7 @@ function update(dt) {
   if (state === "interior") { if (!paused) updateInterior(dt); return; }
   if (state === "roulette") { updateRoulette(dt); return; }
   if (state === "memory") { updateMemory(dt); return; }
+  if (state === "uno") { updateUno(dt); return; }
   if (state === "challenge") { if (challenge && challenge.sel >= 0) { challenge.fb -= dt; if (challenge.fb <= 0) { if (challenge.sel === challenge.correct) state = "wardrobe"; else challenge.sel = -1; } } return; }
   if (state === "quiz") {
     if (quiz && quiz.phase === "pronounce") { if (quiz.micState === "ok") { quiz.okT -= dt; if (quiz.okT <= 0) nextLevel(); } return; }
@@ -1179,19 +1190,30 @@ const MALL_STATIONS = [
   { kind: "veh", name: "VEHICULOS", icon: "wheel", col: "#7fd6ff", opts: [
     { label: "Abrir vehiculos", cost: 0, act: () => { interior.popup = null; wbTab = 3; openWb("interior"); } },
   ] },
+  { kind: "comida", name: "COMIDA", icon: "food", col: "#ff9b3c", opts: [
+    { label: "Taco combo (cura toda la vida)", cost: 2, act: () => { player.hp = MAXHP; } },
+    { label: "Postre (disparo rapido 10s)", cost: 3, act: () => { pRapid = 10; } },
+  ] },
+  { kind: "cine", name: "CINE", icon: "film", col: "#c060e0", opts: [
+    { label: "Ver funcion (relax: +vida +escudo)", cost: 2, act: () => { player.hp = Math.min(MAXHP, player.hp + 45); pShield = 9; } },
+  ] },
   { kind: "arcade", name: "ARCADE", icon: "dice", col: "#ff6b8a", opts: [
     { label: "Ruleta de premios (2 mon)", cost: 0, act: () => { interior.popup = null; openRoulette(); } },
     { label: "Memoria de palabras", cost: 0, act: () => { interior.popup = null; openMemory(); } },
+    { label: "UNO de colores vs NPCs", cost: 0, act: () => { interior.popup = null; openUno(); } },
   ] },
 ];
 function intRoom() { return { x: 18, y: 60 + safeT, w: W - 36, h: H - 116 - safeB }; }
 function openInterior(b) {
-  const R = intRoom(), wallH = Math.min(112, R.h * 0.34), fy = R.y + wallH;
-  const n = MALL_STATIONS.length;
-  const stations = MALL_STATIONS.map((d, i) => ({ def: d, x: R.x + R.w * (0.12 + i * (0.76 / (n - 1))), y: fy + (R.y + R.h - fy) * 0.5 }));
-  const cns = []; for (let i = 0; i < 6; i++) cns.push({ x: R.x + 50 + Math.random() * (R.w - 100), y: fy + 60 + Math.random() * (R.y + R.h - fy - 110), got: false });
-  interior = { awn: b.awn, wallH, fy, stations, coins: cns, popup: null };
-  intP.x = R.x + R.w / 2; intP.y = R.y + R.h - 32; stickL.id = null;
+  const R = intRoom(), wallH = Math.min(120, R.h * 0.34), fy = R.y + wallH, floorH = R.y + R.h - fy;
+  const n = MALL_STATIONS.length, cols = Math.min(n, 4), rows = Math.ceil(n / cols);
+  const stations = MALL_STATIONS.map((d, i) => { const c = i % cols, r = Math.floor(i / cols); return { def: d, x: R.x + R.w * ((c + 0.5) / cols), y: fy + floorH * (rows === 1 ? 0.45 : (0.28 + r * 0.34)) }; });
+  const cns = []; for (let i = 0; i < 6; i++) cns.push({ x: R.x + 50 + Math.random() * (R.w - 100), y: fy + 40 + Math.random() * (floorH - 80), got: false });
+  const npcs = []; for (let i = 0; i < 5; i++) { const a = Math.random() * 6.28; npcs.push({ x: R.x + 60 + Math.random() * (R.w - 120), y: fy + 30 + Math.random() * (floorH - 60), vx: Math.cos(a) * 34, vy: Math.sin(a) * 34, col: PEDCOLS[randi(0, PEDCOLS.length)], wp: Math.random() * 6.28, rescued: false }); }
+  const plants = [{ x: R.x + 28, y: fy + 22 }, { x: R.x + R.w - 28, y: fy + 22 }, { x: R.x + 28, y: R.y + R.h - 46 }, { x: R.x + R.w - 28, y: R.y + R.h - 46 }];
+  const benches = [{ x: R.x + R.w * 0.3, y: fy + floorH * 0.92 }, { x: R.x + R.w * 0.7, y: fy + floorH * 0.92 }];
+  interior = { wallH, fy, floorH, stations, coins: cns, npcs, plants, benches, popup: null };
+  intP.x = R.x + R.w / 2; intP.y = R.y + R.h - 30; stickL.id = null;
   state = "interior"; sPower();
 }
 function exitInterior() { interior = null; stickL.id = null; state = "play"; sRight(); }
@@ -1203,13 +1225,35 @@ function updateInterior(dt) {
   playerMoving = (Math.abs(inp.mx) + Math.abs(inp.my)) > 0.1; walkPhase += dt * (playerMoving ? 13 : 2.5);
   if (Math.abs(inp.mx) > 0.06) playerFace = inp.mx > 0 ? 1 : -1;
   for (const c of interior.coins) if (!c.got && len(c.x - intP.x, c.y - intP.y) < 26) { c.got = true; coins += 1; floatText(c.x, c.y, "+1", "#ffd84a"); sGem(); }
+  for (const p of interior.npcs) { p.wp += dt * 7; const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt; if (nx < R.x + 26 || nx > R.x + R.w - 26) p.vx *= -1; if (ny < interior.fy + 22 || ny > R.y + R.h - 26) p.vy *= -1; p.x += p.vx * dt; p.y += p.vy * dt; if (Math.random() < 0.01) { const a = Math.random() * 6.28; p.vx = Math.cos(a) * 34; p.vy = Math.sin(a) * 34; } }
   if (intP.y > R.y + R.h - 30 && Math.abs(intP.x - (R.x + R.w / 2)) < 48 && inp.my > 0.2) exitInterior();
 }
 function mallIcon(kind, cx, cy, r) {
   if (kind === "heal" || kind === "shield") return shopIcon(kind, cx, cy, r);
   if (kind === "shirt") { ctx.fillStyle = "#f5cd46"; ctx.beginPath(); ctx.moveTo(cx - r, cy - r * 0.4); ctx.lineTo(cx - r * 0.4, cy - r); ctx.lineTo(cx + r * 0.4, cy - r); ctx.lineTo(cx + r, cy - r * 0.4); ctx.lineTo(cx + r * 0.5, cy - r * 0.1); ctx.lineTo(cx + r * 0.5, cy + r); ctx.lineTo(cx - r * 0.5, cy + r); ctx.lineTo(cx - r * 0.5, cy - r * 0.1); ctx.closePath(); ctx.fill(); }
   else if (kind === "wheel") { ctx.fillStyle = "#1a1a1f"; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill(); ctx.fillStyle = "#7fd6ff"; ctx.beginPath(); ctx.arc(cx, cy, r * 0.45, 0, 7); ctx.fill(); ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = 2; for (let k = 0; k < 4; k++) { const a = k / 4 * 6.28; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); ctx.stroke(); } }
+  else if (kind === "food") { ctx.fillStyle = "#caa050"; ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0, false); ctx.fill(); ctx.fillStyle = "#7a4a2a"; ctx.fillRect(cx - r, cy, r * 2, r * 0.5); ctx.fillStyle = "#60d050"; ctx.fillRect(cx - r, cy + r * 0.3, r * 2, r * 0.18); ctx.fillStyle = "#e0479a"; ctx.fillRect(cx - r, cy + r * 0.48, r * 2, r * 0.16); ctx.fillStyle = "#caa050"; ctx.beginPath(); ctx.arc(cx, cy + r * 0.7, r, 0, Math.PI, false); ctx.fill(); }
+  else if (kind === "film") { ctx.fillStyle = "#1a1a22"; ctx.fillRect(cx - r, cy - r * 0.5, r * 2, r * 1.5); ctx.fillStyle = "#c060e0"; for (let i = -1; i <= 1; i++) { ctx.fillStyle = i % 2 ? "#fff" : "#c060e0"; ctx.save(); ctx.translate(cx + i * r * 0.66, cy - r * 0.7); ctx.rotate(0.2); ctx.fillRect(-r * 0.3, -r * 0.2, r * 0.6, r * 0.4); ctx.restore(); } ctx.fillStyle = "#5a5a66"; for (let i = 0; i < 4; i++) { ctx.fillRect(cx - r + 1, cy - r * 0.3 + i * r * 0.42, r * 0.18, r * 0.2); ctx.fillRect(cx + r - r * 0.18 - 1, cy - r * 0.3 + i * r * 0.42, r * 0.18, r * 0.2); } }
   else { ctx.fillStyle = "#ff6b8a"; ctx.beginPath(); ctx.roundRect(cx - r, cy - r, r * 2, r * 2, 4); ctx.fill(); ctx.fillStyle = "#fff"; for (const d of [[-0.45, -0.45], [0.45, -0.45], [0, 0], [-0.45, 0.45], [0.45, 0.45]]) { ctx.beginPath(); ctx.arc(cx + d[0] * r, cy + d[1] * r, r * 0.16, 0, 7); ctx.fill(); } }
+}
+function drawMallPlant(x, y) {
+  ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.beginPath(); ctx.ellipse(x, y + 11, 14, 4, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = "#256e2e"; for (let k = 0; k < 6; k++) { const a = k / 6 * 6.28; ctx.beginPath(); ctx.ellipse(x + Math.cos(a) * 9, y - 8 + Math.sin(a) * 5, 5, 11, a, 0, 7); ctx.fill(); }
+  ctx.fillStyle = "#3aa84a"; ctx.beginPath(); ctx.arc(x, y - 9, 8, 0, 7); ctx.fill(); ctx.fillStyle = "rgba(255,255,255,0.15)"; ctx.beginPath(); ctx.arc(x - 3, y - 11, 3, 0, 7); ctx.fill();
+  ctx.fillStyle = "#7a5e40"; ctx.fillRect(x - 9, y, 18, 12); ctx.fillStyle = "#5a4632"; ctx.fillRect(x - 9, y, 18, 3);
+}
+function drawBench(x, y) {
+  ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fillRect(x - 24, y + 9, 48, 4);
+  ctx.fillStyle = "#6a543c"; ctx.fillRect(x - 24, y, 48, 8); ctx.fillStyle = "#7a6048"; ctx.fillRect(x - 24, y, 48, 2);
+  ctx.fillStyle = "#4a3826"; ctx.fillRect(x - 20, y + 8, 5, 9); ctx.fillRect(x + 15, y + 8, 5, 9);
+}
+function drawStorefront(x, y, w, h, col) {
+  ctx.fillStyle = "#1c1f2c"; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "rgba(150,200,255,0.22)"; ctx.fillRect(x + 4, y + 12, w - 8, h - 16); // vidriera
+  for (let i = 0; i < Math.round(w / 24); i++) { ctx.fillStyle = ["#ff6b8a", "#ffd84a", "#7fd6ff", "#60d050", "#ff9b3c"][i % 5]; ctx.fillRect(x + 8 + i * 24, y + h - 18, 13, 12); }
+  ctx.fillStyle = col; ctx.fillRect(x, y, w, 9); // cartel
+  ctx.fillStyle = "rgba(255,255,255,0.9)"; for (let i = 0; i < Math.round(w / 13); i++) ctx.fillRect(x + 5 + i * 13, y + 2, 7, 4);
+  ctx.fillStyle = "rgba(0,0,0,0.2)"; ctx.fillRect(x, y + 9, w, 2);
 }
 function intCloseRect() { const R = intRoom(); return { x: R.x + R.w - 112, y: R.y + 8, w: 104, h: 34 }; }
 function mallPopRect() { const st = interior.popup, n = st.opts.length, w = Math.min(420, W - 40), h = 92 + n * 52; return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
@@ -1231,15 +1275,23 @@ function drawInterior() {
   ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(R.x - 4, R.y - 4, R.w + 8, R.h + 8, 14); ctx.fill(); ctx.strokeStyle = "#e0479a"; ctx.lineWidth = 3; ctx.stroke();
   ctx.save(); ctx.beginPath(); ctx.roundRect(R.x, R.y, R.w, R.h, 12); ctx.clip();
-  const wg = ctx.createLinearGradient(0, R.y, 0, fy); wg.addColorStop(0, "#343849"); wg.addColorStop(1, "#272a39"); ctx.fillStyle = wg; ctx.fillRect(R.x, R.y, R.w, interior.wallH);
-  const fg = ctx.createLinearGradient(0, fy, 0, R.y + R.h); fg.addColorStop(0, "#262834"); fg.addColorStop(1, "#181a21"); ctx.fillStyle = fg; ctx.fillRect(R.x, fy, R.w, R.y + R.h - fy);
-  ctx.strokeStyle = "rgba(255,255,255,0.05)"; ctx.lineWidth = 1; const mxc = R.x + R.w / 2;
+  const wg = ctx.createLinearGradient(0, R.y, 0, fy); wg.addColorStop(0, "#2e3242"); wg.addColorStop(1, "#232633"); ctx.fillStyle = wg; ctx.fillRect(R.x, R.y, R.w, interior.wallH);
+  const fg = ctx.createLinearGradient(0, fy, 0, R.y + R.h); fg.addColorStop(0, "#2a2d3a"); fg.addColorStop(1, "#181a21"); ctx.fillStyle = fg; ctx.fillRect(R.x, fy, R.w, R.y + R.h - fy);
+  // baldosas brillosas del piso (perspectiva) + reflejo
+  ctx.strokeStyle = "rgba(255,255,255,0.06)"; ctx.lineWidth = 1; const mxc = R.x + R.w / 2;
   for (let gx = R.x; gx <= R.x + R.w; gx += 44) { ctx.beginPath(); ctx.moveTo(gx, fy); ctx.lineTo(mxc + (gx - mxc) * 1.7, R.y + R.h); ctx.stroke(); }
   for (let gy = fy; gy <= R.y + R.h; gy += 26) { ctx.beginPath(); ctx.moveTo(R.x, gy); ctx.lineTo(R.x + R.w, gy); ctx.stroke(); }
-  // cartel del mall + luces
-  for (let i = 0; i < Math.round(R.w / 40); i++) { ctx.fillStyle = ["#ff6b8a", "#ffd84a", "#7fd6ff", "#60d050"][i % 4]; ctx.beginPath(); ctx.arc(R.x + 20 + i * 40, R.y + 14, 3, 0, 7); ctx.fill(); }
-  // ventana con vista (dia/noche)
-  const wx = R.x + R.w - 116; ctx.fillStyle = nightAmt > 0.5 ? "#0e1430" : "#8fc7f0"; ctx.fillRect(wx, R.y + 26, 92, 50); if (nightAmt > 0.5) { ctx.fillStyle = "#e6ebff"; ctx.beginPath(); ctx.arc(wx + 66, R.y + 42, 7, 0, 7); ctx.fill(); } ctx.strokeStyle = "#2a2d3c"; ctx.lineWidth = 4; ctx.strokeRect(wx, R.y + 26, 92, 50);
+  // VIDRIERAS (locales) en la pared del fondo
+  const sfW = 116, sfGap = 16, sfY = R.y + 26, sfH = interior.wallH - 38;
+  for (let sx = R.x + 14; sx + sfW < R.x + R.w - 130; sx += sfW + sfGap) drawStorefront(sx, sfY, sfW, sfH, ["#ff6b8a", "#3a8a4a", "#3a6ad6", "#e0a020", "#c060e0"][((sx / 60) | 0) % 5]);
+  // ventana con vista (dia/noche) a la derecha
+  const wx = R.x + R.w - 116; ctx.fillStyle = nightAmt > 0.5 ? "#0e1430" : "#8fc7f0"; ctx.fillRect(wx, sfY, 96, sfH); if (nightAmt > 0.5) { ctx.fillStyle = "#e6ebff"; ctx.beginPath(); ctx.arc(wx + 70, sfY + 18, 7, 0, 7); ctx.fill(); for (let k = 0; k < 8; k++) { ctx.fillStyle = "rgba(255,255,255,0.7)"; ctx.fillRect(wx + 10 + (k * 23 % 86), sfY + 8 + (k * 13 % (sfH - 16)), 1.5, 1.5); } } ctx.strokeStyle = "#2a2d3c"; ctx.lineWidth = 4; ctx.strokeRect(wx, sfY, 96, sfH);
+  // guirnalda de luces bajo el techo
+  for (let i = 0; i < Math.round(R.w / 36); i++) { const lc = ["#ff6b8a", "#ffd84a", "#7fd6ff", "#60d050"][i % 4]; ctx.fillStyle = lc; ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 3 + i); ctx.beginPath(); ctx.arc(R.x + 18 + i * 36, R.y + 12, 3, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+  // plantas, bancos y gente caminando
+  for (const pl of interior.plants) drawMallPlant(pl.x, pl.y);
+  for (const bn of interior.benches) drawBench(bn.x, bn.y);
+  for (const p of interior.npcs) drawPed(p);
   // estaciones (kioscos)
   for (const s of interior.stations) {
     const near = len(intP.x - s.x, intP.y - s.y) < 60;
@@ -1361,6 +1413,66 @@ function drawMemory() {
   const cc = memCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(cc.x, cc.y, cc.w, cc.h, 9); ctx.fill(); text("SALIR", cc.x + cc.w / 2, cc.y + cc.h / 2 + 5, 14, "#ff9bb0", "center");
 }
 
+// ---- MINIJUEGO: UNO DE COLORES (vos + 2 NPCs) ----
+let uno = null;
+const UNO_COLS = ["#e0473c", "#3a8adf", "#3aa84a", "#e0a020"]; // rojo azul verde amarillo
+function unoBuildDeck() { const d = []; for (let c = 0; c < 4; c++) { for (let nn = 0; nn <= 9; nn++) d.push({ c, v: nn }); d.push({ c, v: "+2" }); d.push({ c, v: "+2" }); } for (let i = 0; i < 4; i++) d.push({ c: 4, v: "W" }); shuffle(d); return d; }
+function unoPlayable(card, c, v) { return card.c === 4 || card.c === c || card.v === v; }
+function openUno() {
+  const deck = unoBuildDeck(), hands = [[], [], []];
+  for (let k = 0; k < 7; k++) for (let p = 0; p < 3; p++) hands[p].push(deck.pop());
+  let top; do { top = deck.pop(); } while (top.c === 4);
+  uno = { deck, hands, discard: [top], cur: top.c, turn: 0, dir: 1, msg: "Tu turno", npcT: 0, over: false };
+  state = "uno";
+}
+function unoTop() { return uno.discard[uno.discard.length - 1]; }
+function unoDrawCards(p, n) { for (let i = 0; i < n; i++) { if (!uno.deck.length) { const top = uno.discard.pop(); uno.deck = uno.discard; shuffle(uno.deck); uno.discard = [top]; } if (uno.deck.length) uno.hands[p].push(uno.deck.pop()); } }
+function unoAdvance(skip) { uno.turn = (uno.turn + uno.dir * (skip ? 2 : 1) % 3 + 3) % 3; uno.msg = uno.turn === 0 ? "Tu turno" : "Turno NPC " + uno.turn; if (uno.turn !== 0) uno.npcT = 0.85; }
+function unoPlay(p, idx) {
+  const card = uno.hands[p].splice(idx, 1)[0]; let chosen = card.c;
+  if (card.c === 4) { const cnt = [0, 0, 0, 0]; for (const c of uno.hands[p]) if (c.c < 4) cnt[c.c]++; chosen = cnt.indexOf(Math.max(...cnt)); if (chosen < 0 || cnt[chosen] === 0) chosen = randi(0, 4); }
+  uno.discard.push({ c: chosen, v: card.v }); uno.cur = chosen; sShoot();
+  if (uno.hands[p].length === 0) { uno.over = true; uno.msg = p === 0 ? "GANASTE!" : "Gano NPC " + p; if (p === 0) { coins += 15; flash("96,208,80", 0.25); floatText(W / 2, H / 2, "GANASTE +15 mon!", "#60d050"); sPower(); } else sWrong(); return; }
+  let skip = false; if (card.v === "+2") { unoDrawCards((uno.turn + uno.dir + 3) % 3, 2); skip = true; }
+  unoAdvance(skip);
+}
+function unoNpcTurn() {
+  const p = uno.turn, top = unoTop();
+  let idx = uno.hands[p].findIndex(c => unoPlayable(c, uno.cur, top.v));
+  if (idx < 0) { unoDrawCards(p, 1); const ci = uno.hands[p].length - 1; if (unoPlayable(uno.hands[p][ci], uno.cur, top.v)) idx = ci; else { unoAdvance(false); return; } }
+  unoPlay(p, idx);
+}
+function updateUno(dt) { if (uno.over || uno.turn === 0) return; uno.npcT -= dt; if (uno.npcT <= 0) unoNpcTurn(); }
+function unoHandRect(i) { const n = uno.hands[0].length, cw = Math.min(60, (W - 30) / Math.max(n, 1)), x0 = (W - n * cw) / 2; return { x: x0 + i * cw, y: H - 112 - safeB, w: cw - 4, h: 90 }; }
+function unoDrawRect() { return { x: W / 2 + 60, y: H / 2 - 46, w: 60, h: 86 }; }
+function unoCloseRect() { return { x: W - 92, y: 14 + safeT, w: 78, h: 34 }; }
+function unoTapAt(px, py) {
+  const cc = unoCloseRect(); if (px >= cc.x && px <= cc.x + cc.w && py >= cc.y && py <= cc.y + cc.h) { state = interior ? "interior" : "play"; return; }
+  if (uno.over || uno.turn !== 0) return;
+  const top = unoTop();
+  for (let i = 0; i < uno.hands[0].length; i++) { const r = unoHandRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y - 10 && py <= r.y + r.h) { if (unoPlayable(uno.hands[0][i], uno.cur, top.v)) unoPlay(0, i); else sWrong(); return; } }
+  const dr = unoDrawRect(); if (px >= dr.x && px <= dr.x + dr.w && py >= dr.y && py <= dr.y + dr.h) { unoDrawCards(0, 1); const ci = uno.hands[0].length - 1; if (!unoPlayable(uno.hands[0][ci], uno.cur, top.v)) unoAdvance(false); else uno.msg = "Jugá la carta que robaste"; }
+}
+function drawUnoCard(x, y, w, h, card, faceUp) {
+  ctx.fillStyle = faceUp ? (card.c === 4 ? "#262630" : UNO_COLS[card.c]) : "#2a3050"; ctx.beginPath(); ctx.roundRect(x, y, w, h, 8); ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
+  if (faceUp) { ctx.fillStyle = "rgba(255,255,255,0.92)"; ctx.beginPath(); ctx.ellipse(x + w / 2, y + h / 2, w * 0.34, h * 0.3, 0, 0, 7); ctx.fill(); const lbl = card.v === "+2" ? "+2" : card.v === "W" ? "★" : "" + card.v; text(lbl, x + w / 2, y + h / 2 + 8, 24, card.c === 4 ? "#c060e0" : UNO_COLS[card.c], "center"); }
+  else text("UNO", x + w / 2, y + h / 2 + 5, 15, "#7fd6ff", "center");
+}
+function drawUno() {
+  ctx.fillStyle = "rgba(6,6,14,0.92)"; ctx.fillRect(0, 0, W, H);
+  text("UNO DE COLORES", W / 2, 40 + safeT, 21, "#ffd84a", "center");
+  text("NPC 1: " + uno.hands[1].length, W * 0.26, 78 + safeT, 15, uno.turn === 1 ? "#ffd84a" : "#9aa0b4", "center");
+  text("NPC 2: " + uno.hands[2].length, W * 0.74, 78 + safeT, 15, uno.turn === 2 ? "#ffd84a" : "#9aa0b4", "center");
+  const top = unoTop();
+  drawUnoCard(W / 2 - 90, H / 2 - 46, 60, 86, top, true);
+  ctx.fillStyle = UNO_COLS[uno.cur]; ctx.beginPath(); ctx.arc(W / 2 - 60, H / 2 - 60, 11, 0, 7); ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
+  const dr = unoDrawRect(); drawUnoCard(dr.x, dr.y, dr.w, dr.h, null, false); text("ROBAR", dr.x + dr.w / 2, dr.y + dr.h + 15, 12, "#9aa0b4", "center");
+  for (let i = 0; i < uno.hands[0].length; i++) { const r = unoHandRect(i), play = uno.turn === 0 && !uno.over && unoPlayable(uno.hands[0][i], uno.cur, top.v); if (play) { ctx.shadowColor = "#62e074"; ctx.shadowBlur = 9; } ctx.globalAlpha = play ? 1 : 0.82; drawUnoCard(r.x, r.y - (play ? 10 : 0), r.w, r.h, uno.hands[0][i], true); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
+  text(uno.msg, W / 2, H / 2 + 56, 17, uno.over ? "#60d050" : uno.turn === 0 ? "#62e074" : "#fff", "center");
+  text("juga una carta del mismo color o numero  ·  ★ comodin  ·  +2 roba", W / 2, H - 8 - safeB, 11, "#8a8aa0", "center");
+  const cc = unoCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(cc.x, cc.y, cc.w, cc.h, 9); ctx.fill(); text("SALIR", cc.x + cc.w / 2, cc.y + cc.h / 2 + 5, 13, "#ff9bb0", "center");
+}
+
 // ---------- Render ----------
 function drawBlock(g, px, py, s, col) {
   const b = Math.max(2, s / 11);
@@ -1373,7 +1485,7 @@ function drawBlock(g, px, py, s, col) {
 // Edificio 3D extruido: sombra + paredes (sur/este) con ventanas + azotea con parapeto y detalles.
 function draw3DBuilding(g, b) {
   const px = b.x * TS, py = b.y * TS, pw = b.w * TS, ph = b.h * TS;
-  const EH = 22 + (b.seed % 5) * 11;          // altura variable (skyline mas 3D)
+  const EH = b.landmark ? 64 + (b.seed % 4) * 13 : 22 + (b.seed % 5) * 11;  // landmark = torre alta; resto skyline variable
   const roof = b.tint;
   // sombra proyectada en el piso (mas larga = mas alto)
   g.fillStyle = "rgba(0,0,0,0.36)"; g.beginPath(); g.roundRect(px + 10, py + 12, pw, ph, 8); g.fill();
@@ -1417,6 +1529,17 @@ function draw3DBuilding(g, b) {
   const units = Math.max(1, Math.floor((pw * ph) / (TS * TS * 2.2)));
   for (let i = 0; i < units; i++) { const ux = px + 12 + rnd() * (pw - 38), uy = py + 12 + rnd() * (ph - 30); g.fillStyle = "rgba(0,0,0,0.25)"; g.fillRect(ux + 2, uy + 13, 16, 2); g.fillStyle = shadeHex(roof, 0.7); g.fillRect(ux, uy, 16, 12); g.fillStyle = shadeHex(roof, 0.96); g.fillRect(ux + 2, uy + 2, 12, 3); }
   g.fillStyle = shadeHex(roof, 0.8); g.fillRect(px + pw - 24, py + 10, 14, 14); // acceso azotea
+  // EMISIVO: filo de neon en el parapeto (todos los edificios) -> mas arcade
+  g.strokeStyle = hexA(b.landmark ? b.neon : theme.stud, b.landmark ? 0.95 : 0.5); g.lineWidth = b.landmark ? 2.5 : 1.4; g.strokeRect(px + 4.5, py + 4.5, pw - 9, ph - 9);
+  if (b.landmark) {
+    // letrero de neon brillante en lo alto de la fachada
+    const ay = py + ph; g.fillStyle = b.neon; g.fillRect(px + pw * 0.18, ay + 8, pw * 0.64, 7);
+    g.fillStyle = "rgba(255,255,255,0.55)"; g.fillRect(px + pw * 0.18, ay + 8, pw * 0.64, 2);
+    // mastil + baliza en la azotea (la luz pulsa en drawWeatherSky)
+    const mx = px + pw / 2, my = py + 7; g.strokeStyle = "#2a2f3a"; g.lineWidth = 3; g.lineCap = "round"; g.beginPath(); g.moveTo(mx, my); g.lineTo(mx, my - 19); g.stroke();
+    g.fillStyle = b.neon; g.beginPath(); g.arc(mx, my - 21, 3.6, 0, 7); g.fill();
+    cityBeacons.push({ x: mx, y: my - 21, col: b.neon });
+  }
 }
 // ---- Decoracion de calle (se hornea en el cache) ----
 function decoLamp(g, x, y) {
@@ -1464,6 +1587,10 @@ function buildDungeonCache() {
   const gr = g.createLinearGradient(0, 0, 0, Hd); gr.addColorStop(0, hexA(theme.stud, 0.06)); gr.addColorStop(0.5, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(0,0,0,0.18)");
   g.fillStyle = gr; g.fillRect(0, 0, Wd, Hd);
   for (let i = 0; i < 16; i++) { const rx = Math.random() * Wd, ry = Math.random() * Hd, rr = 70 + Math.random() * 130; g.fillStyle = "rgba(0,0,0,0.05)"; g.beginPath(); g.arc(rx, ry, rr, 0, 7); g.fill(); }
+  // manchas tenues en clave del tema (atmosfera de cueva, rompe el piso plano)
+  for (let i = 0; i < 11; i++) { const rx = Math.random() * Wd, ry = Math.random() * Hd, rr = 120 + Math.random() * 200; const ng = g.createRadialGradient(rx, ry, 0, rx, ry, rr); ng.addColorStop(0, hexA(theme.stud, 0.05)); ng.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = ng; g.beginPath(); g.arc(rx, ry, rr, 0, 7); g.fill(); }
+  // viñeta horneada suave: enmarca el mundo sin oscurecer de mas (sobre todo de dia)
+  const fv = g.createRadialGradient(Wd / 2, Hd / 2, Math.min(Wd, Hd) * 0.42, Wd / 2, Hd / 2, Math.max(Wd, Hd) * 0.66); fv.addColorStop(0, "rgba(0,0,0,0)"); fv.addColorStop(1, "rgba(0,0,0,0.17)"); g.fillStyle = fv; g.fillRect(0, 0, Wd, Hd);
   // ---- ACERAS: vereda de hormigon alrededor de cada manzana ----
   const sidewalk = shadeHex(theme.floor, 1.9);
   for (const b of cityBlocks) { const px = b.x * TS, py = b.y * TS, pw = b.w * TS, ph = b.h * TS; g.fillStyle = sidewalk; g.beginPath(); g.roundRect(px - 7, py - 7, pw + 14, ph + 14, 9); g.fill(); }
@@ -1475,6 +1602,7 @@ function buildDungeonCache() {
   [Math.floor(cols * 0.5), Math.floor(cols * 0.5) - 7, Math.floor(cols * 0.5) + 7, Math.floor(cols * 0.5) - 14, Math.floor(cols * 0.5) + 14].forEach(c => { if (c > 0 && c < cols - 1) drawCol(c); });
   g.setLineDash([]);
   // ---- EDIFICIOS 3D (painter: los de arriba primero) ----
+  cityBeacons = []; // las recolecta draw3DBuilding (landmarks)
   const sorted = cityBlocks.slice().sort((a, b) => a.y - b.y);
   for (const b of sorted) draw3DBuilding(g, b);
   // ---- DECORACION: faroles, arboles, flores, tiendas ----
@@ -1565,7 +1693,7 @@ function drawGem(x, y) {
   const bob = Math.sin(t * 4) * 2; y += bob; const s = 13;
   ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.beginPath(); ctx.ellipse(x, y + s * 0.95, s * 0.6, s * 0.22, 0, 0, 7); ctx.fill();
   ctx.save(); ctx.translate(x, y);
-  if (glowOn()) { ctx.shadowColor = "#5eead4"; ctx.shadowBlur = 16; }
+  if (glowOn()) { ctx.shadowColor = "#5eead4"; ctx.shadowBlur = 16 + 6 * (0.5 + 0.5 * Math.sin(t * 4)); }
   ctx.beginPath(); ctx.moveTo(0, -s); ctx.lineTo(s * 0.8, -s * 0.2); ctx.lineTo(0, s); ctx.lineTo(-s * 0.8, -s * 0.2); ctx.closePath(); ctx.fillStyle = "#2bb5a2"; ctx.fill(); ctx.shadowBlur = 0;
   ctx.fillStyle = "#5eead4"; ctx.beginPath(); ctx.moveTo(0, -s); ctx.lineTo(s * 0.8, -s * 0.2); ctx.lineTo(0, 0); ctx.closePath(); ctx.fill();
   ctx.fillStyle = "#8af0e0"; ctx.beginPath(); ctx.moveTo(0, -s); ctx.lineTo(-s * 0.8, -s * 0.2); ctx.lineTo(0, 0); ctx.closePath(); ctx.fill();
@@ -1822,15 +1950,56 @@ function drawButtons() {
 }
 
 function drawWeatherSky() {
-  // tinte de noche
-  if (nightAmt > 0.02) { ctx.fillStyle = "rgba(10,14,42," + (nightAmt * 0.5).toFixed(3) + ")"; ctx.fillRect(0, 0, W, H); }
+  // tinte de noche: viñeta (centro mas claro, bordes mas oscuros = profundidad) + luz de luna fria desde arriba
+  if (nightAmt > 0.02) {
+    const nv = ctx.createRadialGradient(W / 2, H * 0.46, Math.min(W, H) * 0.16, W / 2, H * 0.52, Math.max(W, H) * 0.72);
+    nv.addColorStop(0, "rgba(12,16,46," + (nightAmt * 0.34).toFixed(3) + ")"); nv.addColorStop(1, "rgba(5,7,24," + (nightAmt * 0.7).toFixed(3) + ")");
+    ctx.fillStyle = nv; ctx.fillRect(0, 0, W, H);
+    ctx.save(); ctx.globalCompositeOperation = "lighter"; const mn = ctx.createLinearGradient(0, 0, 0, H * 0.55);
+    mn.addColorStop(0, "rgba(96,126,205," + (nightAmt * 0.05).toFixed(3) + ")"); mn.addColorStop(1, "rgba(96,126,205,0)");
+    ctx.fillStyle = mn; ctx.fillRect(0, 0, W, H * 0.55); ctx.restore();
+  }
   // atardecer/amanecer calido
   const dusk = Math.max(0, 1 - Math.min(Math.abs(tod - 0.25), Math.abs(tod - 0.75)) / 0.07);
   if (dusk > 0.01) { ctx.fillStyle = "rgba(255,110,40," + (dusk * 0.16).toFixed(3) + ")"; ctx.fillRect(0, 0, W, H); }
-  // faroles encendidos de noche (additive, mundo->pantalla)
-  if (nightAmt > 0.32) { ctx.save(); ctx.globalCompositeOperation = "lighter"; for (const L of cityLamps) { const sx = L.x - camX, sy = L.y - camY - 29; if (sx < -40 || sx > W + 40 || sy < -40 || sy > H + 40) continue; const g = ctx.createRadialGradient(sx, sy, 2, sx, sy, 30); g.addColorStop(0, "rgba(255,224,150," + (nightAmt * 0.5).toFixed(3) + ")"); g.addColorStop(1, "rgba(255,224,150,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy, 30, 0, 7); ctx.fill(); } ctx.restore(); }
+  // luces de noche (additive, mundo->pantalla): bloom calido de fachadas + faroles en capas
+  if (nightAmt > 0.30) {
+    ctx.save(); ctx.globalCompositeOperation = "lighter";
+    // bloom calido sobre cada fachada (ventanas encendidas) -> la ciudad "respira" (solo graficos ALTA)
+    if (glowOn()) for (const b of cityBlocks) {
+      const fx = (b.x + b.w / 2) * TS - camX, fy = (b.y + b.h) * TS - camY + 14, fr = Math.max(48, b.w * TS * 0.7);
+      if (fx < -fr || fx > W + fr || fy < -fr || fy > H + fr) continue;
+      const g = ctx.createRadialGradient(fx, fy, 4, fx, fy, fr);
+      g.addColorStop(0, "rgba(255,206,120," + (nightAmt * 0.13).toFixed(3) + ")"); g.addColorStop(1, "rgba(255,206,120,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(fx, fy, fr, 0, 7); ctx.fill();
+    }
+    // faroles: piscina ancha + nucleo brillante
+    for (const L of cityLamps) {
+      const sx = L.x - camX, sy = L.y - camY - 29;
+      if (sx < -90 || sx > W + 90 || sy < -90 || sy > H + 90) continue;
+      const g = ctx.createRadialGradient(sx, sy, 2, sx, sy, 74);
+      g.addColorStop(0, "rgba(255,228,150," + (nightAmt * 0.5).toFixed(3) + ")"); g.addColorStop(0.5, "rgba(255,210,120," + (nightAmt * 0.16).toFixed(3) + ")"); g.addColorStop(1, "rgba(255,210,120,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy, 74, 0, 7); ctx.fill();
+      const c = ctx.createRadialGradient(sx, sy, 1, sx, sy, 16);
+      c.addColorStop(0, "rgba(255,250,222," + (nightAmt * 0.85).toFixed(3) + ")"); c.addColorStop(1, "rgba(255,250,222,0)");
+      ctx.fillStyle = c; ctx.beginPath(); ctx.arc(sx, sy, 16, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+  }
   // luz del taco de noche (visibilidad)
   if (nightAmt > 0.35 && state === "play") { ctx.save(); ctx.globalCompositeOperation = "lighter"; const px = player.x - camX, py = player.y - camY, g = ctx.createRadialGradient(px, py, 8, px, py, 120); g.addColorStop(0, "rgba(255,240,200," + (nightAmt * 0.28).toFixed(3) + ")"); g.addColorStop(1, "rgba(255,240,200,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, 120, 0, 7); ctx.fill(); ctx.restore(); }
+  // balizas de los landmarks (parpadean de dia y de noche)
+  if (cityBeacons.length) {
+    ctx.save(); ctx.globalCompositeOperation = "lighter";
+    for (const bc of cityBeacons) {
+      const sx = bc.x - camX, sy = bc.y - camY; if (sx < -32 || sx > W + 32 || sy < -32 || sy > H + 32) continue;
+      const pulse = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(t * 3 + bc.x * 0.012)), rr = 16 + 8 * pulse;
+      const gg = ctx.createRadialGradient(sx, sy, 1, sx, sy, rr);
+      gg.addColorStop(0, hexA(bc.col, 0.72 * pulse)); gg.addColorStop(1, hexA(bc.col, 0));
+      ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(sx, sy, rr, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+  }
   // sol o luna
   const cx = W * (0.12 + ((tod + 0.25) % 1) * 0.76), cy = 54 + safeT;
   if (nightAmt < 0.5) { ctx.save(); const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, 42); g.addColorStop(0, "rgba(255,235,150," + (0.85 - nightAmt).toFixed(3) + ")"); g.addColorStop(1, "rgba(255,235,150,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 42, 0, 7); ctx.fill(); ctx.fillStyle = "#ffe79a"; ctx.beginPath(); ctx.arc(cx, cy, 15, 0, 7); ctx.fill(); ctx.restore(); }
@@ -1973,8 +2142,8 @@ function render() {
   if (state === "play" || state === "quiz" || state === "shop") drawWeatherSky();
 
   // Viñeta + destello (4D)
-  const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.32, W / 2, H / 2, Math.max(W, H) * 0.72);
-  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.42)");
+  const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.38, W / 2, H / 2, Math.max(W, H) * 0.74);
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.28)");
   ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
   if (flashT > 0) { ctx.fillStyle = "rgba(" + flashCol + "," + (0.4 * flashT / flashMax) + ")"; ctx.fillRect(0, 0, W, H); }
   // pulso rojo con poca vida (tension)
@@ -1991,6 +2160,7 @@ function render() {
   if (state === "interior") drawInterior();
   if (state === "roulette") drawRoulette();
   if (state === "memory") drawMemory();
+  if (state === "uno") drawUno();
   if (state === "challenge") drawChallenge();
   if (state === "players") drawPlayers();
   if (paused && state === "play") { ctx.fillStyle = "rgba(6,6,12,0.6)"; ctx.fillRect(0, 0, W, H); text("PAUSA", W / 2, H / 2, 48, "#f5cd46", "center"); text("toca II para seguir", W / 2, H / 2 + 40, 16, "#9a9ab0", "center"); drawButtons(); }

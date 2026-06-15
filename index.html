@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v50 - ASISTENTE IA NEURAL: ensena palabras (pickItem adaptativo) + se adapta a tu juego + evoluciona con tu progreso + voz que pronuncia en el idioma; mas seguido";
+const VERSION = "v51 - SINCRONIZADO: autos/gente/enemigos pasan por DETRAS de la fachada (no encima) + tu edificio construido aparece AL INSTANTE en la ciudad (cartel MI CASA/TIENDA/TORRE)";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -1586,10 +1586,19 @@ function buildStep() {
   if (buildSafety() < 75) { build.msg = "FALTA EPP! ponete el equipo de seguridad (OSHA)"; sWrong(); return; }
   if (build.done) return;
   build.stage++; build.workT = 0.6; sShoot(); shake = Math.min(shake + 3, 10);
-  if (build.stage >= BUILD_STAGES.length) { build.done = true; const d = BUILD_DESIGNS[build.design]; coins += d.reward; myBuilds.push(build.design); saveBuilds(); build.msg = "OBRA TERMINADA! +" + d.reward + " mon · tu " + d.name + " quedo en la CIUDAD"; flash("96,208,80", 0.25); sPower(); }
+  if (build.stage >= BUILD_STAGES.length) { build.done = true; const d = BUILD_DESIGNS[build.design]; coins += d.reward; myBuilds.push(build.design); saveBuilds(); plantBuildInCurrentCity(build.design); build.msg = "OBRA LISTA! +" + d.reward + " mon · tu " + d.name + " quedo en la CIUDAD (cartel verde MI " + d.name + ")"; flash("96,208,80", 0.25); sPower(); }
   else build.msg = "Etapa: " + BUILD_STAGES[build.stage] + "  (" + build.stage + "/4)";
 }
 function updateBuild(dt) { if (build.workT > 0) build.workT -= dt; }
+function plantBuildInCurrentCity(di) { // planta tu edificio YA en la ciudad actual (manzana libre mas cercana)
+  if (!cityBlocks || !cityBlocks.length) return false;
+  let best = null, bd = 1e18;
+  for (const b of cityBlocks) { if (b.built != null) continue; const cx = (b.x + b.w / 2) * TS, cy = (b.y + b.h / 2) * TS, d = (cx - player.x) * (cx - player.x) + (cy - player.y) * (cy - player.y); if (d < bd) { bd = d; best = b; } }
+  if (!best) return false;
+  const d = BUILD_DESIGNS[di]; best.built = di; best.shop = true; best.landmark = di === 2; best.tint = mixHex(d.col, "#5a6275", 0.12); best.awn = "#62e074";
+  builtMarkers.push({ x: (best.x + best.w / 2) * TS, y: best.y * TS, name: "MI " + d.name });
+  buildDungeonCache(); return true;
+}
 function buildDesignRect(i) { const w = Math.min(150, (W - 70) / 3), x0 = W / 2 - (3 * w + 20) / 2; return { x: x0 + i * (w + 10), y: H * 0.38, w, h: 132 }; }
 function oshaRect(i) { const w = Math.min(120, (W - 60) / 4), x0 = W / 2 - (4 * w + 30) / 2; return { x: x0 + i * (w + 10), y: H - 150 - safeB, w, h: 54 }; }
 function buildGoRect() { return { x: W / 2 - 95, y: H - 86 - safeB, w: 190, h: 48 }; }
@@ -2796,6 +2805,16 @@ function render() {
   for (const c of cars) drawCar(c);
   for (const p of peds) drawPed(p);
   for (const e of enemies) { drawEnemy(e); if (e.hp < e.maxhp && !e.boss) bar(e.x - e.r, e.y - e.r - 8, e.r * 2, 4, e.hp / e.maxhp, "#60d050"); }
+  // SINCRONIZAR profundidad: si un auto/gente/enemigo queda sobre la fachada de un edificio, redibujo el edificio encima (pasa por DETRAS)
+  for (const b of cityBlocks) {
+    const bx0 = b.x * TS, bx1 = (b.x + b.w) * TS, by0 = b.y * TS, by1 = (b.y + b.h) * TS, EHb = b.landmark ? 72 + (b.seed % 4) * 15 : 28 + (b.seed % 5) * 13;
+    const ins = o => o && o.x > bx0 - 8 && o.x < bx1 + EHb + 8 && o.y > by0 - 24 && o.y < by1 + EHb + 6;
+    let over = false;
+    for (const c of cars) if (c !== driving && ins(c)) { over = true; break; }
+    if (!over) for (const p of peds) if (ins(p)) { over = true; break; }
+    if (!over) for (const e of enemies) if (ins(e)) { over = true; break; }
+    if (over) draw3DBuilding(ctx, b);
+  }
   for (const rg of rings) { ctx.globalAlpha = clamp(rg.life, 0, 1) * 0.7; ctx.strokeStyle = rg.col; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(rg.x, rg.y, rg.r, 0, 7); ctx.stroke(); }
   ctx.globalAlpha = 1;
   if (!(player.inv > 0 && Math.floor(t * 20) % 2)) drawTaco(player.x, player.y - (driving ? 8 : 0), player.r * (driving ? 1.5 : 2.2), level);

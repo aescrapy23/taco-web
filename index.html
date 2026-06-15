@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v30 - QUIZ: sin acertar NO pasas de nivel + hay que PRONUNCIARLO (voz) | pulido: boton MANEJAR/ENTRAR central, cohete bazuca, luz nocturna";
+const VERSION = "v31 - RESUME DE SESION: guarda la partida en curso por jugador; boton CONTINUAR en el titulo (volves donde te quedaste)";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -305,6 +305,7 @@ let pShield = 0, pTriple = 0, pRapid = 0, weapon = 0;
 let shop = null, shopLock = false, coins = 0; // tienda + monedas (divisa)
 let dashT = 0, dashCD = 0, dashDir = { x: 1, y: 0 }, lastMoveX = 1, lastMoveY = 0, lastLeftTap = 0; // esquive
 let driving = null; // auto que el taco esta manejando (o null)
+let runSaveT = 0; // temporizador para autoguardar la partida en curso
 let daySec = 0, dayLen = 210, tod = 0, nightAmt = 0; // ciclo dia/noche
 let weather = { kind: "sol", temp: 24 }; // clima + temperatura
 let rain = [], cityLamps = []; // gotas de lluvia + posiciones de faroles (para que enciendan de noche)
@@ -471,7 +472,7 @@ const keys = {};
 let mouse = { x: 0, y: 0, down: false };
 addEventListener("keydown", e => {
   const k = e.key.toLowerCase(); keys[k] = true; audioInit();
-  if (state === "title") { if (k === "v") openWb(); else if (k === "o") openOptions(); else startOrRestart(); return; }
+  if (state === "title") { if (k === "v") openWb(); else if (k === "o") openOptions(); else if (k === "c" && loadRun()) resumeRun(); else startOrRestart(); return; }
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { if (k === "escape") state = uiBack; return; }
   if (state === "menu") { if (k === "escape") state = "play"; return; }
@@ -489,7 +490,7 @@ addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 canvas.addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
 canvas.addEventListener("mousedown", e => {
   mouse.down = true; audioInit();
-  if (state === "title") { const w = titleWbRect(); if (e.clientX >= w.x && e.clientX <= w.x + w.w && e.clientY >= w.y && e.clientY <= w.y + w.h) { openWb(); mouse.down = false; return; } const o = titleOptRect(); if (e.clientX >= o.x && e.clientX <= o.x + o.w && e.clientY >= o.y && e.clientY <= o.y + o.h) { openOptions(); mouse.down = false; return; } startOrRestart(); return; }
+  if (state === "title") { const cr = titleContinueRect(); if (loadRun() && e.clientX >= cr.x && e.clientX <= cr.x + cr.w && e.clientY >= cr.y && e.clientY <= cr.y + cr.h) { resumeRun(); mouse.down = false; return; } const w = titleWbRect(); if (e.clientX >= w.x && e.clientX <= w.x + w.w && e.clientY >= w.y && e.clientY <= w.y + w.h) { openWb(); mouse.down = false; return; } const o = titleOptRect(); if (e.clientX >= o.x && e.clientX <= o.x + o.w && e.clientY >= o.y && e.clientY <= o.y + o.h) { openOptions(); mouse.down = false; return; } startOrRestart(); return; }
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { optTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "menu") { menuTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -509,7 +510,7 @@ const stickL = { id: null, bx: 0, by: 0, x: 0, y: 0 };
 const stickR = { id: null, bx: 0, by: 0, x: 0, y: 0 };
 function onTouchStart(e) {
   e.preventDefault(); audioInit();
-  if (state === "title") { for (const tch of e.changedTouches) { const w = titleWbRect(); if (tch.clientX >= w.x && tch.clientX <= w.x + w.w && tch.clientY >= w.y && tch.clientY <= w.y + w.h) { openWb(); return; } const o = titleOptRect(); if (tch.clientX >= o.x && tch.clientX <= o.x + o.w && tch.clientY >= o.y && tch.clientY <= o.y + o.h) { openOptions(); return; } } startOrRestart(); return; }
+  if (state === "title") { for (const tch of e.changedTouches) { const cr = titleContinueRect(); if (loadRun() && tch.clientX >= cr.x && tch.clientX <= cr.x + cr.w && tch.clientY >= cr.y && tch.clientY <= cr.y + cr.h) { resumeRun(); return; } const w = titleWbRect(); if (tch.clientX >= w.x && tch.clientX <= w.x + w.w && tch.clientY >= w.y && tch.clientY <= w.y + w.h) { openWb(); return; } const o = titleOptRect(); if (tch.clientX >= o.x && tch.clientX <= o.x + o.w && tch.clientY >= o.y && tch.clientY <= o.y + o.h) { openOptions(); return; } } startOrRestart(); return; }
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { for (const tch of e.changedTouches) optTapAt(tch.clientX, tch.clientY); return; }
   if (state === "menu") { for (const tch of e.changedTouches) menuTapAt(tch.clientX, tch.clientY); return; }
@@ -563,7 +564,18 @@ function readInput() {
 }
 
 // ---------- Flujo ----------
-function startOrRestart() { if (!profile || !curPlayer) { openPlayers(); return; } level = 1; score = 0; words = 0; coins = 5; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; dashT = 0; dashCD = 0; genLevel(); state = "play"; sLevel(); }
+function startOrRestart() { if (!profile || !curPlayer) { openPlayers(); return; } clearRun(); level = 1; score = 0; words = 0; coins = 5; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; dashT = 0; dashCD = 0; driving = null; genLevel(); state = "play"; sLevel(); }
+// ---- RESUME DE SESION: guarda la partida en curso por jugador y permite CONTINUAR ----
+function saveRun() { if (state === "over" || !curPlayer) return; try { lset("run", JSON.stringify({ level, score, words, coins, hp: Math.round(player.hp), weapon })); } catch (e) {} }
+function loadRun() { try { return JSON.parse(lget("run") || "null"); } catch (e) { return null; } }
+function clearRun() { lset("run", ""); }
+function resumeRun() {
+  const r = loadRun(); if (!r) { startOrRestart(); return; }
+  level = r.level || 1; score = r.score || 0; words = r.words || 0; coins = r.coins != null ? r.coins : 5;
+  weapon = clamp(r.weapon || 0, 0, WEAPONS.length - 1); if (!weaponUnlocked(weapon)) weapon = 0;
+  player.hp = clamp(r.hp || MAXHP, 1, MAXHP); pShield = pTriple = pRapid = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; dashT = 0; dashCD = 0; driving = null;
+  genLevel(); state = "play"; sLevel();
+}
 
 // Portal "neural": mezcla idioma + matematica + logica segun avance
 function openQuiz() {
@@ -660,7 +672,7 @@ function answerQuiz(i) {
   else sWrong();
   quiz.fb = 1.9;
 }
-function nextLevel() { level++; score += 120; player.hp = Math.min(MAXHP, player.hp + 30); genLevel(); state = "play"; flash("245,205,70", 0.3); floatText(player.x, player.y - 34, "DIMENSION " + level + "  " + theme.name, "#f5cd46"); sLevel(); }
+function nextLevel() { level++; score += 120; player.hp = Math.min(MAXHP, player.hp + 30); genLevel(); state = "play"; saveRun(); flash("245,205,70", 0.3); floatText(player.x, player.y - 34, "DIMENSION " + level + "  " + theme.name, "#f5cd46"); sLevel(); }
 
 // ---- PRONUNCIACION: hay que decir bien la palabra para pasar (reconocimiento de voz + fallback) ----
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -854,6 +866,7 @@ function drawWardrobe() {
 }
 function titleWbRect() { return { x: W / 2 - 152, y: H / 2 + 140, w: 144, h: 42 }; }
 function titleOptRect() { return { x: W / 2 + 8, y: H / 2 + 140, w: 144, h: 42 }; }
+function titleContinueRect() { return { x: W / 2 - 120, y: H / 2 + 34, w: 240, h: 46 }; }
 
 // ---- OPCIONES ----
 function openOptions(back) { uiBack = back || "title"; state = "options"; }
@@ -888,7 +901,7 @@ function drawOptions() {
 }
 
 // ---- MENU del juego (boton casa) : continuar / opciones / vestuario / jugador / titulo ----
-function openMenu() { state = "menu"; }
+function openMenu() { saveRun(); state = "menu"; }
 function menuRows() {
   return [
     { label: "CONTINUAR", col: "#5eead4", act: () => { state = "play"; } },
@@ -960,7 +973,7 @@ function drawPlayers() {
 function hurt(d) {
   if (player.inv > 0 || pShield > 0) return;
   player.hp -= d; player.inv = 0.7; shake = Math.min(shake + 8, 14); flash("235,80,64", 0.22); vib(70); sHurt(); addParts(player.x, player.y, 14, "#eb5040", 200);
-  if (player.hp <= 0) { player.hp = 0; combo = 0; best = Math.max(best, score); lset("best", best); bank += coins; saveWardrobe(); state = "over"; }
+  if (player.hp <= 0) { player.hp = 0; combo = 0; best = Math.max(best, score); lset("best", best); bank += coins; saveWardrobe(); clearRun(); state = "over"; }
 }
 
 function update(dt) {
@@ -1019,6 +1032,7 @@ function update(dt) {
   if (player.inv > 0) player.inv -= dt;
   pShield = Math.max(0, pShield - dt); pTriple = Math.max(0, pTriple - dt); pRapid = Math.max(0, pRapid - dt);
   if (comboT > 0) { comboT -= dt; if (comboT <= 0) combo = 0; }
+  runSaveT += dt; if (runSaveT > 4) { runSaveT = 0; saveRun(); } // autoguardado de la partida
   player.fire -= dt;
   if (!driving && inp.firing && player.fire <= 0) fire(inp.ax, inp.ay);
 
@@ -1761,8 +1775,14 @@ function render() {
     drawTaco(W / 2, H / 2 - 140, Math.min(70, W / 6), 7); // taco evolucionado de muestra
     text("CATACOMB", W / 2, H / 2 - 50, Math.min(72, W / 7), "#f5cd46", "center");
     text("el taco en la catacumba", W / 2, H / 2 - 8, 18, "#96c8eb", "center");
-    if (profile) text("Hola " + profile.name + "  ·  Ingles " + LESSONS.EN.levels[profile.eng].tag + "  ·  Chino " + LESSONS.ZH.levels[profile.zh].tag, W / 2, H / 2 + 20, 13, "#9be7c0", "center");
-    text("TOCA PARA JUGAR", W / 2, H / 2 + 52, 22, "#f5cd46", "center");
+    if (profile) text("Hola " + profile.name + "  ·  Ingles " + LESSONS.EN.levels[profile.eng].tag + "  ·  Chino " + LESSONS.ZH.levels[profile.zh].tag, W / 2, H / 2 + 18, 13, "#9be7c0", "center");
+    const trun = curPlayer ? loadRun() : null;
+    if (trun && trun.level) {
+      const cr = titleContinueRect(); const pulse = 0.5 + 0.5 * Math.sin(t * 4);
+      ctx.shadowColor = "#62e074"; ctx.shadowBlur = 8 + pulse * 8; ctx.fillStyle = "#16341f"; ctx.beginPath(); ctx.roundRect(cr.x, cr.y, cr.w, cr.h, 12); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#62e074"; ctx.lineWidth = 3; ctx.stroke();
+      text("CONTINUAR  ·  Mundo " + trun.level, cr.x + cr.w / 2, cr.y + cr.h / 2 + 7, 19, "#9be7c0", "center");
+      text("tocá la pantalla = NUEVA partida", W / 2, cr.y + cr.h + 22, 13, "#8a8aa0", "center");
+    } else text("TOCA PARA JUGAR", W / 2, H / 2 + 52, 22, "#f5cd46", "center");
     text("izq: mover (doble-toque = esquive) · der: apuntar/disparar", W / 2, H / 2 + 88, 14, "#8a8aa0", "center");
     text("dimensiones, tiendas, minimapa · aprende INGLES y CHINO (frases)", W / 2, H / 2 + 112, 13, "#7a7a90", "center");
     const wr = titleWbRect();
@@ -1813,6 +1833,9 @@ requestAnimationFrame(frame);
 
 // PWA: instalable + offline + actualiza solo (network-first)
 if ("serviceWorker" in navigator) { try { navigator.serviceWorker.register("sw.js"); } catch (e) {} }
+// guardar la partida en curso al ocultar/cerrar (para CONTINUAR donde se quedo)
+document.addEventListener("visibilitychange", () => { if (document.hidden && state === "play") saveRun(); });
+window.addEventListener("pagehide", () => { if (state === "play") saveRun(); });
 </script>
 </body>
 </html>

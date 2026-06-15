@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v49 - ASISTENTE IA gratis mejorado: avatar siempre visible, TOCALO para una pista con VOZ; saque IA-nube de la UI (codigo queda) + mockup Nano Banana del juego completo";
+const VERSION = "v50 - ASISTENTE IA NEURAL: ensena palabras (pickItem adaptativo) + se adapta a tu juego + evoluciona con tu progreso + voz que pronuncia en el idioma; mas seguido";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -625,7 +625,7 @@ function readInput() {
 }
 
 // ---------- Flujo ----------
-function startOrRestart() { if (!profile || !curPlayer) { openPlayers(); return; } clearRun(); level = 1; score = 0; words = 0; coins = 5; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; dashT = 0; dashCD = 0; driving = null; genLevel(); state = "play"; sLevel(); ai.lastKey = ""; aiSay("Hola! soy tu asistente. Toca mi cara (arriba-izq) cuando quieras una pista, te la leo en voz.", "#7fd6ff", "hi"); }
+function startOrRestart() { if (!profile || !curPlayer) { openPlayers(); return; } clearRun(); level = 1; score = 0; words = 0; coins = 5; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; dashT = 0; dashCD = 0; driving = null; genLevel(); state = "play"; sLevel(); ai.lastKey = ""; ai.n = 0; aiSay("Hola! soy tu coach. Te enseño palabras y te doy pistas; tocame (arriba-izq) y te las pronuncio en voz.", "#7fd6ff", "hi"); }
 // ---- RESUME DE SESION: guarda la partida en curso por jugador y permite CONTINUAR ----
 function saveRun() { if (state === "over" || !curPlayer) return; try { lset("run", JSON.stringify({ level, score, words, coins, hp: Math.round(player.hp), weapon })); } catch (e) {} }
 function loadRun() { try { return JSON.parse(lget("run") || "null"); } catch (e) { return null; } }
@@ -1040,7 +1040,7 @@ function drawPlayers() {
 function hurt(d) {
   if (player.inv > 0 || pShield > 0) return;
   player.hp -= d; player.inv = 0.7; shake = Math.min(shake + 8, 14); flash("235,80,64", 0.22); vib(70); sHurt(); addParts(player.x, player.y, 14, "#eb5040", 200);
-  if (player.hp <= 0) { player.hp = 0; combo = 0; best = Math.max(best, score); lset("best", best); bank += coins; saveWardrobe(); clearRun(); state = "over"; }
+  if (player.hp <= 0) { player.hp = 0; combo = 0; best = Math.max(best, score); lset("best", best); bank += coins; saveWardrobe(); clearRun(); ai.deaths = (ai.deaths || 0) + 1; state = "over"; }
 }
 
 function update(dt) {
@@ -1111,7 +1111,7 @@ function update(dt) {
   pShield = Math.max(0, pShield - dt); pTriple = Math.max(0, pTriple - dt); pRapid = Math.max(0, pRapid - dt);
   if (comboT > 0) { comboT -= dt; if (comboT <= 0) combo = 0; }
   runSaveT += dt; if (runSaveT > 4) { runSaveT = 0; saveRun(); } // autoguardado de la partida
-  if (ai.t > 0) ai.t -= dt; ai.evalT += dt; if (ai.evalT > 6.5) { ai.evalT = 0; aiEval(); } // asistente IA
+  if (ai.t > 0) ai.t -= dt; ai.evalT += dt; if (ai.evalT > 5) { ai.evalT = 0; aiEval(); } // asistente IA (mas seguido)
   player.fire -= dt;
   if (!driving && inp.firing && player.fire <= 0) fire(inp.ax, inp.ay);
 
@@ -2624,22 +2624,39 @@ const AI_TIPS = [
 ];
 function aiSay(msg, col, key) { if (key === ai.lastKey && t - ai.last < 24) return; ai.msg = msg; ai.col = col || "#7fd6ff"; ai.t = 7.5; ai.last = t; ai.lastKey = key; }
 function aiRect() { return { x: 14, y: 96 + safeT, w: 34, h: 34 }; }
-function aiHelp() { // ayuda a pedido: pista fresca + voz (gratis, TTS del navegador)
-  ai.lastKey = ""; aiEval();
-  if (!ai.msg || ai.t <= 0 || ai.lastKey === "tip") { const tp = AI_TIPS[(ai.tipI = ((ai.tipI || 0) + 1) % AI_TIPS.length)]; ai.msg = tp[0]; ai.col = tp[1]; ai.t = 7.5; ai.lastKey = "tip"; }
-  try { speak(ai.msg, "es-ES"); } catch (e) {} sRight();
+function aiHelp() { // ayuda a pedido: si no hay pista, genera una; y la LEE en voz (gratis)
+  if (ai.t <= 0) { ai.lastKey = ""; aiEval(); if (ai.t <= 0) { const tp = AI_TIPS[(ai.tipI = ((ai.tipI || 0) + 1) % AI_TIPS.length)]; ai.msg = tp[0]; ai.col = tp[1]; ai.t = 7.5; ai.lastKey = "tip"; } }
+  try { if (ai.lastKey === "learn" && ai.learnItem && ai.learnL) speak(ai.learnItem[1], ai.learnL.code); else speak(ai.msg, "es-ES"); } catch (e) {} // educativo: pronuncia la palabra en el idioma
+  ai.t = Math.max(ai.t, 5.5); sRight();
+}
+function aiMastery() { let m = 0, tt = 0; for (const lk of LANGS) { const md = masteredTotalL(LESSONS[lk]); m += md[0]; tt += md[1]; } return { m, tt }; }
+function aiTeachWord() { // NEURAL: pickItem prioriza lo que mas fallas; EDUCATIVO: ensena/repasa esa palabra
+  const r = pickItem(), L = r.L, item = r.item, es = item[0], tgt = dispOf(L, item), s = lstats[itemKey(item)] || { seen: 0, streak: 0 };
+  ai.learnItem = item; ai.learnL = L;
+  let msg;
+  if (s.streak >= 3) msg = "Ya dominas '" + es + "' = " + tgt + ". Crack! tocame y probemos otra.";
+  else if (!s.seen) msg = "Palabra nueva: '" + es + "' = '" + tgt + "'. Tocame para escucharla.";
+  else msg = "Repasemos: '" + es + "' = '" + tgt + "'. La vas a necesitar en el portal.";
+  aiSay(msg, "#62e074", "learn");
 }
 function aiEval() {
   if (settings.ai === 0 || state !== "play") return;
-  if (player.hp < MAXHP * 0.3) return aiSay("Poca vida! junta un corazon verde o entra al mall (boton casa) y compra SALUD.", "#eb6050", "hp");
-  if (portal) return aiSay("Portal abierto! anda al remolino para el reto de idioma y subir de dimension.", "#b480ff", "portal");
-  if (combo >= 6) return aiSay("Buen combo! mata seguido sin que te toquen para multiplicar el puntaje.", "#ff9b3c", "combo");
-  if (coins >= 24) return aiSay("Tenes " + coins + " monedas: gastalas en el mall (vestuario, vehiculos, OBRA para construir).", "#ffd84a", "coins");
-  if (mission && mission.type === 1 && mission.prog < mission.target) return aiSay("Mision: derrota " + (mission.target - mission.prog) + " enemigos mas. Apunta con la mano derecha y disparale.", "#f5cd46", "mis1");
+  ai.n = (ai.n || 0) + 1;
+  // DINAMICO: urgente segun contexto
+  if (player.hp < MAXHP * 0.3) return aiSay("Poca vida! junta un corazon verde o entra al mall (boton casa) -> SALUD.", "#eb6050", "hp");
+  if (portal) return aiSay("Portal abierto! anda al remolino: traduci y PRONUNCIA la palabra para evolucionar de dimension.", "#b480ff", "portal");
+  // EDUCATIVO NEURAL: 1 de cada 2 veces ensena/repasa la palabra que mas te conviene
+  if (ai.n % 2 === 0) return aiTeachWord();
+  // ADAPTATIVO: segun tu desempeno
+  if ((ai.deaths || 0) >= 2 && Math.random() < 0.55) return aiSay("Te cuesta sobrevivir: usa el DASH (doble-toque) para esquivar y no perder el combo.", "#ff9b3c", "combat");
+  if (combo >= 6) return aiSay("Buen combo! cada racha multiplica el puntaje, segui sin que te toquen.", "#ff9b3c", "combo");
+  if (coins >= 24) return aiSay("Tenes " + coins + " monedas: gastalas en vestuario, vehiculos o modo OBRA.", "#ffd84a", "coins");
+  if (mission && mission.type === 1 && mission.prog < mission.target) return aiSay("Mision: derrota " + (mission.target - mission.prog) + " enemigos mas. Apunta con la derecha y disparale.", "#f5cd46", "mis1");
   if (mission && mission.type === 0) return aiSay("Junta todas las gemas turquesa para abrir el portal de idioma.", "#5eead4", "mis0");
   if (mission && mission.type === 2) return aiSay("Tocá 3 personas para rescatarlas y completar la mision.", "#9be7c0", "mis2");
-  if (weather.kind === "lluvia" && nightAmt > 0.5) return aiSay("Noche lluviosa (" + weather.temp + "°): el taco ilumina a su alrededor y se encienden los faroles.", "#9aa0b4", "night");
-  return aiSay("Tip: doble-toque en la zona de mover = ESQUIVE (dash). Boton casa = menu, mall y modo OBRA.", "#7fd6ff", "tip");
+  // EVOLUTIVO: tu progreso
+  const ms = aiMastery();
+  return aiSay("Mundo " + level + " · " + ms.m + "/" + ms.tt + " palabras DOMINADAS · " + words + " aprendidas. Cada portal te hace evolucionar!", "#5eead4", "prog");
 }
 function drawAI() {
   if (settings.ai === 0 || state !== "play") return;

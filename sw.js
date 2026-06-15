@@ -1,5 +1,5 @@
 // Service Worker: network-first (siempre lo ultimo si hay internet) + cache para jugar offline.
-const CACHE = "catacomb-v42";
+const CACHE = "catacomb-v43";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./game-iso.html"];
 
 self.addEventListener("install", e => {

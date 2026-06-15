@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v44 - DIMENSION 3D conectada: boton en el titulo y en el menu lleva al modo ISOMETRICO (game-iso); comparten jugador y BANCO de monedas (un modo alimenta al otro)";
+const VERSION = "v45 - IA: ASISTENTE IA de apoyo (consejos contextuales adaptativos, toggle en Opciones) + enemigos con IA mas realista (bordean los edificios en vez de trabarse)";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -122,7 +122,8 @@ function weaponUnlocked(i) { return (WEAPONS[i].unlock || 1) <= maxWorld; }
 function nextWeapon() { let i = weapon; for (let k = 0; k < WEAPONS.length; k++) { i = (i + 1) % WEAPONS.length; if (weaponUnlocked(i)) { weapon = i; return; } } }
 
 // OPCIONES (ajustes elite)
-let settings = { sound: true, vibrate: true, quality: 1, difficulty: 1, gorro: 1 };
+let settings = { sound: true, vibrate: true, quality: 1, difficulty: 1, gorro: 1, ai: 1 };
+let ai = { msg: "", col: "#7fd6ff", t: 0, evalT: 0, last: -99, lastKey: "" }; // asistente IA (apoyo)
 try { Object.assign(settings, JSON.parse(localStorage.getItem("catacomb_settings") || "{}")); } catch (e) {}
 mute = !settings.sound;
 function saveSettings() { try { localStorage.setItem("catacomb_settings", JSON.stringify(settings)); } catch (e) {} }
@@ -931,6 +932,7 @@ function optRows() {
     { label: "SONIDO", val: settings.sound ? "SI" : "NO", act: () => { settings.sound = !settings.sound; mute = !settings.sound; } },
     { label: "VIBRACION", val: settings.vibrate ? "SI" : "NO", act: () => { settings.vibrate = !settings.vibrate; vib(40); } },
     { label: "GRAFICOS", val: settings.quality ? "ALTA" : "BAJA", act: () => { settings.quality = settings.quality ? 0 : 1; } },
+    { label: "ASISTENTE IA", val: settings.ai ? "SI" : "NO", act: () => { settings.ai = settings.ai ? 0 : 1; ai.t = 0; } },
     { label: "DIFICULTAD", val: ["FACIL", "NORMAL", "DIFICIL"][settings.difficulty], act: () => { settings.difficulty = (settings.difficulty + 1) % 3; } },
     { label: "IDIOMA", val: lang === "ZH" ? "CHINO" : "INGLES", act: () => { cycleLang(); } },
     { label: "PANTALLA COMPLETA", val: "►", act: () => { try { if (!document.fullscreenElement) (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen).call(document.documentElement); else document.exitFullscreen(); } catch (e) {} } },
@@ -1102,6 +1104,7 @@ function update(dt) {
   pShield = Math.max(0, pShield - dt); pTriple = Math.max(0, pTriple - dt); pRapid = Math.max(0, pRapid - dt);
   if (comboT > 0) { comboT -= dt; if (comboT <= 0) combo = 0; }
   runSaveT += dt; if (runSaveT > 4) { runSaveT = 0; saveRun(); } // autoguardado de la partida
+  if (ai.t > 0) ai.t -= dt; ai.evalT += dt; if (ai.evalT > 6.5) { ai.evalT = 0; aiEval(); } // asistente IA
   player.fire -= dt;
   if (!driving && inp.firing && player.fire <= 0) fire(inp.ax, inp.ay);
 
@@ -1142,7 +1145,12 @@ function update(dt) {
       e.shoot -= dt;
       if (e.shoot <= 0 && d < 640) { eshots.push({ x: e.x + ux * e.r, y: e.y + uy * e.r, vx: ux * 300, vy: uy * 300, life: 2.4 }); e.shoot = 1.7; sShoot(); }
     } else {
-      moveAxis(e, ux * e.speed * dt, 0); moveAxis(e, 0, uy * e.speed * dt);
+      // IA realista: si se traba contra un edificio, BORDEA (desliza por el borde en una direccion fija)
+      const ox = e.x, oy = e.y; moveAxis(e, ux * e.speed * dt, 0); moveAxis(e, 0, uy * e.speed * dt);
+      if (len(e.x - ox, e.y - oy) < e.speed * dt * 0.5 && d > 45) {
+        if (e.steerDir === undefined) { e.steerDir = Math.random() < 0.5 ? 1 : -1; e.steerT = 1.2; }
+        moveAxis(e, -uy * e.steerDir * e.speed * dt, 0); moveAxis(e, 0, ux * e.steerDir * e.speed * dt);
+      } else if (e.steerDir !== undefined) { e.steerT -= dt; if (e.steerT <= 0) e.steerDir = undefined; }
     }
     if (e.flash > 0) e.flash -= dt;
     // anti-softlock: en mision de bajas, si un enemigo queda inalcanzable mucho rato (atascado tras un edificio), lo reubicamos cerca
@@ -2515,6 +2523,31 @@ function drawWeatherSky() {
   if (weather.kind === "lluvia") { ctx.fillStyle = "rgba(18,26,54,0.14)"; ctx.fillRect(0, 0, W, H); ctx.strokeStyle = "rgba(170,195,235,0.5)"; ctx.lineWidth = 1.5; ctx.beginPath(); for (const r of rain) { ctx.moveTo(r.x, r.y); ctx.lineTo(r.x - r.len * 0.25, r.y + r.len); } ctx.stroke(); }
   else if (weather.kind === "nubes") { ctx.fillStyle = "rgba(40,46,60,0.1)"; ctx.fillRect(0, 0, W, H); }
 }
+// ---- ASISTENTE IA (apoyo): consejos contextuales adaptativos ----
+function aiSay(msg, col, key) { if (key === ai.lastKey && t - ai.last < 24) return; ai.msg = msg; ai.col = col || "#7fd6ff"; ai.t = 6.5; ai.last = t; ai.lastKey = key; }
+function aiEval() {
+  if (settings.ai === 0 || state !== "play") return;
+  if (player.hp < MAXHP * 0.3) return aiSay("Poca vida! junta un corazon verde o entra al mall (boton casa) y compra SALUD.", "#eb6050", "hp");
+  if (portal) return aiSay("Portal abierto! anda al remolino para el reto de idioma y subir de dimension.", "#b480ff", "portal");
+  if (combo >= 6) return aiSay("Buen combo! mata seguido sin que te toquen para multiplicar el puntaje.", "#ff9b3c", "combo");
+  if (coins >= 24) return aiSay("Tenes " + coins + " monedas: gastalas en el mall (vestuario, vehiculos, OBRA para construir).", "#ffd84a", "coins");
+  if (mission && mission.type === 1 && mission.prog < mission.target) return aiSay("Mision: derrota " + (mission.target - mission.prog) + " enemigos mas. Apunta con la mano derecha y disparale.", "#f5cd46", "mis1");
+  if (mission && mission.type === 0) return aiSay("Junta todas las gemas turquesa para abrir el portal de idioma.", "#5eead4", "mis0");
+  if (mission && mission.type === 2) return aiSay("Tocá 3 personas para rescatarlas y completar la mision.", "#9be7c0", "mis2");
+  if (weather.kind === "lluvia" && nightAmt > 0.5) return aiSay("Noche lluviosa (" + weather.temp + "°): el taco ilumina a su alrededor y se encienden los faroles.", "#9aa0b4", "night");
+  return aiSay("Tip: doble-toque en la zona de mover = ESQUIVE (dash). Boton casa = menu, mall y modo OBRA.", "#7fd6ff", "tip");
+}
+function drawAI() {
+  if (settings.ai === 0 || ai.t <= 0 || state !== "play") return;
+  const al = Math.min(1, ai.t / 0.5), x = 14, y = 96 + safeT;
+  ctx.globalAlpha = al;
+  ctx.fillStyle = "#141c28"; ctx.beginPath(); ctx.roundRect(x, y, 34, 34, 8); ctx.fill(); ctx.strokeStyle = ai.col; ctx.lineWidth = 2; ctx.stroke();
+  ctx.strokeStyle = ai.col; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x + 17, y); ctx.lineTo(x + 17, y - 5); ctx.stroke(); ctx.fillStyle = ai.col; ctx.beginPath(); ctx.arc(x + 17, y - 6, 2, 0, 7); ctx.fill();
+  ctx.fillStyle = ai.col; ctx.beginPath(); ctx.arc(x + 12, y + 15, 3.2, 0, 7); ctx.arc(x + 23, y + 15, 3.2, 0, 7); ctx.fill(); ctx.fillRect(x + 11, y + 23, 13, 2.5);
+  const bw = Math.min(W - x - 64, 430); ctx.fillStyle = "rgba(10,14,22,0.92)"; ctx.beginPath(); ctx.roundRect(x + 42, y - 4, bw, 42, 10); ctx.fill(); ctx.strokeStyle = ai.col; ctx.lineWidth = 1.5; ctx.stroke();
+  text("ASISTENTE IA", x + 54, y + 11, 10, ai.col, "left"); fitTextLeft(ai.msg, x + 54, y + 29, bw - 22, 13, "#dfe2ea");
+  ctx.globalAlpha = 1;
+}
 function drawHUD() {
   const tp = safeT, bt = safeB;
   text(score, W / 2, 40 + tp, 30, "#fff", "center");
@@ -2659,6 +2692,7 @@ function render() {
   if (state === "play" && player.hp < MAXHP * 0.3) { const pz = 0.1 + 0.12 * (0.5 + 0.5 * Math.sin(t * 8)); const vg2 = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.7); vg2.addColorStop(0, "rgba(0,0,0,0)"); vg2.addColorStop(1, "rgba(220,40,40," + pz + ")"); ctx.fillStyle = vg2; ctx.fillRect(0, 0, W, H); }
 
   if (state === "play" || state === "quiz" || state === "shop") { drawHUD(); }
+  drawAI();
   if (state === "play") { drawMinimap(); drawStick(stickL, "rgba(94,234,212,0.5)"); drawStick(stickR, "rgba(255,150,60,0.6)"); drawButtons(); }
   if (bannerT > 0 && (state === "play" || state === "quiz")) { const a = clamp(bannerT / 0.6, 0, 1) * clamp((2.4 - bannerT) / 0.3, 0, 1); ctx.globalAlpha = a; text("MUNDO " + level, W / 2, H * 0.3, Math.min(46, W / 9), "#fff", "center"); text(theme.name, W / 2, H * 0.3 + 38, Math.min(32, W / 11), hexA(theme.stud, 1), "center"); text("MISION: " + (mission ? mission.text : "junta las gemas"), W / 2, H * 0.3 + 70, 14, "#f5cd46", "center"); ctx.globalAlpha = 1; }
   if (state === "quiz") drawQuiz();

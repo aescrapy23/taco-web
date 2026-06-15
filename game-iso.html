@@ -1,0 +1,1395 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1b2a4a">
+<title>TACO CITY ISO · jugable (milestone 1)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #0d1626;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+  }
+  #game { display: block; width: 100%; height: 100%; position: fixed; inset: 0; }
+
+  /* HUD top */
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10; pointer-events: none;
+    padding: calc(env(safe-area-inset-top, 0px) + 8px) 12px 8px 12px;
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+    text-shadow: 0 2px 5px rgba(0,0,0,0.6);
+  }
+  #hudLeft, #hudRight { min-width: 120px; }
+  #hudRight { text-align: right; }
+  #scoreWrap { text-align: center; flex: 1; }
+  #score {
+    font-size: clamp(22px, 6vw, 38px); font-weight: 900; letter-spacing: 0.5px;
+    color: #ffe14d; line-height: 1;
+    text-shadow: 0 2px 0 #b8651e, 0 3px 10px rgba(0,0,0,0.55);
+  }
+  #scoreLabel { font-size: 10px; font-weight: 700; color: #d7e4ff; opacity: 0.8; letter-spacing: 2px; }
+  .barLabel { font-size: 10px; font-weight: 800; color: #ffd7d7; letter-spacing: 1.5px; margin-bottom: 3px; }
+  #hpOuter {
+    width: 130px; height: 14px; border-radius: 8px; overflow: hidden;
+    background: rgba(0,0,0,0.4); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.18);
+  }
+  #hpFill {
+    height: 100%; width: 100%;
+    background: linear-gradient(90deg, #ff5d5d, #ff9b3d);
+    transition: width 0.12s linear;
+  }
+  #mission {
+    display: inline-block;
+    background: rgba(20,30,55,0.55); border-radius: 10px; padding: 6px 10px;
+    box-shadow: inset 0 0 0 1.5px rgba(143,233,255,0.4);
+  }
+  #missionText { font-size: clamp(11px, 2.7vw, 14px); font-weight: 800; color: #8fe9ff; }
+  #missionProg { font-size: clamp(13px, 3.2vw, 17px); font-weight: 900; color: #ffffff; }
+
+  /* Touch sticks */
+  .stickZone { position: fixed; bottom: 0; top: 25%; z-index: 8; touch-action: none; }
+  #moveZone { left: 0; right: 50%; }
+  #aimZone  { left: 50%; right: 0; }
+  .stickBase {
+    position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px;
+    border-radius: 50%; pointer-events: none; opacity: 0; transition: opacity 0.12s;
+    background: radial-gradient(circle, rgba(255,255,255,0.10), rgba(255,255,255,0.03));
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,0.22);
+  }
+  .stickKnob {
+    position: absolute; width: 56px; height: 56px; margin: -28px 0 0 -28px;
+    border-radius: 50%; pointer-events: none; opacity: 0; transition: opacity 0.12s;
+    background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.5), rgba(143,233,255,0.35));
+    box-shadow: 0 3px 10px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.4);
+  }
+  .stickBase.on, .stickKnob.on { opacity: 0.85; }
+  #aimHint {
+    position: fixed; right: calc(env(safe-area-inset-right, 0px) + 14px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+    font-size: 11px; color: #cfe0ff; opacity: 0.45; text-align: right;
+    pointer-events: none; max-width: 42%; z-index: 9;
+  }
+
+  /* Overlays (title + game over) */
+  .overlay {
+    position: fixed; inset: 0; z-index: 20; display: flex;
+    flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 24px;
+    background: radial-gradient(circle at 50% 40%, rgba(13,22,38,0.78), rgba(8,12,24,0.94));
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  }
+  .overlay.hidden { display: none; }
+  .overlay h1 {
+    font-size: clamp(26px, 8vw, 56px); font-weight: 900; letter-spacing: 1px;
+    color: #ffe14d; text-shadow: 0 3px 0 #b8651e, 0 5px 18px rgba(0,0,0,0.6);
+    line-height: 1.05;
+  }
+  .overlay h1 span { color: #8fe9ff; }
+  .overlay .sub { margin-top: 8px; font-size: clamp(12px, 3.4vw, 17px); font-weight: 700; color: #d7e4ff; }
+  .overlay .help {
+    margin-top: 18px; font-size: clamp(11px, 3vw, 14px); color: #aebfe0; line-height: 1.7;
+    max-width: 460px;
+  }
+  .overlay .help b { color: #ffe14d; }
+  .bigBtn {
+    margin-top: 24px; pointer-events: auto; cursor: pointer; border: none;
+    padding: 15px 40px; border-radius: 16px;
+    font-size: clamp(16px, 4.6vw, 22px); font-weight: 900; letter-spacing: 1px; color: #1a2238;
+    background: linear-gradient(180deg, #ffe14d, #ffb43d);
+    box-shadow: 0 6px 0 #b8651e, 0 10px 22px rgba(0,0,0,0.45);
+  }
+  .bigBtn:active { transform: translateY(3px); box-shadow: 0 3px 0 #b8651e, 0 6px 14px rgba(0,0,0,0.45); }
+  #goStats { margin-top: 12px; font-size: clamp(14px, 4vw, 19px); font-weight: 800; color: #ffffff; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div id="hudLeft">
+    <div class="barLabel">VIDA</div>
+    <div id="hpOuter"><div id="hpFill"></div></div>
+  </div>
+  <div id="scoreWrap">
+    <div id="score">0</div>
+    <div id="scoreLabel">PUNTAJE</div>
+  </div>
+  <div id="hudRight">
+    <div id="mission">
+      <span id="missionText">Misión</span>
+      <span id="missionProg">0/0</span>
+    </div>
+  </div>
+</div>
+
+<div class="stickZone" id="moveZone">
+  <div class="stickBase" id="moveBase"></div>
+  <div class="stickKnob" id="moveKnob"></div>
+</div>
+<div class="stickZone" id="aimZone">
+  <div class="stickBase" id="aimBase"></div>
+  <div class="stickKnob" id="aimKnob"></div>
+</div>
+<div id="aimHint">Toca derecha = apuntar y disparar</div>
+
+<div class="overlay" id="titleOverlay">
+  <h1>TACO CITY <span>ISO</span><br>· jugable (milestone 1)</h1>
+  <div class="sub">Twin-stick en una ciudad isométrica</div>
+  <div class="help">
+    <b>Mover:</b> WASD / flechas o stick izquierdo (táctil)<br>
+    <b>Apuntar y disparar salsa:</b> mouse (clic sostenido) o stick derecho (táctil)<br>
+    Junta <b>gemas</b>, derrota <b>enemigos</b> y completa la misión.
+  </div>
+  <button class="bigBtn" id="startBtn">JUGAR</button>
+</div>
+
+<div class="overlay hidden" id="overOverlay">
+  <h1 id="overTitle">GAME OVER</h1>
+  <div id="goStats"></div>
+  <button class="bigBtn" id="retryBtn">REINTENTAR</button>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ============================================================
+  //  Canvas / DPR setup
+  // ============================================================
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var DPR = 1;
+  var VW = 0, VH = 0;
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    VW = window.innerWidth;
+    VH = window.innerHeight;
+    canvas.width = Math.floor(VW * DPR);
+    canvas.height = Math.floor(VH * DPR);
+    canvas.style.width = VW + "px";
+    canvas.style.height = VH + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", function () { setTimeout(resize, 200); });
+  resize();
+
+  // ============================================================
+  //  Isometric projection
+  //  sx = (tx - ty) * halfW + cam.x + shake
+  //  sy = (tx + ty) * halfH - tz + cam.y + shake
+  // ============================================================
+  var tileW = 64, tileH = 32;
+  var halfW = tileW / 2, halfH = tileH / 2;
+  var cam = { x: 0, y: 0 };
+  var shake = { x: 0, y: 0, mag: 0 };
+
+  function worldToScreen(tx, ty, tz) {
+    return {
+      x: (tx - ty) * halfW + cam.x + shake.x,
+      y: (tx + ty) * halfH - tz + cam.y + shake.y
+    };
+  }
+  function addShake(m) { shake.mag = Math.min(shake.mag + m, 16); }
+
+  // ============================================================
+  //  City grid generation
+  // ============================================================
+  var GRID = 22;
+  var TILE_ROAD = 0, TILE_SIDEWALK = 1, TILE_GRASS = 2, TILE_BLOCK = 3;
+  var BLOCK_STEP = 5;
+
+  var grid = [], heightMap = [], props = [];
+
+  function isRoadCoord(i) { return (i % BLOCK_STEP) === 0; }
+
+  var seed = 1337;
+  function rnd() {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  }
+
+  function buildCity() {
+    seed = 1337;
+    grid = []; heightMap = [];
+    for (var y = 0; y < GRID; y++) {
+      grid[y] = []; heightMap[y] = [];
+      for (var x = 0; x < GRID; x++) {
+        var onRoad = isRoadCoord(x) || isRoadCoord(y);
+        if (onRoad) {
+          grid[y][x] = TILE_ROAD;
+        } else {
+          var nearRoad = isRoadCoord(x - 1) || isRoadCoord(x + 1) ||
+                         isRoadCoord(y - 1) || isRoadCoord(y + 1);
+          grid[y][x] = nearRoad ? TILE_SIDEWALK : TILE_BLOCK;
+        }
+        heightMap[y][x] = 0;
+      }
+    }
+    for (var by = 0; by < GRID; by++) {
+      for (var bx = 0; bx < GRID; bx++) {
+        if (grid[by][bx] === TILE_BLOCK) {
+          if (rnd() < 0.12) {
+            grid[by][bx] = TILE_GRASS;
+            heightMap[by][bx] = 0;
+          } else {
+            var floors = 2 + Math.floor(rnd() * 7);
+            heightMap[by][bx] = floors * 16;
+          }
+        }
+      }
+    }
+    props = [];
+    for (var py = 0; py < GRID; py++) {
+      for (var px = 0; px < GRID; px++) {
+        var t = grid[py][px];
+        if (t === TILE_SIDEWALK) {
+          var r = rnd();
+          if (r < 0.10) props.push({ tx: px, ty: py, kind: "lamp" });
+          else if (r < 0.18) props.push({ tx: px, ty: py, kind: "tree" });
+        } else if (t === TILE_GRASS) {
+          if (rnd() < 0.5) props.push({ tx: px, ty: py, kind: "tree" });
+        }
+      }
+    }
+    var carColors = ["#ff5d5d", "#5db4ff", "#ffd24d", "#7ee08a", "#c98bff"];
+    for (var c = 0; c < 10; c++) {
+      var rx = Math.floor(rnd() * GRID);
+      var ry = Math.floor(rnd() * GRID);
+      if (grid[ry] && grid[ry][rx] === TILE_ROAD) {
+        props.push({
+          tx: rx + (rnd() < 0.5 ? 0.25 : -0.25),
+          ty: ry, kind: "car",
+          color: carColors[c % carColors.length],
+          dir: rnd() < 0.5 ? 0 : 1
+        });
+      }
+    }
+  }
+
+  function walkable(tx, ty) {
+    var ix = Math.floor(tx), iy = Math.floor(ty);
+    if (ix < 0 || iy < 0 || ix >= GRID || iy >= GRID) return false;
+    var t = grid[iy][ix];
+    return t === TILE_ROAD || t === TILE_SIDEWALK || t === TILE_GRASS;
+  }
+
+  // walkable test that treats out-of-bounds as wall but uses a small radius
+  // so an actor's body doesn't sink into a building.
+  function canStand(tx, ty, rad) {
+    rad = rad || 0.22;
+    return walkable(tx - rad, ty - rad) && walkable(tx + rad, ty - rad) &&
+           walkable(tx - rad, ty + rad) && walkable(tx + rad, ty + rad) &&
+           walkable(tx, ty);
+  }
+
+  // move an actor with axis-separated sliding collision
+  function moveActor(a, dx, dy, rad) {
+    var nx = a.tx + dx, ny = a.ty + dy;
+    if (canStand(nx, ny, rad)) { a.tx = nx; a.ty = ny; return; }
+    if (canStand(nx, a.ty, rad)) a.tx = nx;
+    if (canStand(a.tx, ny, rad)) a.ty = ny;
+  }
+
+  // ============================================================
+  //  Audio (synth, WebAudio) — optional, lazy + guarded
+  // ============================================================
+  var AC = null, audioOn = true;
+  function ensureAudio() {
+    if (AC) return;
+    try {
+      var C = window.AudioContext || window.webkitAudioContext;
+      if (C) AC = new C();
+    } catch (e) { AC = null; }
+  }
+  function beep(freq, dur, type, vol, slideTo) {
+    if (!audioOn || !AC) return;
+    try {
+      var t = AC.currentTime;
+      var o = AC.createOscillator();
+      var g = AC.createGain();
+      o.type = type || "square";
+      o.frequency.setValueAtTime(freq, t);
+      if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(40, slideTo), t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol || 0.12, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(AC.destination);
+      o.start(t); o.stop(t + dur + 0.02);
+    } catch (e) {}
+  }
+  function sndShoot() { beep(620, 0.08, "square", 0.06, 280); }
+  function sndHit()   { beep(180, 0.07, "sawtooth", 0.09, 90); }
+  function sndGem()   { beep(880, 0.07, "triangle", 0.12, 1320); }
+  function sndDeath() { beep(140, 0.22, "sawtooth", 0.12, 60); }
+  function sndHurt()  { beep(110, 0.18, "square", 0.13, 70); }
+
+  // ============================================================
+  //  Game state
+  // ============================================================
+  var STATE_TITLE = 0, STATE_PLAY = 1, STATE_OVER = 2;
+  var state = STATE_TITLE;
+
+  var taco = {
+    tx: 0.5, ty: 0.5, speed: 3.2, facing: 1,
+    walkPhase: 0, moving: false,
+    hp: 100, maxHp: 100, aimAngle: 0, // aim in TILE space (radians)
+    fireCd: 0, hurtFlash: 0, invuln: 0
+  };
+
+  var bullets = [];   // {tx,ty,vx,vy,life}
+  var enemies = [];   // {tx,ty,hp,maxHp,wob,hurt,die}
+  var gems = [];      // {tx,ty,phase,collected}
+  var particles = []; // {tx,ty,tz,vx,vy,vz,life,maxLife,col,size}
+  var floaters = [];  // {tx,ty,tz,vy,life,text,col}
+
+  var score = 0;
+  var spawnTimer = 0;
+  var enemyKills = 0;
+  var gemsCollected = 0;
+
+  // Mission: alternate randomly between gems / kills
+  var mission = { type: "gems", goal: 5, cur: 0, done: false };
+
+  function pickMission() {
+    if (rnd() < 0.5) {
+      mission = { type: "gems", goal: 5, cur: 0, done: false, label: "Junta 5 gemas" };
+    } else {
+      mission = { type: "kills", goal: 6, cur: 0, done: false, label: "Derrota 6 enemigos" };
+    }
+  }
+
+  function firstRoad() {
+    for (var y = 0; y < GRID; y++)
+      for (var x = 0; x < GRID; x++)
+        if (grid[y][x] === TILE_ROAD) return { x: x + 0.5, y: y + 0.5 };
+    return { x: 0.5, y: 0.5 };
+  }
+
+  // spread gems on walkable street tiles
+  function scatterGems(n) {
+    var placed = 0, tries = 0;
+    while (placed < n && tries < n * 30) {
+      tries++;
+      var gx = Math.floor(rnd() * GRID), gy = Math.floor(rnd() * GRID);
+      var t = grid[gy] && grid[gy][gx];
+      if (t === TILE_ROAD || t === TILE_SIDEWALK) {
+        gems.push({ tx: gx + 0.5, ty: gy + 0.5, phase: rnd() * 6.28, collected: false });
+        placed++;
+      }
+    }
+  }
+
+  function findSpawnFar() {
+    // find a walkable tile far from the taco for enemy spawning
+    var best = null, bestD = -1, tries = 0;
+    while (tries < 80) {
+      tries++;
+      var gx = Math.floor(rnd() * GRID), gy = Math.floor(rnd() * GRID);
+      var t = grid[gy] && grid[gy][gx];
+      if (t === TILE_ROAD || t === TILE_SIDEWALK || t === TILE_GRASS) {
+        var d = Math.hypot(gx + 0.5 - taco.tx, gy + 0.5 - taco.ty);
+        if (d > 5 && d > bestD) { bestD = d; best = { x: gx + 0.5, y: gy + 0.5 }; }
+      }
+    }
+    return best;
+  }
+
+  function spawnEnemy() {
+    var p = findSpawnFar();
+    if (!p) return;
+    enemies.push({
+      tx: p.x, ty: p.y, hp: 3, maxHp: 3,
+      speed: 1.5 + rnd() * 0.7, wob: rnd() * 6.28,
+      hurt: 0, contactCd: 0
+    });
+  }
+
+  function resetGame() {
+    buildCity();
+    var s = firstRoad();
+    taco.tx = s.x; taco.ty = s.y;
+    taco.hp = taco.maxHp; taco.facing = 1; taco.walkPhase = 0;
+    taco.aimAngle = 0; taco.fireCd = 0; taco.hurtFlash = 0; taco.invuln = 0;
+    bullets = []; enemies = []; gems = []; particles = []; floaters = [];
+    score = 0; spawnTimer = 1.0; enemyKills = 0; gemsCollected = 0;
+    pickMission();
+    scatterGems(8);
+    for (var i = 0; i < 3; i++) spawnEnemy();
+    // snap camera
+    var tp = (taco.tx - taco.ty) * halfW;
+    var tpy = (taco.tx + taco.ty) * halfH;
+    cam.x = VW / 2 - tp; cam.y = VH / 2 - tpy;
+    shake.mag = 0; shake.x = 0; shake.y = 0;
+    updateHUD();
+  }
+
+  // ============================================================
+  //  Input: keyboard
+  // ============================================================
+  var keys = { up: false, down: false, left: false, right: false,
+               aimUp: false, aimDown: false, aimLeft: false, aimRight: false };
+
+  function setKey(code, val) {
+    switch (code) {
+      case "KeyW": keys.up = val; return true;
+      case "KeyS": keys.down = val; return true;
+      case "KeyA": keys.left = val; return true;
+      case "KeyD": keys.right = val; return true;
+      case "ArrowUp": keys.aimUp = val; return true;
+      case "ArrowDown": keys.aimDown = val; return true;
+      case "ArrowLeft": keys.aimLeft = val; return true;
+      case "ArrowRight": keys.aimRight = val; return true;
+    }
+    return false;
+  }
+  window.addEventListener("keydown", function (e) {
+    if (e.repeat) { if (setKey(e.code, true)) e.preventDefault(); return; }
+    if (setKey(e.code, true)) { ensureAudio(); e.preventDefault(); }
+  }, { passive: false });
+  window.addEventListener("keyup", function (e) {
+    if (setKey(e.code, false)) e.preventDefault();
+  }, { passive: false });
+
+  // ============================================================
+  //  Input: mouse (desktop aim + fire)
+  // ============================================================
+  var mouse = { x: VW / 2, y: VH / 2, down: false, active: false };
+  canvas.addEventListener("mousemove", function (e) {
+    mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+  });
+  canvas.addEventListener("mousedown", function (e) {
+    if (state !== STATE_PLAY) return;
+    ensureAudio();
+    mouse.down = true; mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+    e.preventDefault();
+  });
+  window.addEventListener("mouseup", function () { mouse.down = false; });
+
+  // ============================================================
+  //  Input: touch twin-stick (left half = move, right half = aim/fire)
+  // ============================================================
+  var moveStick = { id: null, ox: 0, oy: 0, dx: 0, dy: 0, active: false };
+  var aimStick  = { id: null, ox: 0, oy: 0, dx: 0, dy: 0, active: false };
+  var moveBase = document.getElementById("moveBase"), moveKnob = document.getElementById("moveKnob");
+  var aimBase = document.getElementById("aimBase"), aimKnob = document.getElementById("aimKnob");
+  var STICK_R = 52;
+
+  function placeStick(base, knob, ox, oy, dx, dy) {
+    base.style.left = ox + "px"; base.style.top = oy + "px";
+    knob.style.left = (ox + dx) + "px"; knob.style.top = (oy + dy) + "px";
+    base.classList.add("on"); knob.classList.add("on");
+  }
+  function hideStick(base, knob) { base.classList.remove("on"); knob.classList.remove("on"); }
+
+  function touchStart(e) {
+    if (state !== STATE_PLAY) return;
+    ensureAudio();
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i];
+      var isRight = t.clientX > VW / 2;
+      var stick = isRight ? aimStick : moveStick;
+      if (stick.id !== null) continue;
+      stick.id = t.identifier; stick.ox = t.clientX; stick.oy = t.clientY;
+      stick.dx = 0; stick.dy = 0; stick.active = true;
+      if (isRight) placeStick(aimBase, aimKnob, stick.ox, stick.oy, 0, 0);
+      else placeStick(moveBase, moveKnob, stick.ox, stick.oy, 0, 0);
+    }
+    e.preventDefault();
+  }
+  function touchMove(e) {
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i];
+      var stick = (t.identifier === aimStick.id) ? aimStick :
+                  (t.identifier === moveStick.id) ? moveStick : null;
+      if (!stick) continue;
+      var dx = t.clientX - stick.ox, dy = t.clientY - stick.oy;
+      var len = Math.hypot(dx, dy);
+      if (len > STICK_R) { dx = dx / len * STICK_R; dy = dy / len * STICK_R; }
+      stick.dx = dx; stick.dy = dy;
+      if (stick === aimStick) placeStick(aimBase, aimKnob, stick.ox, stick.oy, dx, dy);
+      else placeStick(moveBase, moveKnob, stick.ox, stick.oy, dx, dy);
+    }
+    e.preventDefault();
+  }
+  function touchEnd(e) {
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i];
+      if (t.identifier === aimStick.id) { aimStick.id = null; aimStick.active = false; aimStick.dx = aimStick.dy = 0; hideStick(aimBase, aimKnob); }
+      else if (t.identifier === moveStick.id) { moveStick.id = null; moveStick.active = false; moveStick.dx = moveStick.dy = 0; hideStick(moveBase, moveKnob); }
+    }
+    e.preventDefault();
+  }
+  var moveZone = document.getElementById("moveZone"), aimZone = document.getElementById("aimZone");
+  [moveZone, aimZone].forEach(function (z) {
+    z.addEventListener("touchstart", touchStart, { passive: false });
+    z.addEventListener("touchmove", touchMove, { passive: false });
+    z.addEventListener("touchend", touchEnd, { passive: false });
+    z.addEventListener("touchcancel", touchEnd, { passive: false });
+  });
+
+  // ============================================================
+  //  Aim resolution.
+  //  Screen-space aim vector -> tile-space direction.
+  //  Inverse of iso projection (ignoring z):
+  //    sx = (tx - ty)*halfW ; sy = (tx + ty)*halfH
+  //  => tx = sx/(2*halfW) + sy/(2*halfH)
+  //     ty = sy/(2*halfH) - sx/(2*halfW)
+  // ============================================================
+  function screenVecToTile(sx, sy) {
+    var a = sx / (2 * halfW);
+    var b = sy / (2 * halfH);
+    return { tx: a + b, ty: b - a };
+  }
+
+  // ============================================================
+  //  Firing
+  // ============================================================
+  var FIRE_INTERVAL = 0.16;
+  var BULLET_SPEED = 9.5;   // tiles/sec
+  var BULLET_LIFE = 0.9;
+
+  function fire() {
+    var ang = taco.aimAngle;
+    var vx = Math.cos(ang) * BULLET_SPEED;
+    var vy = Math.sin(ang) * BULLET_SPEED;
+    // spawn slightly ahead of taco
+    bullets.push({
+      tx: taco.tx + Math.cos(ang) * 0.3,
+      ty: taco.ty + Math.sin(ang) * 0.3,
+      vx: vx, vy: vy, life: BULLET_LIFE
+    });
+    // muzzle particles (screen-space scatter via tz puff)
+    for (var i = 0; i < 4; i++) {
+      particles.push({
+        tx: taco.tx + Math.cos(ang) * 0.3, ty: taco.ty + Math.sin(ang) * 0.3, tz: 18,
+        vx: (rnd() - 0.5) * 1.2 + Math.cos(ang) * 1.5,
+        vy: (rnd() - 0.5) * 1.2 + Math.sin(ang) * 1.5,
+        vz: rnd() * 20, life: 0.18, maxLife: 0.18,
+        col: "#ffd24d", size: 3
+      });
+    }
+    addShake(1.4);
+    sndShoot();
+  }
+
+  // ============================================================
+  //  Particles & floaters
+  // ============================================================
+  function burst(tx, ty, tz, n, col, power) {
+    for (var i = 0; i < n; i++) {
+      var a = rnd() * 6.28, sp = (0.5 + rnd()) * power;
+      particles.push({
+        tx: tx, ty: ty, tz: tz,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        vz: 20 + rnd() * 55, life: 0.45 + rnd() * 0.3, maxLife: 0.75,
+        col: col, size: 2 + rnd() * 3
+      });
+    }
+  }
+  function addFloater(tx, ty, text, col) {
+    floaters.push({ tx: tx, ty: ty, tz: 28, vy: 26, life: 0.9, maxLife: 0.9, text: text, col: col || "#ffe14d" });
+  }
+
+  // ============================================================
+  //  Color helpers
+  // ============================================================
+  function shade(hex, amt) {
+    var c = hex.replace("#", "");
+    var r = parseInt(c.substr(0, 2), 16), g = parseInt(c.substr(2, 2), 16), b = parseInt(c.substr(4, 2), 16);
+    if (amt >= 0) { r += (255 - r) * amt; g += (255 - g) * amt; b += (255 - b) * amt; }
+    else { var a = 1 + amt; r *= a; g *= a; b *= a; }
+    return "rgb(" + (r | 0) + "," + (g | 0) + "," + (b | 0) + ")";
+  }
+  var bldgPalette = ["#e8a36b", "#d98c8c", "#8fb4e0", "#9fd6a8", "#e0c97a", "#c79ed6", "#bfb8ae"];
+  function bldgColorFor(x, y) { return bldgPalette[(x * 7 + y * 13) % bldgPalette.length]; }
+
+  // ============================================================
+  //  Drawing primitives (city) — adapted from iso.html
+  // ============================================================
+  function drawTileDiamond(tx, ty, fill, stroke) {
+    var p = worldToScreen(tx, ty, 0);
+    var cx = p.x, cy = p.y;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - halfH);
+    ctx.lineTo(cx + halfW, cy);
+    ctx.lineTo(cx, cy + halfH);
+    ctx.lineTo(cx - halfW, cy);
+    ctx.closePath();
+    ctx.fillStyle = fill; ctx.fill();
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke(); }
+  }
+
+  function drawRoadTile(tx, ty) {
+    drawTileDiamond(tx, ty, "#3c4150", "rgba(20,22,30,0.4)");
+    var horiz = isRoadCoord(ty), vert = isRoadCoord(tx);
+    var p = worldToScreen(tx, ty, 0);
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,221,77,0.55)";
+    ctx.lineWidth = 2; ctx.setLineDash([6, 7]);
+    if (horiz && !vert) {
+      ctx.beginPath(); ctx.moveTo(p.x - halfW, p.y); ctx.lineTo(p.x + halfW, p.y); ctx.stroke();
+    } else if (vert && !horiz) {
+      ctx.beginPath(); ctx.moveTo(p.x, p.y - halfH); ctx.lineTo(p.x, p.y + halfH); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawGround() {
+    // only draw tiles within screen bounds (culling)
+    for (var s = 0; s <= 2 * (GRID - 1); s++) {
+      for (var y = 0; y < GRID; y++) {
+        var x = s - y;
+        if (x < 0 || x >= GRID) continue;
+        var sp = worldToScreen(x, y, 0);
+        if (sp.x < -halfW || sp.x > VW + halfW || sp.y < -halfH || sp.y > VH + halfH) continue;
+        var t = grid[y][x];
+        if (t === TILE_ROAD) drawRoadTile(x, y);
+        else if (t === TILE_SIDEWALK) drawTileDiamond(x, y, "#b9bcc4", "rgba(90,94,104,0.35)");
+        else if (t === TILE_GRASS) drawTileDiamond(x, y, "#7ec77f", "rgba(60,120,70,0.3)");
+        else drawTileDiamond(x, y, "#6a6f7a", null);
+      }
+    }
+  }
+
+  function drawBuilding(tx, ty, h, baseColor) {
+    var topZ = h;
+    var b = worldToScreen(tx, ty, 0);
+    var tCen = worldToScreen(tx, ty, topZ);
+    var top = { x: 0, y: -halfH }, right = { x: halfW, y: 0 },
+        bottom = { x: 0, y: halfH }, left = { x: -halfW, y: 0 };
+
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
+    ctx.beginPath();
+    var so = halfH * 0.5;
+    ctx.moveTo(b.x + top.x + so, b.y + top.y + so * 0.5);
+    ctx.lineTo(b.x + right.x + so, b.y + right.y + so * 0.5);
+    ctx.lineTo(b.x + bottom.x + so, b.y + bottom.y + so * 0.5);
+    ctx.lineTo(b.x + left.x + so, b.y + left.y + so * 0.5);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    var roof = shade(baseColor, 0.28), leftC = shade(baseColor, -0.10), rightC = shade(baseColor, -0.34);
+
+    ctx.beginPath();
+    ctx.moveTo(b.x + left.x, b.y + left.y);
+    ctx.lineTo(b.x + bottom.x, b.y + bottom.y);
+    ctx.lineTo(tCen.x + bottom.x, tCen.y + bottom.y);
+    ctx.lineTo(tCen.x + left.x, tCen.y + left.y);
+    ctx.closePath(); ctx.fillStyle = leftC; ctx.fill();
+    drawWindows(b, tCen, left, bottom, h, "left");
+
+    ctx.beginPath();
+    ctx.moveTo(b.x + bottom.x, b.y + bottom.y);
+    ctx.lineTo(b.x + right.x, b.y + right.y);
+    ctx.lineTo(tCen.x + right.x, tCen.y + right.y);
+    ctx.lineTo(tCen.x + bottom.x, tCen.y + bottom.y);
+    ctx.closePath(); ctx.fillStyle = rightC; ctx.fill();
+    drawWindows(b, tCen, bottom, right, h, "right");
+
+    ctx.beginPath();
+    ctx.moveTo(tCen.x + top.x, tCen.y + top.y);
+    ctx.lineTo(tCen.x + right.x, tCen.y + right.y);
+    ctx.lineTo(tCen.x + bottom.x, tCen.y + bottom.y);
+    ctx.lineTo(tCen.x + left.x, tCen.y + left.y);
+    ctx.closePath(); ctx.fillStyle = roof; ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 1; ctx.stroke();
+
+    ctx.fillStyle = shade(baseColor, 0.12);
+    var rs = halfW * 0.28;
+    ctx.beginPath();
+    ctx.moveTo(tCen.x, tCen.y - rs * 0.5);
+    ctx.lineTo(tCen.x + rs, tCen.y);
+    ctx.lineTo(tCen.x, tCen.y + rs * 0.5);
+    ctx.lineTo(tCen.x - rs, tCen.y);
+    ctx.closePath(); ctx.fill();
+  }
+
+  function drawWindows(base, top, cA, cB, h, side) {
+    var floors = Math.max(1, Math.round(h / 16));
+    var cols = 2;
+    ctx.save();
+    var lit = side === "left" ? "rgba(255,240,180,0.85)" : "rgba(180,210,255,0.55)";
+    var dim = side === "left" ? "rgba(40,55,80,0.5)" : "rgba(25,35,55,0.55)";
+    for (var f = 0; f < floors; f++) {
+      var zf0 = (f + 0.28) / floors, zf1 = (f + 0.78) / floors;
+      for (var col = 0; col < cols; col++) {
+        var u0 = (col + 0.22) / cols, u1 = (col + 0.78) / cols;
+        function P(u, zf) {
+          var bx = base.x + cA.x + (cB.x - cA.x) * u;
+          var by = base.y + cA.y + (cB.y - cA.y) * u;
+          var tx = top.x + cA.x + (cB.x - cA.x) * u;
+          var ty = top.y + cA.y + (cB.y - cA.y) * u;
+          return { x: bx + (tx - bx) * zf, y: by + (ty - by) * zf };
+        }
+        var a = P(u0, zf0), bb = P(u1, zf0), c = P(u1, zf1), d = P(u0, zf1);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y); ctx.lineTo(bb.x, bb.y);
+        ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y);
+        ctx.closePath();
+        ctx.fillStyle = ((f * 7 + col * 3 + (side === "left" ? 1 : 0)) % 3 === 0) ? lit : dim;
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawTree(tx, ty) {
+    var p = worldToScreen(tx, ty, 0);
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.beginPath(); ctx.ellipse(p.x, p.y + 2, 12, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#7a4a26"; ctx.fillRect(p.x - 2.5, p.y - 18, 5, 18);
+    ctx.fillStyle = "#2f8f47"; ctx.beginPath(); ctx.arc(p.x, p.y - 28, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#46b35f"; ctx.beginPath(); ctx.arc(p.x - 4, p.y - 32, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#69d17f"; ctx.beginPath(); ctx.arc(p.x + 3, p.y - 35, 6, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawLamp(tx, ty) {
+    var p = worldToScreen(tx, ty, 0);
+    ctx.fillStyle = "rgba(0,0,0,0.16)";
+    ctx.beginPath(); ctx.ellipse(p.x, p.y + 2, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#4a4f5c"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x, p.y - 34); ctx.stroke();
+    var g = ctx.createRadialGradient(p.x, p.y - 36, 1, p.x, p.y - 36, 12);
+    g.addColorStop(0, "rgba(255,236,150,0.95)"); g.addColorStop(1, "rgba(255,236,150,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y - 36, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#ffe98a"; ctx.beginPath(); ctx.arc(p.x, p.y - 36, 4, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawCar(prop) {
+    var p = worldToScreen(prop.tx, prop.ty, 0);
+    var col = prop.color || "#ff5d5d";
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.beginPath(); ctx.ellipse(p.x, p.y + 3, 20, 9, 0, 0, Math.PI * 2); ctx.fill();
+    var bw = 18, bd = 10, bh = 11;
+    var top = { x: 0, y: -bd }, right = { x: bw, y: 6 }, bottom = { x: 0, y: bd * 2 }, left = { x: -bw, y: 6 };
+    var z = bh;
+    function bp(o) { return { x: p.x + o.x, y: p.y + o.y }; }
+    function tp(o) { return { x: p.x + o.x, y: p.y + o.y - z }; }
+    ctx.fillStyle = shade(col, -0.18);
+    ctx.beginPath(); ctx.moveTo(bp(left).x, bp(left).y); ctx.lineTo(bp(bottom).x, bp(bottom).y);
+    ctx.lineTo(tp(bottom).x, tp(bottom).y); ctx.lineTo(tp(left).x, tp(left).y); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = shade(col, -0.38);
+    ctx.beginPath(); ctx.moveTo(bp(bottom).x, bp(bottom).y); ctx.lineTo(bp(right).x, bp(right).y);
+    ctx.lineTo(tp(right).x, tp(right).y); ctx.lineTo(tp(bottom).x, tp(bottom).y); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = shade(col, 0.22);
+    ctx.beginPath(); ctx.moveTo(tp(top).x, tp(top).y); ctx.lineTo(tp(right).x, tp(right).y);
+    ctx.lineTo(tp(bottom).x, tp(bottom).y); ctx.lineTo(tp(left).x, tp(left).y); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "rgba(180,220,255,0.7)";
+    ctx.beginPath(); ctx.moveTo(tp(top).x, tp(top).y + 2); ctx.lineTo(tp(right).x - 4, tp(right).y);
+    ctx.lineTo(p.x, p.y - z + 4); ctx.lineTo(tp(left).x + 4, tp(left).y); ctx.closePath(); ctx.fill();
+  }
+
+  // ---- the Taco hero (kept reconcizable from iso.html) ----
+  function drawTaco(tx, ty) {
+    var p = worldToScreen(tx, ty, 0);
+    var bob = Math.sin(taco.walkPhase) * (taco.moving ? 3 : 0.8);
+    var legSwing = Math.sin(taco.walkPhase) * (taco.moving ? 4 : 0);
+    var cx = p.x, groundY = p.y, bodyY = groundY - 20 + bob, dir = taco.facing;
+
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.beginPath(); ctx.ellipse(cx, groundY + 2, 15, 7, 0, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = "#5a3a1c";
+    ctx.beginPath(); ctx.ellipse(cx - 6 + legSwing, groundY - 1, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx + 6 - legSwing, groundY - 1, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+
+    ctx.strokeStyle = "#e7b740"; ctx.lineWidth = 4; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(cx - 12, bodyY + 6); ctx.lineTo(cx - 18 - legSwing * 0.5, bodyY + 12 + bob); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx + 12, bodyY + 6); ctx.lineTo(cx + 18 + legSwing * 0.5, bodyY + 12 - bob); ctx.stroke();
+
+    var bw = 16, bh = 18;
+    // hurt flash tints the shell white briefly
+    var shellCol = taco.hurtFlash > 0 ? "#ffffff" : "#f2c44d";
+    ctx.fillStyle = shellCol;
+    ctx.beginPath();
+    ctx.moveTo(cx - bw, bodyY - bh * 0.2);
+    ctx.quadraticCurveTo(cx - bw, bodyY + bh, cx, bodyY + bh);
+    ctx.quadraticCurveTo(cx + bw, bodyY + bh, cx + bw, bodyY - bh * 0.2);
+    ctx.quadraticCurveTo(cx + bw * 0.6, bodyY - bh * 0.55, cx, bodyY - bh * 0.55);
+    ctx.quadraticCurveTo(cx - bw * 0.6, bodyY - bh * 0.55, cx - bw, bodyY - bh * 0.2);
+    ctx.closePath(); ctx.fill();
+
+    ctx.fillStyle = "rgba(180,120,30,0.25)";
+    ctx.beginPath();
+    ctx.moveTo(cx + bw, bodyY - bh * 0.2);
+    ctx.quadraticCurveTo(cx + bw, bodyY + bh, cx, bodyY + bh);
+    ctx.quadraticCurveTo(cx + bw * 0.5, bodyY + bh * 0.4, cx + bw * 0.4, bodyY - bh * 0.2);
+    ctx.closePath(); ctx.fill();
+
+    ctx.fillStyle = "#5fd16f";
+    for (var i = -1; i <= 1; i++) { ctx.beginPath(); ctx.arc(cx + i * 7, bodyY - bh * 0.5, 5, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = "#ff6b5e";
+    ctx.beginPath(); ctx.arc(cx - 3, bodyY - bh * 0.55, 3.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 5, bodyY - bh * 0.5, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#ffe07a";
+    ctx.fillRect(cx - 8, bodyY - bh * 0.42, 3, 3);
+    ctx.fillRect(cx + 2, bodyY - bh * 0.38, 3, 3);
+
+    var eyeY = bodyY + 1, eo = dir * 1.5;
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath(); ctx.arc(cx - 5 + eo, eyeY, 4.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 5 + eo, eyeY, 4.2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#222";
+    ctx.beginPath(); ctx.arc(cx - 5 + eo + dir, eyeY, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 5 + eo + dir, eyeY, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#7a3b1c"; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.arc(cx + eo, eyeY + 5, 4, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+
+    // aim reticle: small salsa nozzle pointing in aim dir (screen-space)
+    var aimSx = Math.cos(taco.aimAngle) - Math.sin(taco.aimAngle); // (tx-ty)
+    var aimSy = Math.cos(taco.aimAngle) + Math.sin(taco.aimAngle); // (tx+ty)
+    var al = Math.hypot(aimSx, aimSy) || 1;
+    var nx = aimSx / al, ny = aimSy / al;
+    ctx.fillStyle = "#ff3b3b";
+    ctx.beginPath();
+    ctx.arc(cx + nx * 20, bodyY + 4 + ny * 10, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // ---- enemy: angry chili pepper ----
+  function drawEnemy(e) {
+    var p = worldToScreen(e.tx, e.ty, 0);
+    var bob = Math.sin(e.wob) * 2.5;
+    var cx = p.x, groundY = p.y, bodyY = groundY - 16 + bob;
+
+    ctx.fillStyle = "rgba(0,0,0,0.26)";
+    ctx.beginPath(); ctx.ellipse(cx, groundY + 2, 12, 6, 0, 0, Math.PI * 2); ctx.fill();
+
+    // little feet
+    ctx.fillStyle = "#3a7a2c";
+    ctx.beginPath(); ctx.ellipse(cx - 5, groundY - 1, 4, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx + 5, groundY - 1, 4, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+
+    var body = e.hurt > 0 ? "#ffffff" : "#e23b3b";
+    // chili body (teardrop)
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(cx, bodyY - 14);
+    ctx.quadraticCurveTo(cx + 13, bodyY - 12, cx + 11, bodyY + 6);
+    ctx.quadraticCurveTo(cx + 8, bodyY + 18, cx, bodyY + 18);
+    ctx.quadraticCurveTo(cx - 8, bodyY + 18, cx - 11, bodyY + 6);
+    ctx.quadraticCurveTo(cx - 13, bodyY - 12, cx, bodyY - 14);
+    ctx.closePath(); ctx.fill();
+    // shine
+    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    ctx.beginPath(); ctx.ellipse(cx - 4, bodyY - 2, 3, 7, -0.3, 0, Math.PI * 2); ctx.fill();
+    // green stem
+    ctx.fillStyle = "#3a9a3a";
+    ctx.beginPath(); ctx.moveTo(cx - 2, bodyY - 13); ctx.lineTo(cx + 2, bodyY - 19); ctx.lineTo(cx + 4, bodyY - 12); ctx.closePath(); ctx.fill();
+    // angry eyes
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(cx - 4, bodyY, 3.4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 4, bodyY, 3.4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#111";
+    ctx.beginPath(); ctx.arc(cx - 4, bodyY + 0.5, 1.6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 4, bodyY + 0.5, 1.6, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#5a0000"; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(cx - 7, bodyY - 4); ctx.lineTo(cx - 1, bodyY - 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx + 7, bodyY - 4); ctx.lineTo(cx + 1, bodyY - 2); ctx.stroke();
+
+    // hp pips
+    if (e.hp < e.maxHp) {
+      ctx.fillStyle = "rgba(0,0,0,0.4)";
+      ctx.fillRect(cx - 11, bodyY - 24, 22, 4);
+      ctx.fillStyle = "#7ee08a";
+      ctx.fillRect(cx - 11, bodyY - 24, 22 * (e.hp / e.maxHp), 4);
+    }
+  }
+
+  function drawGem(g) {
+    var p = worldToScreen(g.tx, g.ty, 0);
+    var bob = Math.sin(g.phase) * 4;
+    var cx = p.x, cy = p.y - 14 + bob;
+    // glow
+    var gl = ctx.createRadialGradient(cx, cy, 1, cx, cy, 16);
+    gl.addColorStop(0, "rgba(143,233,255,0.55)");
+    gl.addColorStop(1, "rgba(143,233,255,0)");
+    ctx.fillStyle = gl;
+    ctx.beginPath(); ctx.arc(cx, cy, 16, 0, Math.PI * 2); ctx.fill();
+    // shadow
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.beginPath(); ctx.ellipse(p.x, p.y + 1, 7, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+    // diamond gem
+    var s = 8;
+    ctx.fillStyle = "#8fe9ff";
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - s); ctx.lineTo(cx + s * 0.7, cy); ctx.lineTo(cx, cy + s); ctx.lineTo(cx - s * 0.7, cy);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - s); ctx.lineTo(cx + s * 0.7, cy); ctx.lineTo(cx, cy); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "rgba(20,80,110,0.7)"; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - s); ctx.lineTo(cx + s * 0.7, cy); ctx.lineTo(cx, cy + s); ctx.lineTo(cx - s * 0.7, cy);
+    ctx.closePath(); ctx.stroke();
+  }
+
+  function drawBullet(b) {
+    var p = worldToScreen(b.tx, b.ty, 14);
+    // small shadow on ground
+    var gp = worldToScreen(b.tx, b.ty, 0);
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.beginPath(); ctx.ellipse(gp.x, gp.y, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
+    // salsa blob
+    ctx.fillStyle = "#ff3b3b";
+    ctx.beginPath(); ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(255,170,120,0.8)";
+    ctx.beginPath(); ctx.arc(p.x - 1.2, p.y - 1.2, 1.8, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawParticle(pt) {
+    var p = worldToScreen(pt.tx, pt.ty, pt.tz);
+    var a = Math.max(0, pt.life / pt.maxLife);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = pt.col;
+    ctx.beginPath(); ctx.arc(p.x, p.y, pt.size, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // ============================================================
+  //  Depth-sorted scene rendering
+  // ============================================================
+  function renderScene() {
+    var list = [];
+
+    for (var y = 0; y < GRID; y++) {
+      for (var x = 0; x < GRID; x++) {
+        if (grid[y][x] === TILE_BLOCK && heightMap[y][x] > 0) {
+          (function (xx, yy) {
+            list.push({ depth: xx + yy, sub: 1, tx: xx, ty: yy, h: heightMap[yy][xx],
+              draw: function () { drawBuilding(xx, yy, heightMap[yy][xx], bldgColorFor(xx, yy)); } });
+          })(x, y);
+        }
+      }
+    }
+
+    for (var i = 0; i < props.length; i++) {
+      (function (pr) {
+        list.push({ depth: pr.tx + pr.ty, sub: 2, tx: pr.tx, ty: pr.ty, h: 0,
+          draw: function () {
+            if (pr.kind === "tree") drawTree(pr.tx, pr.ty);
+            else if (pr.kind === "lamp") drawLamp(pr.tx, pr.ty);
+            else if (pr.kind === "car") drawCar(pr);
+          } });
+      })(props[i]);
+    }
+
+    for (var gi = 0; gi < gems.length; gi++) {
+      (function (g) {
+        if (g.collected) return;
+        list.push({ depth: g.tx + g.ty, sub: 2.5, tx: g.tx, ty: g.ty, h: 0,
+          draw: function () { drawGem(g); } });
+      })(gems[gi]);
+    }
+
+    for (var ei = 0; ei < enemies.length; ei++) {
+      (function (e) {
+        list.push({ depth: e.tx + e.ty, sub: 3, tx: e.tx, ty: e.ty, h: 0,
+          draw: function () { drawEnemy(e); } });
+      })(enemies[ei]);
+    }
+
+    // taco
+    list.push({ depth: taco.tx + taco.ty, sub: 3.2, tx: taco.tx, ty: taco.ty, h: 0,
+      draw: function () { drawTaco(taco.tx, taco.ty); } });
+
+    // bullets (use tz=14 so they sit slightly above ground in depth)
+    for (var bi = 0; bi < bullets.length; bi++) {
+      (function (b) {
+        list.push({ depth: b.tx + b.ty, sub: 3.4, tx: b.tx, ty: b.ty, h: 0,
+          draw: function () { drawBullet(b); } });
+      })(bullets[bi]);
+    }
+
+    // particles
+    for (var pi = 0; pi < particles.length; pi++) {
+      (function (pt) {
+        list.push({ depth: pt.tx + pt.ty, sub: 3.6, tx: pt.tx, ty: pt.ty, h: pt.tz,
+          draw: function () { drawParticle(pt); } });
+      })(particles[pi]);
+    }
+
+    // depth key: (tx+ty) primary; tie-break by sub (ground-level actors over buildings on same diagonal)
+    list.sort(function (a, b) {
+      if (a.depth !== b.depth) return a.depth - b.depth;
+      return a.sub - b.sub;
+    });
+
+    for (var k = 0; k < list.length; k++) {
+      var it = list[k];
+      var sp = worldToScreen(it.tx, it.ty, 0);
+      if (sp.x < -160 || sp.x > VW + 160 || sp.y < -300 || sp.y > VH + 200) continue;
+      it.draw();
+    }
+
+    // floaters always on top (screen-space text)
+    for (var fi = 0; fi < floaters.length; fi++) {
+      var fl = floaters[fi];
+      var fp = worldToScreen(fl.tx, fl.ty, fl.tz);
+      var fa = Math.max(0, fl.life / fl.maxLife);
+      ctx.globalAlpha = fa;
+      ctx.font = "bold 16px -apple-system, sans-serif";
+      ctx.textAlign = "center";
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.6)";
+      ctx.strokeText(fl.text, fp.x, fp.y);
+      ctx.fillStyle = fl.col;
+      ctx.fillText(fl.text, fp.x, fp.y);
+      ctx.globalAlpha = 1;
+    }
+    ctx.textAlign = "left";
+  }
+
+  // ============================================================
+  //  Background
+  // ============================================================
+  function drawSky() {
+    var g = ctx.createLinearGradient(0, 0, 0, VH);
+    g.addColorStop(0, "#9fd8ff"); g.addColorStop(0.45, "#bfe9ff");
+    g.addColorStop(0.75, "#e8f7e4"); g.addColorStop(1, "#d6ead0");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+    var sg = ctx.createRadialGradient(VW * 0.82, VH * 0.12, 10, VW * 0.82, VH * 0.12, Math.max(VW, VH) * 0.55);
+    sg.addColorStop(0, "rgba(255,250,210,0.85)");
+    sg.addColorStop(0.4, "rgba(255,245,190,0.18)");
+    sg.addColorStop(1, "rgba(255,245,190,0)");
+    ctx.fillStyle = sg; ctx.fillRect(0, 0, VW, VH);
+  }
+  function drawVignette() {
+    var g = ctx.createRadialGradient(VW / 2, VH / 2, Math.min(VW, VH) * 0.35, VW / 2, VH / 2, Math.max(VW, VH) * 0.72);
+    g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(10,15,30,0.34)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+  }
+  function drawHurtVignette() {
+    if (taco.hurtFlash <= 0) return;
+    ctx.globalAlpha = Math.min(0.5, taco.hurtFlash);
+    var g = ctx.createRadialGradient(VW / 2, VH / 2, Math.min(VW, VH) * 0.25, VW / 2, VH / 2, Math.max(VW, VH) * 0.7);
+    g.addColorStop(0, "rgba(255,0,0,0)"); g.addColorStop(1, "rgba(200,0,0,0.9)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+    ctx.globalAlpha = 1;
+  }
+
+  // ============================================================
+  //  Update logic
+  // ============================================================
+  function resolveAim() {
+    // returns {has:bool, firing:bool}
+    if (aimStick.active) {
+      var len = Math.hypot(aimStick.dx, aimStick.dy);
+      if (len > 8) {
+        var tdir = screenVecToTile(aimStick.dx, aimStick.dy);
+        taco.aimAngle = Math.atan2(tdir.ty, tdir.tx);
+        return { has: true, firing: true };
+      }
+      return { has: false, firing: false };
+    }
+    // desktop arrow-key aim
+    var ax = 0, ay = 0;
+    if (keys.aimUp) { ax -= 1; ay -= 1; }
+    if (keys.aimDown) { ax += 1; ay += 1; }
+    if (keys.aimLeft) { ax -= 1; ay += 1; }
+    if (keys.aimRight) { ax += 1; ay -= 1; }
+    if (ax !== 0 || ay !== 0) {
+      taco.aimAngle = Math.atan2(ay, ax);
+      return { has: true, firing: true };
+    }
+    // mouse aim
+    if (mouse.active) {
+      var sp = worldToScreen(taco.tx, taco.ty, 14);
+      var tdir2 = screenVecToTile(mouse.x - sp.x, mouse.y - sp.y);
+      taco.aimAngle = Math.atan2(tdir2.ty, tdir2.tx);
+      return { has: true, firing: mouse.down };
+    }
+    return { has: false, firing: false };
+  }
+
+  function update(dt) {
+    // ---- player move ----
+    var mx = 0, my = 0;
+    if (moveStick.active) {
+      var len = Math.hypot(moveStick.dx, moveStick.dy);
+      if (len > 8) {
+        var tdir = screenVecToTile(moveStick.dx, moveStick.dy);
+        var tl = Math.hypot(tdir.tx, tdir.ty) || 1;
+        mx = tdir.tx / tl; my = tdir.ty / tl;
+      }
+    } else {
+      if (keys.up) { mx -= 1; my -= 1; }
+      if (keys.down) { mx += 1; my += 1; }
+      if (keys.left) { mx -= 1; my += 1; }
+      if (keys.right) { mx += 1; my -= 1; }
+      var l = Math.hypot(mx, my);
+      if (l > 0) { mx /= l; my /= l; }
+    }
+
+    var moving = (mx !== 0 || my !== 0);
+    taco.moving = moving;
+    if (moving) {
+      var step = taco.speed * dt;
+      moveActor(taco, mx * step, my * step, 0.24);
+      var sdx = (mx - my);
+      if (sdx > 0.01) taco.facing = 1; else if (sdx < -0.01) taco.facing = -1;
+      taco.walkPhase += dt * 11;
+    } else {
+      taco.walkPhase += dt * 2.4;
+    }
+
+    // ---- aim + fire ----
+    var aim = resolveAim();
+    taco.fireCd -= dt;
+    if (aim.firing && taco.fireCd <= 0) {
+      fire();
+      taco.fireCd = FIRE_INTERVAL;
+    }
+
+    // ---- bullets ----
+    for (var i = bullets.length - 1; i >= 0; i--) {
+      var b = bullets[i];
+      b.tx += b.vx * dt; b.ty += b.vy * dt; b.life -= dt;
+      var hit = false;
+      // wall collision
+      if (!walkable(b.tx, b.ty)) {
+        burst(b.tx, b.ty, 12, 5, "#ff7a4d", 2.2);
+        hit = true;
+      } else {
+        // enemy collision
+        for (var j = 0; j < enemies.length; j++) {
+          var e = enemies[j];
+          if (Math.hypot(b.tx - e.tx, b.ty - e.ty) < 0.42) {
+            e.hp -= 1; e.hurt = 0.12;
+            burst(b.tx, b.ty, 14, 6, "#ff5d5d", 2.4);
+            addShake(0.8);
+            sndHit();
+            hit = true;
+            if (e.hp <= 0) killEnemy(j);
+            break;
+          }
+        }
+      }
+      if (hit || b.life <= 0) bullets.splice(i, 1);
+    }
+
+    // ---- enemies chase + contact ----
+    for (var k = enemies.length - 1; k >= 0; k--) {
+      var en = enemies[k];
+      en.wob += dt * 7;
+      if (en.hurt > 0) en.hurt -= dt;
+      if (en.contactCd > 0) en.contactCd -= dt;
+      var ddx = taco.tx - en.tx, ddy = taco.ty - en.ty;
+      var dd = Math.hypot(ddx, ddy) || 1;
+      var es = en.speed * dt;
+      moveActor(en, (ddx / dd) * es, (ddy / dd) * es, 0.2);
+      // contact damage
+      if (dd < 0.55 && en.contactCd <= 0 && taco.invuln <= 0) {
+        damageTaco(12);
+        en.contactCd = 0.6;
+      }
+    }
+    // separate overlapping enemies a touch (avoid stacking)
+    for (var a1 = 0; a1 < enemies.length; a1++) {
+      for (var a2 = a1 + 1; a2 < enemies.length; a2++) {
+        var e1 = enemies[a1], e2 = enemies[a2];
+        var sx = e2.tx - e1.tx, sy = e2.ty - e1.ty;
+        var sd = Math.hypot(sx, sy);
+        if (sd > 0 && sd < 0.36) {
+          var push = (0.36 - sd) / 2;
+          var ux = sx / sd, uy = sy / sd;
+          if (canStand(e1.tx - ux * push, e1.ty - uy * push, 0.2)) { e1.tx -= ux * push; e1.ty -= uy * push; }
+          if (canStand(e2.tx + ux * push, e2.ty + uy * push, 0.2)) { e2.tx += ux * push; e2.ty += uy * push; }
+        }
+      }
+    }
+
+    // ---- gems pickup ----
+    for (var gi = gems.length - 1; gi >= 0; gi--) {
+      var g = gems[gi];
+      if (g.collected) continue;
+      g.phase += dt * 3;
+      if (Math.hypot(taco.tx - g.tx, taco.ty - g.ty) < 0.5) {
+        g.collected = true;
+        gemsCollected++;
+        score += 10;
+        addFloater(g.tx, g.ty, "+10", "#8fe9ff");
+        burst(g.tx, g.ty, 12, 8, "#8fe9ff", 2);
+        sndGem();
+        if (mission.type === "gems") { mission.cur++; checkMission(); }
+        updateHUD();
+      }
+    }
+
+    // ---- particles ----
+    for (var pi = particles.length - 1; pi >= 0; pi--) {
+      var pt = particles[pi];
+      pt.tx += pt.vx * dt; pt.ty += pt.vy * dt;
+      pt.tz += pt.vz * dt; pt.vz -= 120 * dt; // gravity in z
+      if (pt.tz < 0) { pt.tz = 0; pt.vz *= -0.35; pt.vx *= 0.6; pt.vy *= 0.6; }
+      pt.life -= dt;
+      if (pt.life <= 0) particles.splice(pi, 1);
+    }
+    // ---- floaters ----
+    for (var fi = floaters.length - 1; fi >= 0; fi--) {
+      var fl = floaters[fi];
+      fl.tz += fl.vy * dt; fl.life -= dt;
+      if (fl.life <= 0) floaters.splice(fi, 1);
+    }
+
+    // ---- timers ----
+    if (taco.hurtFlash > 0) taco.hurtFlash -= dt * 2.5;
+    if (taco.invuln > 0) taco.invuln -= dt;
+
+    // ---- enemy spawning (capped) ----
+    spawnTimer -= dt;
+    if (spawnTimer <= 0 && enemies.length < 9 && !mission.done) {
+      spawnEnemy();
+      spawnTimer = Math.max(1.1, 3.2 - score * 0.01);
+    }
+
+    // ---- keep some gems on map ----
+    var liveGems = 0;
+    for (var lg = 0; lg < gems.length; lg++) if (!gems[lg].collected) liveGems++;
+    if (liveGems < 4) scatterGems(3);
+
+    // ---- shake decay ----
+    if (shake.mag > 0) {
+      shake.x = (rnd() - 0.5) * shake.mag;
+      shake.y = (rnd() - 0.5) * shake.mag;
+      shake.mag *= Math.pow(0.001, dt);
+      if (shake.mag < 0.3) { shake.mag = 0; shake.x = 0; shake.y = 0; }
+    }
+
+    // ---- camera follow ----
+    var tp = (taco.tx - taco.ty) * halfW;
+    var tpy = (taco.tx + taco.ty) * halfH;
+    var targetCamX = VW / 2 - tp;
+    var targetCamY = VH / 2 - tpy;
+    var lerp = 1 - Math.pow(0.0015, dt);
+    cam.x += (targetCamX - cam.x) * lerp;
+    cam.y += (targetCamY - cam.y) * lerp;
+  }
+
+  function killEnemy(index) {
+    var e = enemies[index];
+    burst(e.tx, e.ty, 14, 16, "#ff3b3b", 3.2);
+    burst(e.tx, e.ty, 14, 8, "#3a9a3a", 2.6);
+    addFloater(e.tx, e.ty, "+25", "#ffe14d");
+    addShake(2.5);
+    sndDeath();
+    enemies.splice(index, 1);
+    enemyKills++;
+    score += 25;
+    if (mission.type === "kills") { mission.cur++; checkMission(); }
+    updateHUD();
+  }
+
+  function damageTaco(amt) {
+    if (taco.invuln > 0) return;
+    taco.hp -= amt;
+    taco.hurtFlash = 0.8;
+    taco.invuln = 0.35;
+    addShake(3);
+    sndHurt();
+    updateHUD();
+    if (taco.hp <= 0) { taco.hp = 0; gameOver(false); }
+  }
+
+  function checkMission() {
+    if (mission.done) return;
+    if (mission.cur >= mission.goal) {
+      mission.done = true;
+      score += 100;
+      addFloater(taco.tx, taco.ty, "MISIÓN COMPLETA +100", "#7ee08a");
+      addShake(4);
+      sndGem();
+      updateHUD();
+      // small celebratory victory shortly after
+      setTimeout(function () { if (state === STATE_PLAY) gameOver(true); }, 900);
+    }
+  }
+
+  // ============================================================
+  //  HUD / overlays
+  // ============================================================
+  var elScore = document.getElementById("score");
+  var elHp = document.getElementById("hpFill");
+  var elMissionText = document.getElementById("missionText");
+  var elMissionProg = document.getElementById("missionProg");
+
+  function updateHUD() {
+    elScore.textContent = score;
+    elHp.style.width = Math.max(0, (taco.hp / taco.maxHp) * 100) + "%";
+    elMissionText.textContent = mission.label;
+    elMissionProg.textContent = Math.min(mission.cur, mission.goal) + "/" + mission.goal;
+  }
+
+  var titleOverlay = document.getElementById("titleOverlay");
+  var overOverlay = document.getElementById("overOverlay");
+  var overTitle = document.getElementById("overTitle");
+  var goStats = document.getElementById("goStats");
+
+  function startGame() {
+    ensureAudio();
+    if (AC && AC.state === "suspended") { try { AC.resume(); } catch (e) {} }
+    resetGame();
+    state = STATE_PLAY;
+    titleOverlay.classList.add("hidden");
+    overOverlay.classList.add("hidden");
+  }
+
+  function gameOver(victory) {
+    if (state !== STATE_PLAY) return;
+    state = STATE_OVER;
+    overTitle.textContent = victory ? "¡VICTORIA!" : "GAME OVER";
+    overTitle.style.color = victory ? "#7ee08a" : "#ff6b5e";
+    goStats.innerHTML = "Puntaje: <b>" + score + "</b><br>Enemigos: " + enemyKills + " · Gemas: " + gemsCollected;
+    overOverlay.classList.remove("hidden");
+  }
+
+  document.getElementById("startBtn").addEventListener("click", startGame);
+  document.getElementById("retryBtn").addEventListener("click", startGame);
+  // also allow Enter/Space to start
+  window.addEventListener("keydown", function (e) {
+    if ((e.code === "Enter" || e.code === "Space") && state !== STATE_PLAY) {
+      startGame(); e.preventDefault();
+    }
+  });
+
+  // ============================================================
+  //  Main loop
+  // ============================================================
+  var last = performance.now();
+  function frame(now) {
+    var dt = (now - last) / 1000;
+    if (dt > 0.05) dt = 0.05;
+    last = now;
+
+    if (state === STATE_PLAY) update(dt);
+
+    drawSky();
+    drawGround();
+    renderScene();
+    drawVignette();
+    drawHurtVignette();
+
+    requestAnimationFrame(frame);
+  }
+
+  // initial camera snap on a placeholder layout so the title screen shows a city
+  buildCity();
+  (function () {
+    var s = firstRoad();
+    taco.tx = s.x; taco.ty = s.y;
+    var tp = (taco.tx - taco.ty) * halfW, tpy = (taco.tx + taco.ty) * halfH;
+    cam.x = VW / 2 - tp; cam.y = VH / 2 - tpy;
+  })();
+  updateHUD();
+  requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>

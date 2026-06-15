@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v53 - BODEGA (inventario personal): los consumibles que compras NO se usan al instante, se guardan en tu BODEGA por jugador y los USAS cuando los necesitas (menu casa -> BODEGA); el Asistente IA te avisa si tenes curacion guardada y vas con poca vida";
+const VERSION = "v54 - BODEGA con ACCESORIOS + KPIs + API interna GAME: la bodega ahora tiene 2 pestanas (ITEMS para usar / ACCESORIOS adquiridos para equipar). Nueva pantalla KPIS (menu casa) con tus estadisticas por jugador (partidas, enemigos, palabras aprendidas y DOMINADAS, items, accesorios, monedas, tiempo) + coach IA. Capa de funciones unica GAME (inv/eco/cosmetic/stats) que usa todo el juego";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -214,6 +214,8 @@ const MOUNTS = [
 let face = 0, acc = 1, mount = 0, uFace = { 0: true }, uAcc = { 0: true, 1: true }, uMount = { 0: true };
 let myBuilds = [], builtMarkers = []; // edificios que el jugador construyo (plantados en la ciudad)
 let inv = {}; // BODEGA: items que compraste y podes usar cuando los necesites (por jugador)
+let kpi = {}; // KPIs: estadisticas del jugador (partidas, kills, palabras, economia...) por perfil
+let kpanel = null; // estado de la pantalla de KPIs
 function saveCosmetics() { lset("face", face); lset("acc", acc); lset("mount", mount); lset("uface", JSON.stringify(uFace)); lset("uacc", JSON.stringify(uAcc)); lset("umount", JSON.stringify(uMount)); }
 let wbScroll = 0, wbDrag = null;
 let uiBack = "title"; // a donde vuelve "VOLVER" (title o menu del juego)
@@ -270,10 +272,47 @@ function loadPlayerData() {
   try { uMount = JSON.parse(lget("umount") || "{}"); } catch (e) { uMount = {}; } uMount[0] = true;
   try { myBuilds = JSON.parse(lget("mybuilds") || "[]"); } catch (e) { myBuilds = []; }
   try { inv = JSON.parse(lget("inv") || "{}"); } catch (e) { inv = {}; }
+  loadKpi();
   face = clamp(face, 0, FACES.length - 1); acc = clamp(acc, 0, ACCS.length - 1); mount = clamp(mount, 0, MOUNTS.length - 1);
 }
 function saveBuilds() { lset("mybuilds", JSON.stringify(myBuilds)); }
 function saveInv() { lset("inv", JSON.stringify(inv)); }
+// ===== KPIs del jugador (persistentes por perfil) =====
+const KPI_KEYS = ["games", "kills", "wordsLearned", "coinsSpent", "bought", "used", "deaths", "playSec"];
+function kpiReset() { kpi = {}; for (const k of KPI_KEYS) kpi[k] = 0; }
+function loadKpi() { try { kpi = JSON.parse(lget("kpi") || "{}"); } catch (e) { kpi = {}; } for (const k of KPI_KEYS) if (typeof kpi[k] !== "number") kpi[k] = 0; }
+let kpiDirty = false;
+function kpiBump(k, n) { kpi[k] = (kpi[k] || 0) + (n == null ? 1 : n); kpiDirty = true; }
+function saveKpi() { if (curPlayer) { lset("kpi", JSON.stringify(kpi)); kpiDirty = false; } }
+function fmtTime(s) { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60; return h > 0 ? h + "h " + m + "m" : m + "m " + ss + "s"; }
+// ===== Registro UNIFICADO de cosmeticos: lo usan la BODEGA (pestaña ACCESORIOS) y la API GAME =====
+const COSMO = {
+  outfit: { label: "EQUIPO", list: () => OUTFITS, owned: () => unlocked, cur: () => outfit, equip: (i) => { outfit = i; saveWardrobe(); }, col: "#f5cd46" },
+  acc: { label: "ACCESORIO", list: () => ACCS, owned: () => uAcc, cur: () => acc, equip: (i) => { acc = i; saveCosmetics(); }, col: "#7fd6ff" },
+  face: { label: "CARA", list: () => FACES, owned: () => uFace, cur: () => face, equip: (i) => { face = i; saveCosmetics(); }, col: "#ff9bb0" },
+  mount: { label: "VEHICULO", list: () => MOUNTS, owned: () => uMount, cur: () => mount, equip: (i) => { mount = i; saveCosmetics(); }, col: "#b480ff" },
+};
+const COSMO_ORDER = ["outfit", "acc", "face", "mount"];
+function cosmOwnedList() { const out = []; for (const ty of COSMO_ORDER) { const c = COSMO[ty], L = c.list(), own = c.owned(); for (let i = 0; i < L.length; i++) if (own[i]) out.push({ type: ty, i: i, name: L[i].name, label: c.label, col: c.col, equipped: c.cur() === i }); } return out; }
+function cosmOwnedCount() { let n = 0; for (const ty of COSMO_ORDER) { const own = COSMO[ty].owned(); for (const k in own) if (own[k]) n++; } return n; }
+function cosmEquip(ty, i) { const c = COSMO[ty]; if (!c || !c.owned()[i]) return false; c.equip(i); return true; }
+// ===== API interna del juego: capa UNICA de funciones que usan las pantallas y el asistente IA.
+//       (NO es una API de red: el juego es un solo HTML estatico sin servidor; son funciones locales.) =====
+const GAME = {
+  inv: {
+    add: (k, n) => invAdd(k, n),
+    use: (k) => { if ((inv[k] || 0) <= 0) return false; inv[k]--; saveInv(); const d = invDef(k); if (d) d.use(); kpiBump("used"); return true; },
+    count: () => invCount(),
+    has: (k) => (inv[k] || 0) > 0,
+    list: () => INV_KINDS.map(d => ({ kind: d.k, name: d.name, n: inv[d.k] || 0, col: d.col, icon: d.icon })),
+  },
+  eco: {
+    spend: (n) => { if (coins < n) return false; coins -= n; if (n > 0) { kpiBump("coinsSpent", n); kpiBump("bought"); } return true; },
+    coins: () => coins, bank: () => bank,
+  },
+  cosmetic: { owns: (ty, i) => !!(COSMO[ty] && COSMO[ty].owned()[i]), equip: cosmEquip, list: cosmOwnedList, count: cosmOwnedCount },
+  stats: { bump: kpiBump, get: (k) => kpi[k] || 0, save: saveKpi, list: () => buildKpis(), coach: () => kpiCoach() },
+};
 function switchPlayer(name) { curPlayer = name; savePlayers(); loadPlayerData(); }
 function createPlayer() {
   let nm = null; try { nm = prompt("Nombre del jugador:", ""); } catch (e) {}
@@ -283,7 +322,7 @@ function createPlayer() {
   if (players.indexOf(nm) < 0) players.push(nm);
   curPlayer = nm; savePlayers();
   best = 0; bank = 0; outfit = 0; maxWorld = 1; unlocked = { 0: true }; lstats = {}; lang = "EN";
-  face = 0; acc = 1; mount = 0; uFace = { 0: true }; uAcc = { 0: true, 1: true }; uMount = { 0: true }; myBuilds = []; inv = {};
+  face = 0; acc = 1; mount = 0; uFace = { 0: true }; uAcc = { 0: true, 1: true }; uMount = { 0: true }; myBuilds = []; inv = {}; kpiReset(); lset("kpi", JSON.stringify(kpi));
   profile = { name: nm, age: age, eng: ageToTier(age, LESSONS.EN.levels.length - 1), zh: ageToTier(Math.max(6, age - 3), LESSONS.ZH.levels.length - 1) };
   lset("best", 0); lset("bank", 0); lset("outfit", 0); lset("maxworld", 1); lset("unlocked", JSON.stringify(unlocked)); lset("lstats", "{}"); lset("lang", "EN"); lset("profile", JSON.stringify(profile));
   saveCosmetics();
@@ -292,7 +331,7 @@ function createPlayer() {
 function deletePlayer(name) {
   const i = players.indexOf(name); if (i < 0) return;
   players.splice(i, 1);
-  try { ["best", "bank", "outfit", "maxworld", "lang", "unlocked", "lstats", "profile", "face", "acc", "mount", "uface", "uacc", "umount", "mybuilds", "inv", "run"].forEach(k => localStorage.removeItem("pl_" + name + "_" + k)); } catch (e) {}
+  try { ["best", "bank", "outfit", "maxworld", "lang", "unlocked", "lstats", "profile", "face", "acc", "mount", "uface", "uacc", "umount", "mybuilds", "inv", "kpi", "run"].forEach(k => localStorage.removeItem("pl_" + name + "_" + k)); } catch (e) {}
   if (curPlayer === name) { curPlayer = players[0] || ""; if (curPlayer) loadPlayerData(); else profile = null; }
   savePlayers();
 }
@@ -509,6 +548,7 @@ addEventListener("keydown", e => {
   if (state === "options") { if (k === "escape") state = uiBack; return; }
   if (state === "menu") { if (k === "escape") state = "play"; return; }
   if (state === "bodega") { if (k === "escape") state = bodega.back; return; }
+  if (state === "kpis") { if (k === "escape") state = kpanel.back; return; }
   if (state === "ia") { if (k === "escape") state = iaHub.back; return; }
   if (state === "interior") { if (k === "escape") { if (interior.popup) interior.popup = null; else exitInterior(); } return; }
   if (state === "store") { if (k === "escape") exitStore(); return; }
@@ -536,6 +576,7 @@ canvas.addEventListener("mousedown", e => {
   if (state === "options") { optTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "menu") { menuTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "bodega") { bodegaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
+  if (state === "kpis") { kpisTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "ia") { iaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "interior") { interiorTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "store") { storeTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -569,6 +610,7 @@ function onTouchStart(e) {
   if (state === "options") { for (const tch of e.changedTouches) optTapAt(tch.clientX, tch.clientY); return; }
   if (state === "menu") { for (const tch of e.changedTouches) menuTapAt(tch.clientX, tch.clientY); return; }
   if (state === "bodega") { for (const tch of e.changedTouches) bodegaTapAt(tch.clientX, tch.clientY); return; }
+  if (state === "kpis") { for (const tch of e.changedTouches) kpisTapAt(tch.clientX, tch.clientY); return; }
   if (state === "ia") { for (const tch of e.changedTouches) iaTapAt(tch.clientX, tch.clientY); return; }
   if (state === "interior") { for (const tch of e.changedTouches) { if (interiorTapAt(tch.clientX, tch.clientY)) return; if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
   if (state === "store") { for (const tch of e.changedTouches) { if (storeTapAt(tch.clientX, tch.clientY)) return; if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
@@ -631,7 +673,7 @@ function readInput() {
 }
 
 // ---------- Flujo ----------
-function startOrRestart() { if (!profile || !curPlayer) { openPlayers(); return; } clearRun(); level = 1; score = 0; words = 0; coins = 5; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; dashT = 0; dashCD = 0; driving = null; genLevel(); state = "play"; sLevel(); ai.lastKey = ""; ai.n = 0; aiSay("Hola! soy tu coach. Te enseño palabras y te doy pistas; tocame (arriba-izq) y te las pronuncio en voz.", "#7fd6ff", "hi"); }
+function startOrRestart() { if (!profile || !curPlayer) { openPlayers(); return; } clearRun(); level = 1; score = 0; words = 0; coins = 5; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; dashT = 0; dashCD = 0; driving = null; genLevel(); state = "play"; sLevel(); ai.lastKey = ""; ai.n = 0; kpiBump("games"); saveKpi(); aiSay("Hola! soy tu coach. Te enseño palabras y te doy pistas; tocame (arriba-izq) y te las pronuncio en voz.", "#7fd6ff", "hi"); }
 // ---- RESUME DE SESION: guarda la partida en curso por jugador y permite CONTINUAR ----
 function saveRun() { if (state === "over" || !curPlayer) return; try { lset("run", JSON.stringify({ level, score, words, coins, hp: Math.round(player.hp), weapon })); } catch (e) {} }
 function loadRun() { try { return JSON.parse(lget("run") || "null"); } catch (e) { return null; } }
@@ -679,7 +721,7 @@ function answerChallenge(i) {
   challenge.sel = i; const ok = i === challenge.correct;
   const s = lstat(challenge.key); s.seen++;
   if (ok) {
-    s.ok++; s.streak++; words++; speak(challenge.say, challenge.L.code);
+    s.ok++; s.streak++; words++; kpiBump("wordsLearned"); speak(challenge.say, challenge.L.code);
     if (challenge.kind === "face") { uFace[challenge.idx] = true; face = challenge.idx; } else { uAcc[challenge.idx] = true; acc = challenge.idx; }
     saveCosmetics(); sRight();
   } else { s.streak = 0; sWrong(); }
@@ -731,7 +773,7 @@ function answerQuiz(i) {
   const correct = i === quiz.correct;
   if (quiz.kind === "lang") {
     const s = lstat(quiz.key); s.seen++;
-    if (correct) { s.ok++; s.streak++; words++; } else s.streak = 0;
+    if (correct) { s.ok++; s.streak++; words++; kpiBump("wordsLearned"); } else s.streak = 0;
     if (quiz.say && quiz.L) speak(quiz.say, quiz.L.code);
     saveL();
   }
@@ -972,40 +1014,111 @@ function drawOptions() {
 }
 
 // ---- MENU del juego (boton casa) : continuar / opciones / vestuario / jugador / titulo ----
-function openMenu() { saveRun(); state = "menu"; }
+function openMenu() { saveRun(); saveKpi(); state = "menu"; }
 function gotoIso() { try { saveRun(); } catch (e) {} try { location.href = "game-iso.html"; } catch (e) {} }
-// ---- BODEGA (inventario personal): usa los items que compraste cuando los necesites ----
+// ---- BODEGA (inventario personal): ITEMS para usar + ACCESORIOS adquiridos para equipar ----
 let bodega = null;
-function openBodega(back) { bodega = { back: back || "play", msg: "", col: "#62e074", msgT: 0 }; state = "bodega"; }
-function bodRect() { const n = INV_KINDS.length, w = Math.min(440, W - 32), h = 86 + n * 54; return { x: (W - w) / 2, y: Math.max(18 + safeT, (H - h) / 2), w, h }; }
-function bodRowRect(i) { const p = bodRect(); return { x: p.x + 20, y: p.y + 66 + i * 54, w: p.w - 40, h: 48 }; }
-function bodCloseRect() { const p = bodRect(); return { x: p.x + p.w / 2 - 90, y: p.y + p.h - 42, w: 180, h: 34 }; }
+const BOD_TABS = ["ITEMS", "ACCESORIOS"], BOD_PAGE = 5;
+function openBodega(back) { bodega = { back: back || "play", tab: 0, page: 0, msg: "", col: "#62e074", msgT: 0 }; state = "bodega"; saveKpi(); }
+function bodPageList() { if (bodega.tab === 0) return INV_KINDS.map(d => ({ kind: d.k, name: d.name, col: d.col, icon: d.icon, n: inv[d.k] || 0 })); return cosmOwnedList().slice(bodega.page * BOD_PAGE, bodega.page * BOD_PAGE + BOD_PAGE); }
+function bodPages() { return bodega.tab === 0 ? 1 : Math.max(1, Math.ceil(cosmOwnedList().length / BOD_PAGE)); }
+function bodRect() { const w = Math.min(460, W - 24), h = Math.min(H - 18, 116 + BOD_PAGE * 54 + 50); return { x: (W - w) / 2, y: Math.max(14 + safeT, (H - h) / 2), w, h }; }
+function bodTabRect(i) { const p = bodRect(), tw = (p.w - 36) / 2; return { x: p.x + 18 + i * tw, y: p.y + 56, w: tw - 4, h: 30 }; }
+function bodRowRect(i) { const p = bodRect(); return { x: p.x + 18, y: p.y + 96 + i * 54, w: p.w - 36, h: 48 }; }
+function bodPrevRect() { const p = bodRect(); return { x: p.x + 18, y: p.y + p.h - 42, w: 44, h: 32 }; }
+function bodNextRect() { const p = bodRect(); return { x: p.x + 66, y: p.y + p.h - 42, w: 44, h: 32 }; }
+function bodCloseRect() { const p = bodRect(); return bodega.tab === 1 ? { x: p.x + p.w - 132, y: p.y + p.h - 42, w: 120, h: 32 } : { x: p.x + p.w / 2 - 80, y: p.y + p.h - 42, w: 160, h: 32 }; }
 function updateBodega(dt) { if (bodega.msgT > 0) bodega.msgT -= dt; }
 function bodegaTapAt(px, py) {
-  for (let i = 0; i < INV_KINDS.length; i++) { const r = bodRowRect(i), ik = INV_KINDS[i]; if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { if ((inv[ik.k] || 0) > 0) { inv[ik.k]--; saveInv(); ik.use(); sPower(); bodega.msg = "Usaste " + ik.name + "!"; bodega.col = "#62e074"; bodega.msgT = 1.5; flash("96,208,80", 0.15); } else { sWrong(); bodega.msg = "No tenes " + ik.name + " · compralo en una tienda"; bodega.col = "#eb6050"; bodega.msgT = 1.8; } return; } }
-  const c = bodCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) state = bodega.back;
+  const inR = (r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  for (let i = 0; i < BOD_TABS.length; i++) { if (inR(bodTabRect(i))) { if (bodega.tab !== i) { bodega.tab = i; bodega.page = 0; bodega.msgT = 0; } sRight(); return; } }
+  const rows = bodPageList();
+  for (let i = 0; i < rows.length; i++) { if (inR(bodRowRect(i))) { const it = rows[i];
+    if (bodega.tab === 0) { if (GAME.inv.use(it.kind)) { sPower(); bodega.msg = "Usaste " + it.name + "!"; bodega.col = "#62e074"; bodega.msgT = 1.5; flash("96,208,80", 0.15); } else { sWrong(); bodega.msg = "No tenes " + it.name + " · compralo en una tienda"; bodega.col = "#eb6050"; bodega.msgT = 1.8; } }
+    else { if (it.equipped) { sRight(); bodega.msg = it.name + " ya esta puesto"; bodega.col = "#9aa0b4"; bodega.msgT = 1.2; } else { cosmEquip(it.type, it.i); sPower(); bodega.msg = "Te pusiste " + it.name + "!"; bodega.col = "#62e074"; bodega.msgT = 1.5; } }
+    return;
+  } }
+  if (bodega.tab === 1) { if (inR(bodPrevRect())) { if (bodega.page > 0) { bodega.page--; sRight(); } else sWrong(); return; } if (inR(bodNextRect())) { if (bodega.page < bodPages() - 1) { bodega.page++; sRight(); } else sWrong(); return; } }
+  if (inR(bodCloseRect())) state = bodega.back;
 }
 function drawBodega() {
   ctx.fillStyle = "rgba(0,0,0,0.62)"; ctx.fillRect(0, 0, W, H);
   const p = bodRect();
   ctx.shadowColor = "#ffd84a"; ctx.shadowBlur = 16; ctx.fillStyle = "#161826"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 14); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 3; ctx.stroke();
-  text("BODEGA  ·  tus items", W / 2, p.y + 32, 20, "#ffd84a", "center");
-  text("compralos en las tiendas del mall y USALOS cuando los necesites", W / 2, p.y + 52, 11, "#9aa0b4", "center");
-  for (let i = 0; i < INV_KINDS.length; i++) {
-    const r = bodRowRect(i), ik = INV_KINDS[i], cnt = inv[ik.k] || 0, has = cnt > 0;
-    ctx.fillStyle = has ? "#23273a" : "#1c1f29"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.strokeStyle = has ? ik.col : "#33384a"; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.globalAlpha = has ? 1 : 0.45; ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(r.x + 8, r.y + 8, 32, 32, 8); ctx.fill(); mallIcon(ik.icon, r.x + 24, r.y + r.h / 2, 10); ctx.globalAlpha = 1;
-    text(ik.name, r.x + 50, r.y + r.h / 2 - 2, 15, has ? "#fff" : "#777", "left");
-    text("tenes " + cnt, r.x + 50, r.y + r.h / 2 + 15, 11, has ? ik.col : "#666", "left");
-    const bw = 96, bx = r.x + r.w - bw - 8; ctx.fillStyle = has ? "#1d3a24" : "#241f28"; ctx.beginPath(); ctx.roundRect(bx, r.y + 9, bw, r.h - 18, 9); ctx.fill(); ctx.strokeStyle = has ? "#62e074" : "#3a3340"; ctx.lineWidth = 1.5; ctx.stroke(); text(has ? "USAR" : "vacio", bx + bw / 2, r.y + r.h / 2 + 5, 14, has ? "#9be7c0" : "#666", "center");
+  text("BODEGA  ·  todo lo que adquiriste", W / 2, p.y + 30, 18, "#ffd84a", "center");
+  for (let i = 0; i < BOD_TABS.length; i++) { const tb = bodTabRect(i), on = bodega.tab === i; ctx.fillStyle = on ? "#2a2f44" : "#191c28"; ctx.beginPath(); ctx.roundRect(tb.x, tb.y, tb.w, tb.h, 8); ctx.fill(); ctx.strokeStyle = on ? "#ffd84a" : "#33384a"; ctx.lineWidth = on ? 2 : 1; ctx.stroke(); const lbl = i === 0 ? "ITEMS (" + invCount() + ")" : "ACCESORIOS (" + cosmOwnedCount() + ")"; text(lbl, tb.x + tb.w / 2, tb.y + tb.h / 2 + 5, 13, on ? "#ffd84a" : "#9aa0b4", "center"); }
+  const rows = bodPageList();
+  if (rows.length === 0) text(bodega.tab === 0 ? "Tu bodega esta vacia. Compra en las tiendas del mall." : "Aun no tenes accesorios. Compra ROPA en el MALL (piso MODA).", W / 2, p.y + 150, 12, "#9aa0b4", "center");
+  for (let i = 0; i < rows.length; i++) { const r = bodRowRect(i), it = rows[i];
+    if (bodega.tab === 0) { const has = it.n > 0;
+      ctx.fillStyle = has ? "#23273a" : "#1c1f29"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.strokeStyle = has ? it.col : "#33384a"; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.globalAlpha = has ? 1 : 0.45; ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(r.x + 8, r.y + 8, 32, 32, 8); ctx.fill(); mallIcon(it.icon, r.x + 24, r.y + r.h / 2, 10); ctx.globalAlpha = 1;
+      text(it.name, r.x + 50, r.y + r.h / 2 - 2, 15, has ? "#fff" : "#777", "left");
+      text("tenes " + it.n, r.x + 50, r.y + r.h / 2 + 15, 11, has ? it.col : "#666", "left");
+      const bw = 96, bx = r.x + r.w - bw - 8; ctx.fillStyle = has ? "#1d3a24" : "#241f28"; ctx.beginPath(); ctx.roundRect(bx, r.y + 9, bw, r.h - 18, 9); ctx.fill(); ctx.strokeStyle = has ? "#62e074" : "#3a3340"; ctx.lineWidth = 1.5; ctx.stroke(); text(has ? "USAR" : "vacio", bx + bw / 2, r.y + r.h / 2 + 5, 14, has ? "#9be7c0" : "#666", "center");
+    } else { const eq = it.equipped;
+      ctx.fillStyle = eq ? "#22302a" : "#23273a"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.strokeStyle = eq ? "#62e074" : it.col; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.globalAlpha = 0.85; ctx.fillStyle = it.col; ctx.beginPath(); ctx.roundRect(r.x + 10, r.y + 12, 6, r.h - 24, 3); ctx.fill(); ctx.globalAlpha = 1;
+      text(it.name, r.x + 26, r.y + r.h / 2 - 2, 15, "#fff", "left");
+      text(it.label, r.x + 26, r.y + r.h / 2 + 15, 11, it.col, "left");
+      const bw = 96, bx = r.x + r.w - bw - 8; ctx.fillStyle = eq ? "#1d3a24" : "#2a2030"; ctx.beginPath(); ctx.roundRect(bx, r.y + 9, bw, r.h - 18, 9); ctx.fill(); ctx.strokeStyle = eq ? "#62e074" : "#f5cd46"; ctx.lineWidth = 1.5; ctx.stroke(); text(eq ? "EN USO" : "EQUIPAR", bx + bw / 2, r.y + r.h / 2 + 5, 13, eq ? "#9be7c0" : "#ffd84a", "center");
+    }
   }
-  if (bodega.msgT > 0) { ctx.globalAlpha = Math.min(1, bodega.msgT); text(bodega.msg, W / 2, p.y - 10, 14, bodega.col, "center"); ctx.globalAlpha = 1; }
-  const c = bodCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); text(bodega.back === "play" ? "VOLVER AL JUEGO" : "VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 5, 14, "#ff9bb0", "center");
+  if (bodega.tab === 1 && cosmOwnedList().length > BOD_PAGE) { const pr = bodPrevRect(), nx = bodNextRect(); for (const rc of [pr, nx]) { ctx.fillStyle = "#222636"; ctx.beginPath(); ctx.roundRect(rc.x, rc.y, rc.w, rc.h, 8); ctx.fill(); ctx.strokeStyle = "#3a4056"; ctx.lineWidth = 1.5; ctx.stroke(); } text("<", pr.x + pr.w / 2, pr.y + pr.h / 2 + 6, 18, "#cfd5e6", "center"); text(">", nx.x + nx.w / 2, nx.y + nx.h / 2 + 6, 18, "#cfd5e6", "center"); text((bodega.page + 1) + "/" + bodPages(), nx.x + nx.w + 24, nx.y + nx.h / 2 + 5, 13, "#9aa0b4", "center"); }
+  if (bodega.msgT > 0) { ctx.globalAlpha = Math.min(1, bodega.msgT); text(bodega.msg, W / 2, p.y - 8, 14, bodega.col, "center"); ctx.globalAlpha = 1; }
+  const c = bodCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); text(bodega.back === "play" ? "VOLVER AL JUEGO" : "VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 5, 13, "#ff9bb0", "center");
+}
+// ---- KPIS: pantalla de estadisticas del jugador (educativo + personalizado, con coach IA) ----
+function openKpis(back) { kpanel = { back: back || "menu" }; saveKpi(); state = "kpis"; }
+function buildKpis() {
+  const ms = aiMastery();
+  return [
+    { l: "Partidas", v: kpi.games || 0, c: "#7fd6ff" },
+    { l: "Mejor puntaje", v: best, c: "#ffd84a" },
+    { l: "Mundo maximo", v: maxWorld, c: "#b480ff" },
+    { l: "Enemigos vencidos", v: kpi.kills || 0, c: "#ff7a6b" },
+    { l: "Palabras aprendidas", v: kpi.wordsLearned || 0, c: "#62e074" },
+    { l: "Palabras DOMINADAS", v: ms.m + "/" + ms.tt, c: "#5eead4" },
+    { l: "Items comprados", v: kpi.bought || 0, c: "#f5cd46" },
+    { l: "Items usados", v: kpi.used || 0, c: "#8ee07a" },
+    { l: "Accesorios", v: cosmOwnedCount(), c: "#ff9bb0" },
+    { l: "Construcciones", v: (myBuilds ? myBuilds.length : 0), c: "#ffb060" },
+    { l: "Monedas gastadas", v: kpi.coinsSpent || 0, c: "#ffd84a" },
+    { l: "Banco", v: bank, c: "#9be7c0" },
+    { l: "Tiempo jugado", v: fmtTime(kpi.playSec || 0), c: "#7fd6ff" },
+  ];
+}
+function kpiCoach() {
+  const ms = aiMastery(), k = kpi;
+  if ((k.games || 0) === 0) return "Juga tu primera partida y volve: vas a ver TODO tu progreso aca.";
+  if (ms.tt > 0 && ms.m / ms.tt < 0.25) return "Vas " + ms.m + "/" + ms.tt + " palabras dominadas. Entra a los PORTALES y repeti en voz alta para subir.";
+  if (invCount() > 0 && (k.used || 0) === 0) return "Tenes items en la BODEGA sin usar. Usalos cuando te falte vida o poder!";
+  if (cosmOwnedCount() < 4) return "Compra ropa y accesorios en el MALL (piso MODA) para personalizar tu taco.";
+  if ((k.kills || 0) >= 60) return "Gran cazador: " + k.kills + " enemigos. Proba un arma nueva en el vestuario.";
+  return "Vas muy bien: " + ms.m + " palabras dominadas en " + (k.games || 0) + " partidas. Segui asi!";
+}
+function kpiRect() { const w = Math.min(480, W - 20), h = Math.min(H - 16, 150 + 7 * 46 + 28); return { x: (W - w) / 2, y: Math.max(12 + safeT, (H - h) / 2), w, h }; }
+function kpiCardRect(i) { const p = kpiRect(), col = i % 2, row = Math.floor(i / 2), cw = (p.w - 36) / 2; return { x: p.x + 18 + col * cw, y: p.y + 64 + row * 46, w: cw - 6, h: 40 }; }
+function kpiCloseRect() { const p = kpiRect(); return { x: p.x + p.w / 2 - 80, y: p.y + p.h - 40, w: 160, h: 32 }; }
+function kpisTapAt(px, py) { const c = kpiCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) state = kpanel.back; }
+function drawKpis() {
+  ctx.fillStyle = "rgba(0,0,0,0.66)"; ctx.fillRect(0, 0, W, H);
+  const p = kpiRect(), list = buildKpis();
+  ctx.shadowColor = "#7fd6ff"; ctx.shadowBlur = 16; ctx.fillStyle = "#13161f"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 14); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = 3; ctx.stroke();
+  text("KPIS  ·  " + (curPlayer || "jugador"), W / 2, p.y + 30, 19, "#7fd6ff", "center");
+  text("tu progreso personal y educativo", W / 2, p.y + 50, 11, "#9aa0b4", "center");
+  for (let i = 0; i < list.length; i++) { const r = kpiCardRect(i), it = list[i]; ctx.fillStyle = "#1b1f2c"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 9); ctx.fill(); ctx.strokeStyle = "#2a3142"; ctx.lineWidth = 1; ctx.stroke(); ctx.fillStyle = it.c; ctx.beginPath(); ctx.roundRect(r.x, r.y, 5, r.h, 3); ctx.fill(); text(it.l, r.x + 12, r.y + 17, 11, "#9aa0b4", "left"); text("" + it.v, r.x + 12, r.y + 34, 17, "#fff", "left"); }
+  const cy = kpiCardRect(list.length - 1).y + 50, cw = p.w - 36;
+  ctx.fillStyle = "#10212b"; ctx.beginPath(); ctx.roundRect(p.x + 18, cy, cw, 38, 9); ctx.fill(); ctx.strokeStyle = "#2a6f8a"; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = "#7fd6ff"; ctx.beginPath(); ctx.arc(p.x + 34, cy + 19, 9, 0, 7); ctx.fill(); text("IA", p.x + 34, cy + 23, 9, "#10212b", "center");
+  fitTextLeft(kpiCoach(), p.x + 52, cy + 23, cw - 62, 12, "#cfe6f2");
+  const c = kpiCloseRect(); ctx.fillStyle = "#23303a"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); text("VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 5, 14, "#9be7c0", "center");
 }
 function menuRows() {
   return [
     { label: "CONTINUAR", col: "#5eead4", act: () => { state = "play"; } },
-    { label: "BODEGA (mis items: " + invCount() + ")", col: "#ffd84a", act: () => { openBodega("play"); } },
+    { label: "BODEGA (items + accesorios)", col: "#ffd84a", act: () => { openBodega("play"); } },
+    { label: "KPIS · MIS ESTADISTICAS", col: "#7fd6ff", act: () => { openKpis("menu"); } },
     { label: "DIMENSION 3D (ISO)", col: "#b480ff", act: () => { gotoIso(); } },
     { label: "OPCIONES", col: "#7fd6ff", act: () => { openOptions("menu"); } },
     { label: "VESTUARIO", col: "#f5cd46", act: () => { openWb("menu"); } },
@@ -1075,13 +1188,13 @@ function drawPlayers() {
 function hurt(d) {
   if (player.inv > 0 || pShield > 0) return;
   player.hp -= d; player.inv = 0.7; shake = Math.min(shake + 8, 14); flash("235,80,64", 0.22); vib(70); sHurt(); addParts(player.x, player.y, 14, "#eb5040", 200);
-  if (player.hp <= 0) { player.hp = 0; combo = 0; best = Math.max(best, score); lset("best", best); bank += coins; saveWardrobe(); clearRun(); ai.deaths = (ai.deaths || 0) + 1; state = "over"; }
+  if (player.hp <= 0) { player.hp = 0; combo = 0; best = Math.max(best, score); lset("best", best); bank += coins; saveWardrobe(); clearRun(); ai.deaths = (ai.deaths || 0) + 1; kpiBump("deaths"); saveKpi(); state = "over"; }
 }
 
 function update(dt) {
   t += dt;
   // ciclo dia/noche + clima
-  if (state === "play" && !paused) daySec += dt;
+  if (state === "play" && !paused) { daySec += dt; kpi.playSec = (kpi.playSec || 0) + dt; kpiDirty = true; }
   tod = (daySec % dayLen) / dayLen;
   nightAmt = 0.5 - 0.5 * Math.cos(tod * 2 * Math.PI); // 0 = mediodia, 1 = medianoche
   const tbase = weather.kind === "sol" ? 27 : weather.kind === "nubes" ? 20 : 16;
@@ -1098,6 +1211,7 @@ function update(dt) {
   for (let i = rings.length - 1; i >= 0; i--) { const rg = rings[i]; rg.r += (rg.max - rg.r) * dt * 6; rg.life -= dt * 1.6; if (rg.life <= 0) rings.splice(i, 1); }
 
   if (state === "bodega") { updateBodega(dt); return; }
+  if (state === "kpis") { return; }
   if (state === "interior") { if (!paused) updateInterior(dt); return; }
   if (state === "store") { if (!paused) updateStore(dt); return; }
   if (state === "build") { updateBuild(dt); return; }
@@ -1129,7 +1243,7 @@ function update(dt) {
     const CARSP = 380; moveAxis(driving, inp.mx * CARSP * dt, 0); moveAxis(driving, 0, inp.my * CARSP * dt);
     player.x = driving.x; player.y = driving.y; player.vx = player.vy = 0;
     if (Math.abs(inp.mx) + Math.abs(inp.my) > 0.06) { driving.vx = inp.mx; driving.vy = inp.my; }
-    for (let j = enemies.length - 1; j >= 0; j--) { const e = enemies[j]; if (len(e.x - player.x, e.y - player.y) < driving.r + e.r + 6) { if (e.boss) { e.hp -= 4; e.flash = 0.1; } else { e.hp = 0; } addParts(e.x, e.y, 16, "#ffa040", 260); shake = Math.min(shake + 6, 16); sHit(); if (e.hp <= 0 && !e.boss) { score += e.bounty; coins += 2; if (mission && mission.type === 1) mission.prog++; floatText(e.x, e.y, "ATROPELLADO +" + e.bounty, "#ffb060"); enemies.splice(j, 1); } } }
+    for (let j = enemies.length - 1; j >= 0; j--) { const e = enemies[j]; if (len(e.x - player.x, e.y - player.y) < driving.r + e.r + 6) { if (e.boss) { e.hp -= 4; e.flash = 0.1; } else { e.hp = 0; } addParts(e.x, e.y, 16, "#ffa040", 260); shake = Math.min(shake + 6, 16); sHit(); if (e.hp <= 0 && !e.boss) { score += e.bounty; coins += 2; if (mission && mission.type === 1) mission.prog++; floatText(e.x, e.y, "ATROPELLADO +" + e.bounty, "#ffb060"); kpiBump("kills"); enemies.splice(j, 1); } } }
   }
   const SP = 240 * (MOUNTS[mount] ? MOUNTS[mount].speed : 1); // el vehiculo (mount) sube la velocidad
   if (!driving) { moveAxis(player, inp.mx * SP * dt, 0); moveAxis(player, 0, inp.my * SP * dt); }
@@ -1228,7 +1342,7 @@ function update(dt) {
           if (e.boss) flash("206,130,255", 0.25); sKill();
           if (e.boss) { for (let k = 0; k < 5; k++) heals.push({ x: e.x + rand(-50, 50), y: e.y + rand(-50, 50) }); powerDrops.push({ x: e.x, y: e.y - 30, kind: randi(0, 3) }); }
           else { if (Math.random() < 0.3) heals.push({ x: e.x, y: e.y }); if (Math.random() < 0.18) powerDrops.push({ x: e.x, y: e.y, kind: randi(0, 3) }); }
-          enemies.splice(j, 1);
+          kpiBump("kills"); enemies.splice(j, 1);
         }
         dead = true; break;
       }
@@ -1453,7 +1567,7 @@ function mallPopCloseRect() { const p = mallPopRect(); return { x: p.x + p.w / 2
 function interiorTapAt(px, py) {
   if (interior.popup) {
     const st = interior.popup;
-    for (let i = 0; i < st.opts.length; i++) { const r = mallOptRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { const o = st.opts[i]; if (coins >= o.cost) { coins -= o.cost; o.act(); sPower(); interior.toastMsg = o.cost > 0 ? "LISTO!  (-" + o.cost + " mon)" : "LISTO!"; interior.toastCol = "#62e074"; interior.toastT = 1.4; } else { sWrong(); interior.toastMsg = "Te faltan monedas"; interior.toastCol = "#eb6050"; interior.toastT = 1.4; } return true; } }
+    for (let i = 0; i < st.opts.length; i++) { const r = mallOptRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { const o = st.opts[i]; if (coins >= o.cost) { coins -= o.cost; if (o.cost > 0) { kpiBump("coinsSpent", o.cost); kpiBump("bought"); } o.act(); sPower(); interior.toastMsg = o.cost > 0 ? "LISTO!  (-" + o.cost + " mon)" : "LISTO!"; interior.toastCol = "#62e074"; interior.toastT = 1.4; } else { sWrong(); interior.toastMsg = "Te faltan monedas"; interior.toastCol = "#eb6050"; interior.toastT = 1.4; } return true; } }
     const cc = mallPopCloseRect(); if (px >= cc.x && px <= cc.x + cc.w && py >= cc.y && py <= cc.y + cc.h) { interior.popup = null; }
     return true;
   }
@@ -1552,7 +1666,7 @@ const _rul = (n) => ({ name: n, icon: "dice", cost: 0, col: "#ffd84a", act: () =
 const _uno = (n) => ({ name: n, icon: "dice", cost: 0, col: "#ff6b8a", act: () => { closeStore(); openUno(); } });
 const _mem = (n) => ({ name: n, icon: "dice", cost: 0, col: "#7fd6ff", act: () => { closeStore(); openMemory(); } });
 const _cine = (n) => ({ name: n, icon: "film", cost: 2, col: "#c060e0", act: () => { closeStore(); openCine(); } });
-const _learn = (n, c) => ({ name: n, icon: "shirt", cost: c, col: "#62e074", act: () => { const r = pickItem(); words++; saveL(); try { speak(r.item[1], r.L.code); } catch (e) {} } });
+const _learn = (n, c) => ({ name: n, icon: "shirt", cost: c, col: "#62e074", act: () => { const r = pickItem(); words++; kpiBump("wordsLearned"); saveL(); try { speak(r.item[1], r.L.code); } catch (e) {} } });
 const STORE_CATALOG = {
   FARMACIA: [_hf("JARABE", 3), _h3("CURITA", 1), _sh("VITAMINA", 3), _rp("ENERGIZANTE", 3)],
   GYM: [_hf("PROTEINA", 3), _tr("PESAS", 4), _rp("CARDIO", 3), _sh("CREATINA", 3)],
@@ -1618,11 +1732,11 @@ function updateStore(dt) {
     if (len(it.x - stP.x, it.y - stP.y) < 30) {
       const d = it.def;
       if (d.kind) { // CONSUMIBLE -> a la BODEGA (no se usa al instante)
-        if (coins >= d.cost) { coins -= d.cost; invAdd(d.kind, 1); it.bought = true; sPower(); store.toastMsg = "A tu BODEGA! (" + d.name + ")"; store.toastCol = "#62e074"; store.toastT = 1.4; }
+        if (coins >= d.cost) { coins -= d.cost; kpiBump("coinsSpent", d.cost); kpiBump("bought"); invAdd(d.kind, 1); it.bought = true; sPower(); store.toastMsg = "A tu BODEGA! (" + d.name + ")"; store.toastCol = "#62e074"; store.toastT = 1.4; }
         else { store.toastMsg = "Te faltan monedas"; store.toastCol = "#eb6050"; store.toastT = 1.3; }
       } else { // accion directa (vestuario / minijuego / aprender)
         if (d.cost === 0) { d.act(); return; }
-        if (coins >= d.cost) { coins -= d.cost; d.act(); it.bought = true; sPower(); store.toastMsg = "LISTO!"; store.toastCol = "#62e074"; store.toastT = 1.3; }
+        if (coins >= d.cost) { coins -= d.cost; if (d.cost > 0) { kpiBump("coinsSpent", d.cost); kpiBump("bought"); } d.act(); it.bought = true; sPower(); store.toastMsg = "LISTO!"; store.toastCol = "#62e074"; store.toastT = 1.3; }
         else { store.toastMsg = "Te faltan monedas"; store.toastCol = "#eb6050"; store.toastT = 1.3; }
       }
       return;
@@ -1877,7 +1991,7 @@ function memoryTapAt(px, py) {
   for (let i = 0; i < memory.cards.length; i++) { const card = memory.cards[i]; if (card.matched || card.flipped) continue; const r = memCardRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
     card.flipped = true; sRight();
     if (memory.first < 0) { memory.first = i; if (card.say) speak(card.say, card.code); }
-    else { const a = memory.cards[memory.first]; if (a.pair === card.pair) { a.matched = card.matched = true; memory.matches++; const tgt = a.side === "t" ? a : card; if (tgt.say) speak(tgt.say, tgt.code); sPower(); memory.first = -1; if (memory.matches >= memory.total) { memory.done = true; coins += 10; words += memory.total; floatText(W / 2, H / 2, "GANASTE +10 mon!", "#60d050"); flash("96,208,80", 0.25); } } else { memory.lockT = 0.85; sWrong(); } }
+    else { const a = memory.cards[memory.first]; if (a.pair === card.pair) { a.matched = card.matched = true; memory.matches++; const tgt = a.side === "t" ? a : card; if (tgt.say) speak(tgt.say, tgt.code); sPower(); memory.first = -1; if (memory.matches >= memory.total) { memory.done = true; coins += 10; words += memory.total; kpiBump("wordsLearned", memory.total); floatText(W / 2, H / 2, "GANASTE +10 mon!", "#60d050"); flash("96,208,80", 0.25); } } else { memory.lockT = 0.85; sWrong(); } }
     return;
   } }
 }
@@ -2008,7 +2122,7 @@ let trivia = null;
 function triviaOptions(L, it) { const correct = dispOf(L, it), opts = [correct]; let g = 0; while (opts.length < 4 && g++ < 60) { const d = dispOf(L, trivia.pool[randi(0, trivia.pool.length)]); if (!opts.includes(d)) opts.push(d); } shuffle(opts); return { correct, opts }; }
 function triviaPick() { const L = trivia.L, ranked = trivia.pool.slice().sort((a, b) => lstat(itemKey(a)).streak - lstat(itemKey(b)).streak), it = ranked[randi(0, Math.max(1, Math.min(5, ranked.length)))], o = triviaOptions(L, it); trivia.it = it; trivia.opts = o.opts; trivia.answer = o.correct; trivia.time = trivia.maxTime; trivia.locked = false; trivia.lastPick = -1; }
 function openTrivia() { const L = LESSONS[lang]; trivia = { L, pool: eduPool(L), it: null, opts: [], answer: "", time: 9, maxTime: 9, qi: 0, total: 8, correct: 0, locked: false, done: false, fbT: 0, lastOk: false, lastPick: -1, requeue: null }; triviaPick(); state = "trivia"; speak(trivia.it[1], L.code); }
-function triviaFinish() { trivia.done = true; const bonus = 8 + trivia.correct * 2; coins += bonus; words += trivia.correct; floatText(W / 2, H / 2, "¡+" + bonus + " mon!", "#60d050"); flash("96,208,80", 0.25); sPower(); }
+function triviaFinish() { trivia.done = true; const bonus = 8 + trivia.correct * 2; coins += bonus; words += trivia.correct; kpiBump("wordsLearned", trivia.correct); floatText(W / 2, H / 2, "¡+" + bonus + " mon!", "#60d050"); flash("96,208,80", 0.25); sPower(); }
 function triviaNext() { if (trivia.qi >= trivia.total && !trivia.requeue) return triviaFinish(); if (trivia.requeue) { const it = trivia.requeue; trivia.requeue = null; const o = triviaOptions(trivia.L, it); trivia.it = it; trivia.opts = o.opts; trivia.answer = o.correct; trivia.time = trivia.maxTime; trivia.locked = false; trivia.lastPick = -1; } else triviaPick(); }
 function triviaAnswer(i) {
   if (trivia.locked || trivia.done) return; trivia.locked = true; trivia.lastPick = i;
@@ -2035,7 +2149,7 @@ let anag = null;
 function anagText(L, it) { return (L.code === "zh-CN" ? it[2] : it[1]).toUpperCase().replace(/[^A-ZÁÉÍÓÚÜÑ0-9]/g, ""); }
 function anagSetup() { const L = anag.L, it = anag.pool[randi(0, anag.pool.length)], w = anagText(L, it), order = w.split("").map((_, i) => i); shuffle(order); anag.it = it; anag.word = w; anag.order = order; anag.built = []; anag.locked = false; anag.fbT = 0; speak(it[1], L.code); }
 function openAnagram() { const L = LESSONS[lang]; let pool = eduPool(L).filter(it => { const len = anagText(L, it).length; return len >= 3 && len <= 9; }); if (!pool.length) pool = eduPool(L); anag = { L, pool, it: null, word: "", order: [], built: [], qi: 0, total: 6, correct: 0, done: false, locked: false, fbT: 0 }; anagSetup(); state = "anagram"; }
-function anagNext() { if (anag.qi >= anag.total) { anag.done = true; const bonus = 6 + anag.correct * 2; coins += bonus; words += anag.correct; floatText(W / 2, H / 2, "¡+" + bonus + " mon!", "#60d050"); flash("96,208,80", 0.25); sPower(); return; } anagSetup(); }
+function anagNext() { if (anag.qi >= anag.total) { anag.done = true; const bonus = 6 + anag.correct * 2; coins += bonus; words += anag.correct; kpiBump("wordsLearned", anag.correct); floatText(W / 2, H / 2, "¡+" + bonus + " mon!", "#60d050"); flash("96,208,80", 0.25); sPower(); return; } anagSetup(); }
 function anagCheck() {
   const made = anag.built.map(i => anag.word[anag.order[i]]).join(""), L = anag.L, it = anag.it, s = lstat(itemKey(it)); s.seen++; anag.qi++; anag.locked = true;
   if (made === anag.word) { s.ok++; s.streak++; saveL(); anag.correct++; sPower(); speak(it[1], L.code); neuralTip("¡Bien escrito! '" + it[1].toLowerCase() + "' = " + it[0].toLowerCase() + "."); anag.fbT = 0.8; }
@@ -2944,6 +3058,7 @@ function render() {
   if (state === "options") drawOptions();
   if (state === "menu") drawMenu();
   if (state === "bodega") drawBodega();
+  if (state === "kpis") drawKpis();
   if (state === "ia") drawIA();
   if (state === "interior") drawInterior();
   if (state === "store") drawStore();

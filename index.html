@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v36 - MALL VIVO: vidrieras/locales, gente caminando, plantas, bancos, luces + estaciones CINE y COMIDA + minijuego UNO DE COLORES vs NPCs";
+const VERSION = "v37 - FIX CINE: ahora reproduce una PELICULA (cutscene) y da el premio + feedback visible al comprar en el mall (LISTO!/te faltan monedas)";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -495,6 +495,7 @@ addEventListener("keydown", e => {
   if (state === "roulette") { if (k === "escape") state = interior ? "interior" : "play"; else if (k === " ") spinRoulette(); return; }
   if (state === "memory") { if (k === "escape") state = interior ? "interior" : "play"; return; }
   if (state === "uno") { if (k === "escape") state = interior ? "interior" : "play"; return; }
+  if (state === "cine") { if (k === "escape") state = interior ? "interior" : "play"; return; }
   if (state === "players") { if (k === "escape" && profile) state = "title"; return; }
   if (state === "wardrobe") { if (k === "escape") state = uiBack; return; }
   if (state === "challenge") { if (k === "escape") state = "wardrobe"; else if (k >= "1" && k <= "3") answerChallenge(+k - 1); return; }
@@ -516,6 +517,7 @@ canvas.addEventListener("mousedown", e => {
   if (state === "roulette") { rouletteTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "memory") { memoryTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "uno") { unoTapAt(e.clientX, e.clientY); mouse.down = false; return; }
+  if (state === "cine") { cineTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "players") { playersTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "wardrobe") { wbTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "shop") { shopTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -539,6 +541,7 @@ function onTouchStart(e) {
   if (state === "roulette") { for (const tch of e.changedTouches) rouletteTapAt(tch.clientX, tch.clientY); return; }
   if (state === "memory") { for (const tch of e.changedTouches) memoryTapAt(tch.clientX, tch.clientY); return; }
   if (state === "uno") { for (const tch of e.changedTouches) unoTapAt(tch.clientX, tch.clientY); return; }
+  if (state === "cine") { for (const tch of e.changedTouches) cineTapAt(tch.clientX, tch.clientY); return; }
   if (state === "players") { for (const tch of e.changedTouches) playersTapAt(tch.clientX, tch.clientY); return; }
   if (state === "wardrobe") { const tch = e.changedTouches[0]; if (tch) wbDrag = { id: tch.identifier, y0: tch.clientY, x0: tch.clientX, s0: wbScroll, moved: 0 }; return; }
   if (state === "challenge") { for (const tch of e.changedTouches) { const o = challengeOptAt(tch.clientX, tch.clientY); if (o >= 0) answerChallenge(o); } return; }
@@ -1023,6 +1026,7 @@ function update(dt) {
   if (state === "roulette") { updateRoulette(dt); return; }
   if (state === "memory") { updateMemory(dt); return; }
   if (state === "uno") { updateUno(dt); return; }
+  if (state === "cine") { updateCine(dt); return; }
   if (state === "challenge") { if (challenge && challenge.sel >= 0) { challenge.fb -= dt; if (challenge.fb <= 0) { if (challenge.sel === challenge.correct) state = "wardrobe"; else challenge.sel = -1; } } return; }
   if (state === "quiz") {
     if (quiz && quiz.phase === "pronounce") { if (quiz.micState === "ok") { quiz.okT -= dt; if (quiz.okT <= 0) nextLevel(); } return; }
@@ -1195,7 +1199,7 @@ const MALL_STATIONS = [
     { label: "Postre (disparo rapido 10s)", cost: 3, act: () => { pRapid = 10; } },
   ] },
   { kind: "cine", name: "CINE", icon: "film", col: "#c060e0", opts: [
-    { label: "Ver funcion (relax: +vida +escudo)", cost: 2, act: () => { player.hp = Math.min(MAXHP, player.hp + 45); pShield = 9; } },
+    { label: "Ver funcion (+vida +escudo)", cost: 2, act: () => { interior.popup = null; openCine(); } },
   ] },
   { kind: "arcade", name: "ARCADE", icon: "dice", col: "#ff6b8a", opts: [
     { label: "Ruleta de premios (2 mon)", cost: 0, act: () => { interior.popup = null; openRoulette(); } },
@@ -1218,6 +1222,7 @@ function openInterior(b) {
 }
 function exitInterior() { interior = null; stickL.id = null; state = "play"; sRight(); }
 function updateInterior(dt) {
+  if (interior.toastT > 0) interior.toastT -= dt;
   if (interior.popup) return; // congelado mientras hay menu de la estacion
   const inp = readInput(), sp = 215, R = intRoom();
   intP.x = clamp(intP.x + inp.mx * sp * dt, R.x + 22, R.x + R.w - 22);
@@ -1262,7 +1267,7 @@ function mallPopCloseRect() { const p = mallPopRect(); return { x: p.x + p.w / 2
 function interiorTapAt(px, py) {
   if (interior.popup) {
     const st = interior.popup;
-    for (let i = 0; i < st.opts.length; i++) { const r = mallOptRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { const o = st.opts[i]; if (coins >= o.cost) { coins -= o.cost; o.act(); sPower(); if (interior && interior.popup) floatText(W / 2, mallPopRect().y - 6, "OK!", "#ffd84a"); } else sWrong(); return true; } }
+    for (let i = 0; i < st.opts.length; i++) { const r = mallOptRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { const o = st.opts[i]; if (coins >= o.cost) { coins -= o.cost; o.act(); sPower(); interior.toastMsg = o.cost > 0 ? "LISTO!  (-" + o.cost + " mon)" : "LISTO!"; interior.toastCol = "#62e074"; interior.toastT = 1.4; } else { sWrong(); interior.toastMsg = "Te faltan monedas"; interior.toastCol = "#eb6050"; interior.toastT = 1.4; } return true; } }
     const cc = mallPopCloseRect(); if (px >= cc.x && px <= cc.x + cc.w && py >= cc.y && py <= cc.y + cc.h) { interior.popup = null; }
     return true;
   }
@@ -1319,6 +1324,7 @@ function drawInterior() {
     text(st.name, W / 2, p.y + 36, 20, st.col, "center");
     for (let i = 0; i < st.opts.length; i++) { const r = mallOptRect(i), o = st.opts[i], ok = coins >= o.cost; ctx.fillStyle = ok ? "#23273a" : "#221d26"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.strokeStyle = ok ? "#3a3f55" : "#3a3340"; ctx.lineWidth = 1.5; ctx.stroke(); text(o.label, r.x + 16, r.y + r.h / 2 + 5, fitFont(o.label, r.w - 80, 15), ok ? "#fff" : "#777", "left"); if (o.cost > 0) { const px2 = r.x + r.w - 58, py2 = r.y + r.h / 2 - 12; ctx.fillStyle = "#3a3320"; ctx.beginPath(); ctx.roundRect(px2, py2, 50, 24, 7); ctx.fill(); drawCoin(px2 + 13, py2 + 12, 6); text(o.cost, px2 + 40, py2 + 17, 13, "#ffd84a", "right"); } else text("►", r.x + r.w - 18, r.y + r.h / 2 + 6, 16, st.col, "center"); }
     const cc = mallPopCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(cc.x, cc.y, cc.w, cc.h, 9); ctx.fill(); text("CERRAR", cc.x + cc.w / 2, cc.y + cc.h / 2 + 5, 14, "#ff9bb0", "center");
+    if (interior.toastT > 0) { ctx.globalAlpha = Math.min(1, interior.toastT); text(interior.toastMsg, W / 2, p.y - 10, 16, interior.toastCol, "center"); ctx.globalAlpha = 1; }
   }
 }
 
@@ -1471,6 +1477,30 @@ function drawUno() {
   text(uno.msg, W / 2, H / 2 + 56, 17, uno.over ? "#60d050" : uno.turn === 0 ? "#62e074" : "#fff", "center");
   text("juga una carta del mismo color o numero  ·  ★ comodin  ·  +2 roba", W / 2, H - 8 - safeB, 11, "#8a8aa0", "center");
   const cc = unoCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(cc.x, cc.y, cc.w, cc.h, 9); ctx.fill(); text("SALIR", cc.x + cc.w / 2, cc.y + cc.h / 2 + 5, 13, "#ff9bb0", "center");
+}
+
+// ---- CINE: funcion (cutscene animada) + premio ----
+let cine = null;
+function openCine() { cine = { t: 0, dur: 7, done: false }; player.hp = Math.min(MAXHP, player.hp + 45); pShield = 9; coins += 1; state = "cine"; }
+function updateCine(dt) { cine.t += dt; if (cine.t >= cine.dur) cine.done = true; }
+function cineCloseRect() { return { x: W / 2 - 80, y: H - 54 - safeB, w: 160, h: 40 }; }
+function cineTapAt(px, py) { const c = cineCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) state = interior ? "interior" : "play"; }
+function drawCine() {
+  ctx.fillStyle = "#05050a"; ctx.fillRect(0, 0, W, H);
+  const sx = W * 0.1, sy = 56 + safeT, sw = W * 0.8, sh = Math.min(H * 0.42, sw * 0.5), tt = cine.t, scene = Math.min(3, Math.floor(tt / (cine.dur / 4)));
+  ctx.fillStyle = "#000"; ctx.fillRect(sx - 10, sy - 10, sw + 20, sh + 20); ctx.strokeStyle = "#c060e0"; ctx.lineWidth = 3; ctx.strokeRect(sx - 10, sy - 10, sw + 20, sh + 20);
+  ctx.save(); ctx.beginPath(); ctx.rect(sx, sy, sw, sh); ctx.clip();
+  const skies = ["#ffb066", "#5aa0f0", "#2a1840", "#0c0c20"]; ctx.fillStyle = skies[scene]; ctx.fillRect(sx, sy, sw, sh);
+  const gy = sy + sh * 0.72; ctx.fillStyle = "#2a5a2a"; ctx.fillRect(sx, gy, sw, sh);
+  ctx.fillStyle = scene < 2 ? "#fff3a0" : "#dfe6ff"; ctx.beginPath(); ctx.arc(sx + sw * (0.2 + (tt * 0.05) % 0.6), sy + sh * 0.24, 18, 0, 7); ctx.fill();
+  const pxv = sx + sw * (0.12 + (tt * 0.12) % 0.72), oldpm = playerMoving; playerMoving = true; drawTaco(pxv, gy - 6, 44, 7); playerMoving = oldpm;
+  if (scene === 1) { const ex = pxv - 58 - Math.sin(tt * 4) * 8; ctx.fillStyle = "#e24a3c"; ctx.beginPath(); ctx.roundRect(ex - 14, gy - 30, 28, 28, 8); ctx.fill(); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(ex - 5, gy - 20, 4, 0, 7); ctx.arc(ex + 5, gy - 20, 4, 0, 7); ctx.fill(); }
+  if (scene === 2) { for (let i = 0; i < 14; i++) { const a = i / 14 * 6.28, rr = 20 + Math.sin(tt * 10 + i) * 14; ctx.fillStyle = ["#ff9030", "#ffd84a", "#ff5c5c"][i % 3]; ctx.beginPath(); ctx.arc(pxv + Math.cos(a) * rr, gy - 14 + Math.sin(a) * rr, 5, 0, 7); ctx.fill(); } }
+  if (scene === 3) { ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(sx, sy, sw, sh); text("FIN", sx + sw / 2, sy + sh / 2 + 12, 42, "#ffd84a", "center"); }
+  ctx.restore();
+  ctx.fillStyle = "#15151d"; for (let i = 0; i < Math.round(sw / 50); i++) { ctx.beginPath(); ctx.roundRect(sx + 12 + i * 50, sy + sh + 24, 40, 28, 7); ctx.fill(); ctx.fillStyle = "#0c0c12"; ctx.beginPath(); ctx.arc(sx + 32 + i * 50, sy + sh + 26, 11, 0, 7); ctx.fill(); ctx.fillStyle = "#15151d"; }
+  text("CINE  ·  " + (cine.done ? "FIN! ya cobraste +vida +escudo +1 mon" : "pelicula... " + Math.ceil(cine.dur - tt) + "s"), W / 2, sy + sh + 82, 14, "#c8a0e0", "center");
+  const c = cineCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 10); ctx.fill(); ctx.strokeStyle = "#ff9bb0"; ctx.lineWidth = 1.5; ctx.stroke(); text(cine.done ? "VOLVER" : "SALIR", c.x + c.w / 2, c.y + c.h / 2 + 6, 16, "#ff9bb0", "center");
 }
 
 // ---------- Render ----------
@@ -2161,6 +2191,7 @@ function render() {
   if (state === "roulette") drawRoulette();
   if (state === "memory") drawMemory();
   if (state === "uno") drawUno();
+  if (state === "cine") drawCine();
   if (state === "challenge") drawChallenge();
   if (state === "players") drawPlayers();
   if (paused && state === "play") { ctx.fillStyle = "rgba(6,6,12,0.6)"; ctx.fillRect(0, 0, W, H); text("PAUSA", W / 2, H / 2, 48, "#f5cd46", "center"); text("toca II para seguir", W / 2, H / 2 + 40, 16, "#9a9ab0", "center"); drawButtons(); }

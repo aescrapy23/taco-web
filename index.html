@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v64 - BONO del tutor cronometrado: practicar en la ACADEMIA ahora SUBE DE MUNDO y da PREMIO (monedas al banco), pero no siempre: el bono se CARGA con el tiempo de juego (~90s), lo reclamas al completar un juego, y despues vuelve a cargar (ciclo). El hub muestra si el bono esta LISTO o el tiempo que falta. Sobre v63: fix salir de la academia + palabras vistas";
+const VERSION = "v65 - el BONO tambien da ITEM a la bodega + mejoras ELITE: al reclamar el bono ahora ademas de monedas y subir de mundo te da un ITEM sorpresa a la BODEGA; el cartel ¡NUEVO MUNDO! es elite (glow pulsante + destellos giratorios + lista premio/item) y el chip del bono pulsa con brillo cuando esta LISTO; el reconocimiento brilla. Sobre v64: bono cronometrado (sube de mundo + premio por ciclos de tiempo)";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -237,8 +237,9 @@ function claimBono() {
   kpi.bono = 0; kpiDirty = true;
   const nw = maxWorld + 1; maxWorld = nw; lset("maxworld", maxWorld);
   const prize = 12 + nw * 4; bank += prize; lset("bank", bank);
-  worldToast = { world: nw, items: WORLD_UNLOCKS[nw] || ["nuevas sorpresas"], prize: prize, t: 6 };
-  try { sPower(); speak("Premio del tutor! Subiste de mundo", "es-ES"); } catch (e) {}
+  const pick = INV_KINDS[Math.floor(Math.random() * INV_KINDS.length)]; invAdd(pick.k, 1); // item sorpresa a la BODEGA
+  worldToast = { world: nw, items: WORLD_UNLOCKS[nw] || ["nuevas sorpresas"], prize: prize, item: pick.name, t: 6.5 };
+  try { sPower(); flash("255,216,74", 0.3); speak("Premio del tutor! Subiste de mundo", "es-ES"); } catch (e) {}
 }
 // reconocimiento por esfuerzo/progreso (neurolinguistico: elogia el intento, sin nombrar materias)
 function recognize(correct, total) {
@@ -1284,12 +1285,22 @@ function drawAchToast() {
 }
 function drawWorldToast() {
   if (!worldToast) return;
-  ctx.globalAlpha = Math.min(1, worldToast.t / 0.5);
-  const n = worldToast.items.length, w = Math.min(360, W - 32), h = 64 + n * 22, x = (W - w) / 2, y = H * 0.22 + safeT;
-  ctx.fillStyle = "rgba(12,16,26,0.96)"; ctx.beginPath(); ctx.roundRect(x, y, w, h, 14); ctx.fill(); ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 3; ctx.stroke();
-  text("¡NUEVO MUNDO " + worldToast.world + "!", W / 2, y + 28, 21, "#ffd84a", "center");
-  text(worldToast.prize ? "Premio del tutor: +" + worldToast.prize + " al banco" : "Desbloqueaste:", W / 2, y + 48, 12, worldToast.prize ? "#ffd84a" : "#9aa6c0", "center");
-  for (let i = 0; i < n; i++) text("· " + worldToast.items[i], W / 2, y + 68 + i * 22, 13, "#dfe7fa", "center");
+  const al = Math.min(1, worldToast.t / 0.5);
+  const n = worldToast.items.length, extra = (worldToast.prize ? 1 : 0) + (worldToast.item ? 1 : 0);
+  const w = Math.min(372, W - 28), h = 58 + (1 + extra) * 20 + n * 22, x = (W - w) / 2, y = H * 0.18 + safeT;
+  ctx.globalAlpha = al;
+  ctx.save(); ctx.shadowColor = "#ffd84a"; ctx.shadowBlur = 20 + 8 * Math.sin(t * 4);
+  ctx.fillStyle = "rgba(12,16,26,0.97)"; ctx.beginPath(); ctx.roundRect(x, y, w, h, 14); ctx.fill(); ctx.restore();
+  ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(x, y, w, h, 14); ctx.stroke();
+  // destellos giratorios alrededor del titulo (celebracion elite)
+  for (let i = 0; i < 7; i++) { const a = t * 2 + i * 0.9, rx = 96 + 10 * Math.sin(t * 3 + i), sx = W / 2 + Math.cos(a) * rx, sy2 = y + 26 + Math.sin(a) * 15; ctx.globalAlpha = al * (0.35 + 0.45 * Math.sin(t * 5 + i)); ctx.fillStyle = i % 2 ? "#fff3b0" : "#ffd84a"; ctx.beginPath(); ctx.arc(sx, sy2, 2.2, 0, 7); ctx.fill(); }
+  ctx.globalAlpha = al;
+  let ly = y + 28;
+  text("¡NUEVO MUNDO " + worldToast.world + "!", W / 2, ly, 21, "#ffd84a", "center"); ly += 22;
+  if (worldToast.prize) { text("Premio: +" + worldToast.prize + " al banco", W / 2, ly, 12, "#ffd84a", "center"); ly += 20; }
+  if (worldToast.item) { text("A tu bodega: " + worldToast.item, W / 2, ly, 12, "#9be7c0", "center"); ly += 20; }
+  text("Desbloqueaste:", W / 2, ly, 12, "#9aa6c0", "center"); ly += 20;
+  for (let i = 0; i < n; i++) { text("· " + worldToast.items[i], W / 2, ly, 13, "#dfe7fa", "center"); ly += 22; }
   ctx.globalAlpha = 1;
 }
 function drawRecogToast() {
@@ -1297,7 +1308,8 @@ function drawRecogToast() {
   ctx.globalAlpha = Math.min(1, recogToast.t / 0.4);
   const w = Math.min(340, W - 40), x = (W - w) / 2, y = H * 0.4;
   ctx.fillStyle = "rgba(12,22,16,0.94)"; ctx.beginPath(); ctx.roundRect(x, y, w, 44, 12); ctx.fill(); ctx.strokeStyle = "#62e074"; ctx.lineWidth = 2; ctx.stroke();
-  ctx.fillStyle = "#62e074"; ctx.beginPath(); ctx.arc(x + 24, y + 22, 12, 0, 7); ctx.fill(); text("*", x + 24, y + 28, 16, "#0c160e", "center");
+  ctx.save(); ctx.shadowColor = "#62e074"; ctx.shadowBlur = 6 + 5 * Math.sin(t * 6); ctx.fillStyle = "#62e074"; ctx.beginPath(); ctx.arc(x + 24, y + 22, 12, 0, 7); ctx.fill(); ctx.restore();
+  text("*", x + 24, y + 28, 16, "#0c160e", "center");
   text("RECONOCIMIENTO", x + 42, y + 18, 9, "#9be7c0", "left"); fitTextLeft(recogToast.msg, x + 42, y + 34, w - 54, 13, "#eafff2");
   ctx.globalAlpha = 1;
 }
@@ -1438,8 +1450,10 @@ function drawAcademia() {
     text("Palabras: " + wordsPracticed() + " vistas · " + ms.m + " dom", p.x + p.w - 18, sy, 11, "#62e074", "right"); }
   // BONO del tutor (premio cronometrado): listo -> completá un juego para subir de mundo
   { const ready = bonoReady(), by = p.y + 128;
-    ctx.fillStyle = ready ? "#2a2616" : "#171b26"; ctx.beginPath(); ctx.roundRect(p.x + 18, by, p.w - 36, 22, 7); ctx.fill(); ctx.strokeStyle = ready ? "#ffd84a" : "#33384a"; ctx.lineWidth = ready ? 1.5 : 1; ctx.stroke();
-    text(ready ? "BONO LISTO * completa un juego: +premio y subis de mundo" : "Bono del tutor en " + fmtTime(Math.max(0, BONO_CD - (kpi.bono || 0))), W / 2, by + 15, 11, ready ? "#ffd84a" : "#9aa6c0", "center"); }
+    ctx.save(); if (ready) { ctx.shadowColor = "#ffd84a"; ctx.shadowBlur = 8 + 6 * Math.sin(t * 5); }
+    ctx.fillStyle = ready ? "#2a2616" : "#171b26"; ctx.beginPath(); ctx.roundRect(p.x + 18, by, p.w - 36, 22, 7); ctx.fill(); ctx.restore();
+    ctx.strokeStyle = ready ? "#ffd84a" : "#33384a"; ctx.lineWidth = ready ? 1.5 : 1; ctx.beginPath(); ctx.roundRect(p.x + 18, by, p.w - 36, 22, 7); ctx.stroke();
+    text(ready ? "BONO LISTO * completa un juego: +premio, item y subis de mundo" : "Bono del tutor en " + fmtTime(Math.max(0, BONO_CD - (kpi.bono || 0))), W / 2, by + 15, 11, ready ? "#ffd84a" : "#9aa6c0", "center"); }
   // materias (reusan actividades existentes); la sugerida queda resaltada
   for (let i = 0; i < ACADEMIA_SUBJECTS.length; i++) {
     const r = acaRowRect(i), s = ACADEMIA_SUBJECTS[i], locked = maxWorld < (s.lv || 1), rec = !locked && s.key === academia.rec;

@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v66 - CONFETI de celebracion + ajuste del bono: al reclamar el bono (o subir de mundo en la ciudad) cae confeti multicolor; bono mas agil (cada 75s) y premio mayor (15 + mundo x5) ademas del item a la bodega. Sobre v65: bono da item + cartel elite con glow/destellos";
+const VERSION = "v67 - 7 PREMIOS ORO legendarios (casi imposibles: domina TODO, 1000 enemigos, oleada 50 3D, 10h, 2000 palabras, 10000 pts, 70 accesorios) con estilo dorado; MUNDO 5 y 6 (premios e items DOBLES, tope en 6 -> MEGA BONO); pulidos: FANFARRIA al subir de mundo, mini-tutorial 1ra vez en ACADEMIA, y el 3D ahora tira CONFETI + cartel al lograr medalla o batir record de oleada. Sobre v66: confeti + bono ajustado";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -93,6 +93,7 @@ const sPower = () => { [659, 880, 1175].forEach((f, i) => setTimeout(() => beep(
 const sLevel = () => { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.12, "triangle", 0.05), i * 70)); };
 const sRight = () => { [659, 988, 1319].forEach((f, i) => setTimeout(() => beep(f, 0.1, "triangle", 0.06), i * 60)); };
 const sWrong = () => beep(180, 0.3, "square", 0.07);
+const sFanfare = () => { [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => setTimeout(() => beep(f, 0.16, "triangle", 0.07), i * 95)); };
 
 // ---------- Datos ----------
 // Dimensiones tipo Roblox: cada una con su nombre y paleta VIVA
@@ -229,18 +230,25 @@ const WORLD_UNLOCKS = {
   2: ["mas retos del tutor", "KPIs y Logros", "Mirador", "Juegos del mall"],
   3: ["Dimension 3D", "nuevos desafios del tutor", "Casino del mall"],
   4: ["Cine", "Vision infrarroja del mirador"],
+  5: ["el tutor da PREMIOS DOBLES", "doble item en cada bono"],
+  6: ["MAESTRIA TOTAL: todo desbloqueado", "bono legendario"],
 };
+const MAX_WORLD = 6; // tope de mundos; despues el bono pasa a MEGA BONO (premio puro)
 // BONO del tutor: se CARGA con el tiempo de juego; se reclama completando un juego en la ACADEMIA
 // (da premio + sube de mundo) y luego vuelve a cargar. Asi el premio es "solo un tiempo, no siempre".
 const BONO_CD = 75; // segundos de juego para que el bono este listo otra vez
 function bonoReady() { return (kpi.bono || 0) >= BONO_CD; }
 function claimBono() {
   kpi.bono = 0; kpiDirty = true;
-  const nw = maxWorld + 1; maxWorld = nw; lset("maxworld", maxWorld);
-  const prize = 15 + nw * 5; bank += prize; lset("bank", bank);
-  const pick = INV_KINDS[Math.floor(Math.random() * INV_KINDS.length)]; invAdd(pick.k, 1); // item sorpresa a la BODEGA
-  worldToast = { world: nw, items: WORLD_UNLOCKS[nw] || ["nuevas sorpresas"], prize: prize, item: pick.name, t: 6.5 };
-  try { sPower(); flash("255,216,74", 0.3); fireConfetti(80); speak("Premio del tutor! Subiste de mundo", "es-ES"); } catch (e) {}
+  const advancing = maxWorld < MAX_WORLD, nw = advancing ? maxWorld + 1 : maxWorld;
+  if (advancing) { maxWorld = nw; lset("maxworld", maxWorld); }
+  const mult = maxWorld >= 5 ? 2 : 1, nItems = maxWorld >= 5 ? 2 : 1; // desde mundo 5: premios e items dobles
+  const prize = (15 + nw * 5) * mult; bank += prize; lset("bank", bank);
+  const names = []; for (let i = 0; i < nItems; i++) { const pick = INV_KINDS[Math.floor(Math.random() * INV_KINDS.length)]; invAdd(pick.k, 1); names.push(pick.name); }
+  worldToast = advancing
+    ? { world: nw, items: WORLD_UNLOCKS[nw] || ["nuevas sorpresas"], prize: prize, item: names.join(" + "), t: 6.5 }
+    : { world: nw, items: ["ya tenes todo desbloqueado!"], prize: prize, item: names.join(" + "), mega: true, t: 6 };
+  try { sFanfare(); flash("255,216,74", 0.3); fireConfetti(90); speak(advancing ? "Premio del tutor! Subiste de mundo" : "Mega bono del tutor", "es-ES"); } catch (e) {}
 }
 // reconocimiento por esfuerzo/progreso (neurolinguistico: elogia el intento, sin nombrar materias)
 function recognize(correct, total) {
@@ -317,7 +325,7 @@ function kpiReset() { kpi = {}; for (const k of KPI_KEYS) kpi[k] = 0; }
 function loadKpi() { try { kpi = JSON.parse(lget("kpi") || "{}"); } catch (e) { kpi = {}; } for (const k of KPI_KEYS) if (typeof kpi[k] !== "number") kpi[k] = 0; }
 let kpiDirty = false;
 function kpiBump(k, n) { kpi[k] = (kpi[k] || 0) + (n == null ? 1 : n); kpiDirty = true; }
-function saveKpi() { if (curPlayer) { try { kpi.mastered = aiMastery().m; } catch (e) {} lset("kpi", JSON.stringify(kpi)); kpiDirty = false; } }
+function saveKpi() { if (curPlayer) { try { const _m = aiMastery(); kpi.mastered = _m.m; kpi.masteredTotal = _m.tt; } catch (e) {} lset("kpi", JSON.stringify(kpi)); kpiDirty = false; } }
 function fmtTime(s) { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60; return h > 0 ? h + "h " + m + "m" : m + "m " + ss + "s"; }
 // ===== Registro UNIFICADO de cosmeticos: lo usan la BODEGA (pestaña ACCESORIOS) y la API GAME =====
 const COSMO = {
@@ -364,6 +372,14 @@ const ACHS = [
   { id: "rich", name: "MILLONARIO", need: s => s.best >= 1000, hint: "Llega a 1000 puntos", c: "#ffd84a", reward: 20 },
   { id: "wave5", name: "OLEADA 5 (3D)", need: s => s.isoWave >= 5, hint: "Oleada 5 en DIMENSION 3D", c: "#b480ff", reward: 15 },
   { id: "wave10", name: "OLEADA 10 (3D)", need: s => s.isoWave >= 10, hint: "Oleada 10 en DIMENSION 3D", c: "#b480ff", reward: 30 },
+  // ===== 7 PREMIOS ORO: legendarios, casi imposibles (gold) =====
+  { id: "g_sage", name: "ORO · SABIO TOTAL", need: s => (s.masteredTotal || 0) > 0 && s.mastered >= s.masteredTotal, hint: "Domina TODAS las palabras", c: "#ffd84a", reward: 100, gold: true },
+  { id: "g_scholar", name: "ORO · ERUDITO", need: s => s.words >= 2000, hint: "Aprende 2000 palabras", c: "#ffd84a", reward: 100, gold: true },
+  { id: "g_unstoppable", name: "ORO · IMPARABLE", need: s => s.kills >= 1000, hint: "Vence 1000 enemigos", c: "#ffd84a", reward: 100, gold: true },
+  { id: "g_tycoon", name: "ORO · MAGNATE", need: s => s.best >= 10000, hint: "Llega a 10000 puntos", c: "#ffd84a", reward: 100, gold: true },
+  { id: "g_collector", name: "ORO · COLECCIONISTA", need: s => s.cosmetics >= 70, hint: "Ten 70 accesorios", c: "#ffd84a", reward: 100, gold: true },
+  { id: "g_legend3d", name: "ORO · LEYENDA 3D", need: s => s.isoWave >= 50, hint: "Oleada 50 en DIMENSION 3D", c: "#ffd84a", reward: 100, gold: true },
+  { id: "g_immortal", name: "ORO · INMORTAL", need: s => s.playSec >= 36000, hint: "Juega 10 horas", c: "#ffd84a", reward: 100, gold: true },
 ];
 // ===== RANGOS / MAESTRIA: combinan varios KPIs; el motor educativo (palabras aprendidas+dominadas) pesa mas =====
 const RANKS = [
@@ -380,7 +396,7 @@ function loadAch() { try { ach = JSON.parse(lget("ach") || "{}"); } catch (e) { 
 function saveAch() { lset("ach", JSON.stringify(ach)); }
 function statsSnapshot() {
   const ms = aiMastery(); let isoWave = 0; try { isoWave = parseInt(lget("isowave")) || 0; } catch (e) {}
-  return { games: kpi.games || 0, kills: kpi.kills || 0, words: kpi.wordsLearned || 0, bought: kpi.bought || 0, used: kpi.used || 0, playSec: kpi.playSec || 0, deaths: kpi.deaths || 0, best: best, maxWorld: maxWorld, cosmetics: cosmOwnedCount(), builds: (myBuilds ? myBuilds.length : 0), mastered: ms.m, isoWave: isoWave };
+  return { games: kpi.games || 0, kills: kpi.kills || 0, words: kpi.wordsLearned || 0, bought: kpi.bought || 0, used: kpi.used || 0, playSec: kpi.playSec || 0, deaths: kpi.deaths || 0, best: best, maxWorld: maxWorld, cosmetics: cosmOwnedCount(), builds: (myBuilds ? myBuilds.length : 0), mastered: ms.m, masteredTotal: ms.tt, isoWave: isoWave };
 }
 function achCount() { let n = 0; for (const a of ACHS) if (ach[a.id]) n++; return n; }
 function achCheck() {
@@ -568,7 +584,7 @@ function genLevel() {
   buildWorld();
   buildMission();
   weather.kind = ["sol", "sol", "sol", "nubes", "nubes", "lluvia"][randi(0, 6)]; rain.length = 0; // clima del nivel
-  if (level > maxWorld) { maxWorld = level; lset("maxworld", maxWorld); const items = WORLD_UNLOCKS[level]; if (items) { worldToast = { world: level, items: items, t: 5.5 }; try { sPower(); fireConfetti(60); speak("Nuevo mundo desbloqueado", "es-ES"); } catch (e) {} } } else { maxWorld = Math.max(maxWorld, level); lset("maxworld", maxWorld); }
+  if (level > maxWorld) { maxWorld = level; lset("maxworld", maxWorld); const items = WORLD_UNLOCKS[level]; if (items) { worldToast = { world: level, items: items, t: 5.5 }; try { sFanfare(); fireConfetti(60); speak("Nuevo mundo desbloqueado", "es-ES"); } catch (e) {} } } else { maxWorld = Math.max(maxWorld, level); lset("maxworld", maxWorld); }
   // recompensa: 1 skin gratis cada 2 mundos
   const freeSkins = Math.min(Math.floor(maxWorld / 2), OUTFITS.length - 1); let newSkin = false;
   for (let i = 1; i <= freeSkins; i++) if (!unlocked[i]) { unlocked[i] = true; newSkin = true; }
@@ -1266,11 +1282,13 @@ function drawLogros() {
   text(rk.nextName ? rk.name + " -> " + rk.nextName + "   " + rk.score + "/" + rk.nextAt + " pts" : "RANGO MAXIMO  (" + rk.score + " pts)", p.x + 18, p.y + 76, 10, "#9aa0b4", "left");
   text("puntaje por partida (normal + 3D)", p.x + 18, p.y + 96, 10, "#9aa0b4", "left");
   drawSpark(hist.map(h => h.s || 0), p.x + p.w - 160, p.y + 84, 142, 24, "#7fd6ff");
-  for (let i = 0; i < ACHS.length; i++) { const r = logCardRect(i), a = ACHS[i], on = !!ach[a.id];
-    ctx.fillStyle = on ? "#222717" : "#191c24"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 8); ctx.fill(); ctx.strokeStyle = on ? a.c : "#2a2f3c"; ctx.lineWidth = 1.2; ctx.stroke();
-    ctx.globalAlpha = on ? 1 : 0.5; ctx.fillStyle = on ? a.c : "#3a3f4c"; ctx.beginPath(); ctx.arc(r.x + 16, r.y + r.h / 2, 8, 0, 7); ctx.fill(); text(on ? "*" : "?", r.x + 16, r.y + r.h / 2 + 4, 12, "#15161f", "center"); ctx.globalAlpha = 1;
-    text(a.name, r.x + 31, r.y + r.h / 2 - 2, 11.5, on ? "#fff" : "#888", "left");
-    text(on ? "desbloqueado" : a.hint, r.x + 31, r.y + r.h / 2 + 11, 9, on ? a.c : "#667", "left");
+  for (let i = 0; i < ACHS.length; i++) { const r = logCardRect(i), a = ACHS[i], on = !!ach[a.id], gold = a.gold;
+    ctx.save(); if (gold) { ctx.shadowColor = "#ffd84a"; ctx.shadowBlur = on ? 10 + 5 * Math.sin(t * 4) : 4; }
+    ctx.fillStyle = gold ? (on ? "#2e2710" : "#221d10") : (on ? "#222717" : "#191c24"); ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 8); ctx.fill(); ctx.restore();
+    ctx.strokeStyle = gold ? "#ffd84a" : (on ? a.c : "#2a2f3c"); ctx.lineWidth = gold ? 1.6 : 1.2; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 8); ctx.stroke();
+    ctx.globalAlpha = on ? 1 : 0.5; ctx.fillStyle = on ? a.c : (gold ? "#7a6a2a" : "#3a3f4c"); ctx.beginPath(); ctx.arc(r.x + 16, r.y + r.h / 2, 8, 0, 7); ctx.fill(); text(on ? "*" : (gold ? "?" : "?"), r.x + 16, r.y + r.h / 2 + 4, 12, "#15161f", "center"); ctx.globalAlpha = 1;
+    text(a.name, r.x + 31, r.y + r.h / 2 - 2, gold ? 10.5 : 11.5, on ? "#fff" : (gold ? "#d8c478" : "#888"), "left");
+    text(on ? "desbloqueado" : a.hint, r.x + 31, r.y + r.h / 2 + 11, 9, on ? a.c : (gold ? "#8a7a3a" : "#667"), "left");
   }
   const c = logCloseRect(); ctx.fillStyle = "#23303a"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); text("VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 5, 14, "#9be7c0", "center");
 }
@@ -1297,7 +1315,7 @@ function drawWorldToast() {
   for (let i = 0; i < 7; i++) { const a = t * 2 + i * 0.9, rx = 96 + 10 * Math.sin(t * 3 + i), sx = W / 2 + Math.cos(a) * rx, sy2 = y + 26 + Math.sin(a) * 15; ctx.globalAlpha = al * (0.35 + 0.45 * Math.sin(t * 5 + i)); ctx.fillStyle = i % 2 ? "#fff3b0" : "#ffd84a"; ctx.beginPath(); ctx.arc(sx, sy2, 2.2, 0, 7); ctx.fill(); }
   ctx.globalAlpha = al;
   let ly = y + 28;
-  text("¡NUEVO MUNDO " + worldToast.world + "!", W / 2, ly, 21, "#ffd84a", "center"); ly += 22;
+  text(worldToast.mega ? "¡MEGA BONO!" : "¡NUEVO MUNDO " + worldToast.world + "!", W / 2, ly, 21, "#ffd84a", "center"); ly += 22;
   if (worldToast.prize) { text("Premio: +" + worldToast.prize + " al banco", W / 2, ly, 12, "#ffd84a", "center"); ly += 20; }
   if (worldToast.item) { text("A tu bodega: " + worldToast.item, W / 2, ly, 12, "#9be7c0", "center"); ly += 20; }
   text("Desbloqueaste:", W / 2, ly, 12, "#9aa6c0", "center"); ly += 20;
@@ -1421,7 +1439,12 @@ function academiaGreeting() {
   const rec = academiaRec(), recName = (ACADEMIA_SUBJECTS.find(s => s.key === rec) || ACADEMIA_SUBJECTS[0]).name;
   return "Hola " + nm + "! Soy tu tutor. Practicaste " + wordsPracticed() + " palabras (" + ms.m + " ya dominadas) y tu rango es " + rk.name + ". Hoy te sugiero: " + recName + ". Que practicamos?";
 }
-function openAcademia(back) { academia = { back: back || "play", rec: academiaRec(), greet: academiaGreeting(), msg: "", msgT: 0 }; academiaArmed = false; academiaDwell = 0; state = "academia"; sPower(); try { saveKpi(); } catch (e) {} try { speak(academia.greet, "es-ES"); } catch (e) {} }
+function openAcademia(back) {
+  academia = { back: back || "play", rec: academiaRec(), greet: academiaGreeting(), msg: "", msgT: 0 };
+  academiaArmed = false; academiaDwell = 0; state = "academia"; sPower();
+  if (!lget("acaTut")) { lset("acaTut", "1"); academia.msg = "Bienvenido! Eligi un juego para practicar. Jugando se carga un BONO que da premio y te sube de mundo."; academia.msgT = 7; }
+  try { saveKpi(); } catch (e) {} try { speak(academia.msgT > 0 ? academia.msg : academia.greet, "es-ES"); } catch (e) {}
+}
 function updateAcademia(dt) { if (academia.msgT > 0) academia.msgT -= dt; }
 function acaRect() { const n = ACADEMIA_SUBJECTS.length, w = Math.min(460, W - 24), h = Math.min(H - 14, 154 + n * 56 + 50); return { x: (W - w) / 2, y: Math.max(10 + safeT, (H - h) / 2), w, h }; }
 function acaRowRect(i) { const p = acaRect(); return { x: p.x + 18, y: p.y + 152 + i * 56, w: p.w - 36, h: 50 }; }

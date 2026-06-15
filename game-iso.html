@@ -369,7 +369,14 @@
     { id: "endure", name: "SOBREVIVIENTE", need: function (s) { return s.playSec >= 600; }, c: "#7fd6ff", reward: 10 },
     { id: "rich", name: "MILLONARIO", need: function (s) { return s.best >= 1000; }, c: "#ffd84a", reward: 20 },
     { id: "wave5", name: "OLEADA 5 (3D)", need: function (s) { return s.isoWave >= 5; }, c: "#b480ff", reward: 15 },
-    { id: "wave10", name: "OLEADA 10 (3D)", need: function (s) { return s.isoWave >= 10; }, c: "#b480ff", reward: 30 }
+    { id: "wave10", name: "OLEADA 10 (3D)", need: function (s) { return s.isoWave >= 10; }, c: "#b480ff", reward: 30 },
+    { id: "g_sage", name: "ORO · SABIO TOTAL", need: function (s) { return (s.masteredTotal || 0) > 0 && s.mastered >= s.masteredTotal; }, c: "#ffd84a", reward: 100, gold: true },
+    { id: "g_scholar", name: "ORO · ERUDITO", need: function (s) { return s.words >= 2000; }, c: "#ffd84a", reward: 100, gold: true },
+    { id: "g_unstoppable", name: "ORO · IMPARABLE", need: function (s) { return s.kills >= 1000; }, c: "#ffd84a", reward: 100, gold: true },
+    { id: "g_tycoon", name: "ORO · MAGNATE", need: function (s) { return s.best >= 10000; }, c: "#ffd84a", reward: 100, gold: true },
+    { id: "g_collector", name: "ORO · COLECCIONISTA", need: function (s) { return s.cosmetics >= 70; }, c: "#ffd84a", reward: 100, gold: true },
+    { id: "g_legend3d", name: "ORO · LEYENDA 3D", need: function (s) { return s.isoWave >= 50; }, c: "#ffd84a", reward: 100, gold: true },
+    { id: "g_immortal", name: "ORO · INMORTAL", need: function (s) { return s.playSec >= 36000; }, c: "#ffd84a", reward: 100, gold: true }
   ];
   // RANGOS (mismo calculo que index.html; comparte progreso por jugador)
   var RANKS = [
@@ -384,7 +391,7 @@
       bought: kpi.bought || 0, used: kpi.used || 0, playSec: kpi.playSec || 0, deaths: kpi.deaths || 0,
       best: rdNumIso("best", 0), maxWorld: rdNumIso("maxworld", 1),
       cosmetics: rdCountIso("unlocked") + rdCountIso("uface") + rdCountIso("uacc") + rdCountIso("umount"),
-      builds: rdLenIso("mybuilds"), mastered: kpi.mastered || 0, isoWave: loadWaveRecord()
+      builds: rdLenIso("mybuilds"), mastered: kpi.mastered || 0, masteredTotal: kpi.masteredTotal || 0, isoWave: loadWaveRecord()
     };
   }
   function curRankIso() { return rankOf(rankScoreOf(snapshotIso())); }
@@ -408,6 +415,7 @@
       if (_achTmr) clearTimeout(_achTmr);
       _achTmr = setTimeout(function () { if (_achEl) _achEl.style.opacity = "0"; }, 3200);
       try { if (typeof sndPower === "function") sndPower(); } catch (e) {}
+      try { fireConfettiIso(a && a.gold ? 90 : 45); } catch (e) {}
     } catch (e) {}
   }
   // ---- Pantalla LOGROS nativa del 3D (overlay DOM) ----
@@ -423,10 +431,13 @@
     h += "<div style='font-size:11px;color:#aebfe0;margin-bottom:10px'>" + (rk.nextName ? rk.name + " &rarr; " + rk.nextName + "  " + rk.score + "/" + rk.nextAt + " pts" : "RANGO MAXIMO (" + rk.score + " pts)") + " &middot; aprende palabras en el juego normal para subir</div>";
     h += "<div style='width:min(460px,92vw);max-height:54vh;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:2px'>";
     for (var i = 0; i < ACHS.length; i++) {
-      var a = ACHS[i], on = !!ach[a.id];
-      h += "<div style='display:flex;align-items:center;gap:8px;background:" + (on ? "rgba(40,46,26,0.9)" : "rgba(22,26,36,0.9)") + ";border:1.5px solid " + (on ? a.c : "#2a2f3c") + ";border-radius:10px;padding:7px 9px;text-align:left;" + (on ? "" : "opacity:0.55;") + "'>";
-      h += "<div style='flex:0 0 auto;width:18px;height:18px;border-radius:50%;background:" + (on ? a.c : "#3a3f4c") + ";color:#15161f;font-size:12px;font-weight:900;display:flex;align-items:center;justify-content:center'>" + (on ? "&#10003;" : "?") + "</div>";
-      h += "<div style='min-width:0'><div style='font-size:11.5px;font-weight:900;color:" + (on ? "#fff" : "#9aa0b4") + ";white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>" + a.name + "</div><div style='font-size:9px;color:" + (on ? a.c : "#778") + "'>" + (on ? "+" + (a.reward || 0) + " mon" : "bloqueado") + "</div></div>";
+      var a = ACHS[i], on = !!ach[a.id], gold = a.gold;
+      var bd = gold ? "#ffd84a" : (on ? a.c : "#2a2f3c");
+      var bg = gold ? (on ? "rgba(46,39,16,0.95)" : "rgba(34,29,16,0.9)") : (on ? "rgba(40,46,26,0.9)" : "rgba(22,26,36,0.9)");
+      var sh = gold ? "box-shadow:0 0 10px rgba(255,216,74," + (on ? "0.5" : "0.2") + ");" : "";
+      h += "<div style='display:flex;align-items:center;gap:8px;background:" + bg + ";border:1.5px solid " + bd + ";border-radius:10px;padding:7px 9px;text-align:left;" + sh + (on ? "" : "opacity:" + (gold ? "0.7" : "0.55") + ";") + "'>";
+      h += "<div style='flex:0 0 auto;width:18px;height:18px;border-radius:50%;background:" + (on ? a.c : (gold ? "#7a6a2a" : "#3a3f4c")) + ";color:#15161f;font-size:12px;font-weight:900;display:flex;align-items:center;justify-content:center'>" + (on ? "&#10003;" : (gold ? "&#9733;" : "?")) + "</div>";
+      h += "<div style='min-width:0'><div style='font-size:11.5px;font-weight:900;color:" + (on ? "#fff" : (gold ? "#d8c478" : "#9aa0b4")) + ";white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>" + a.name + "</div><div style='font-size:9px;color:" + (on ? a.c : (gold ? "#8a7a3a" : "#778")) + "'>" + (on ? "+" + (a.reward || 0) + " mon" : (gold ? "legendario" : "bloqueado")) + "</div></div>";
       h += "</div>";
     }
     h += "</div>";
@@ -445,6 +456,17 @@
     if (cb) { cb.addEventListener("click", closeLogrosIso); cb.addEventListener("touchend", function (e) { e.preventDefault(); closeLogrosIso(); }, { passive: false }); }
   }
   function closeLogrosIso() { if (_logEl) _logEl.style.display = "none"; }
+  // ---- Confeti de celebracion en el 3D (canvas) ----
+  var isoConfetti = [];
+  function fireConfettiIso(n) {
+    var cols = ["#ffd84a", "#62e074", "#7fd6ff", "#ff6b8a", "#b480ff", "#fff3b0"];
+    for (var i = 0; i < (n || 50); i++) isoConfetti.push({ x: VW / 2 + (Math.random() * 80 - 40), y: VH * 0.22, vx: Math.random() * 400 - 200, vy: Math.random() * -260 - 70, g: 340 + Math.random() * 160, col: cols[(Math.random() * cols.length) | 0], r: Math.random() * 6.28, vr: Math.random() * 18 - 9, s: 4 + Math.random() * 5, life: 1.4 + Math.random() * 1.1 });
+  }
+  function updateDrawConfettiIso(dt) {
+    if (!isoConfetti.length) return;
+    for (var i = isoConfetti.length - 1; i >= 0; i--) { var c = isoConfetti[i]; c.life -= dt; c.vy += c.g * dt; c.x += c.vx * dt; c.y += c.vy * dt; c.r += c.vr * dt; if (c.life <= 0) { isoConfetti.splice(i, 1); continue; } ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, c.life)); ctx.translate(c.x, c.y); ctx.rotate(c.r); ctx.fillStyle = c.col; ctx.fillRect(-c.s / 2, -c.s / 2, c.s, c.s * 0.6); ctx.restore(); }
+    ctx.globalAlpha = 1;
+  }
   loadKpiIso(); loadAchIso();
 
   // ============================================================
@@ -2270,7 +2292,9 @@
       }
       // wave cleared?
       if (waveToSpawn <= 0 && waveAlive <= 0 && enemies.length === 0) {
-        saveWaveRecord(wave);
+        var _prevRec = loadWaveRecord(); saveWaveRecord(wave);
+        if (wave > _prevRec) { try { fireConfettiIso(55); addFloater(taco.tx, taco.ty - 1, "NUEVO RECORD!", "#ffd84a"); } catch (e) {} }
+        achCheckIso();
         betweenWaves = true;
         betweenT = 1.8;
       }
@@ -2914,6 +2938,7 @@
       if (state === STATE_MALL) { // updateMall may exit back to city
         renderMall();
         drawVignette();
+        updateDrawConfettiIso(dt);
         requestAnimationFrame(frame);
         return;
       }
@@ -2927,6 +2952,7 @@
     drawNightTint();   // bluish night overlay over the city scene
     drawVignette();
     drawHurtVignette();
+    updateDrawConfettiIso(dt);
 
     requestAnimationFrame(frame);
   }

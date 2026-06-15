@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v31 - RESUME DE SESION: guarda la partida en curso por jugador; boton CONTINUAR en el titulo (volves donde te quedaste)";
+const VERSION = "v32 - INTERIORES CAMINABLES (free-roam: recorres la tienda, pisas productos, juntas monedas) + EDIFICIOS mas 4D/5D (altura, degradados, luz/sombra)";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -476,7 +476,7 @@ addEventListener("keydown", e => {
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { if (k === "escape") state = uiBack; return; }
   if (state === "menu") { if (k === "escape") state = "play"; return; }
-  if (state === "interior") { if (k === "escape") state = "play"; return; }
+  if (state === "interior") { if (k === "escape") exitInterior(); return; }
   if (state === "players") { if (k === "escape" && profile) state = "title"; return; }
   if (state === "wardrobe") { if (k === "escape") state = uiBack; return; }
   if (state === "challenge") { if (k === "escape") state = "wardrobe"; else if (k >= "1" && k <= "3") answerChallenge(+k - 1); return; }
@@ -514,7 +514,7 @@ function onTouchStart(e) {
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { for (const tch of e.changedTouches) optTapAt(tch.clientX, tch.clientY); return; }
   if (state === "menu") { for (const tch of e.changedTouches) menuTapAt(tch.clientX, tch.clientY); return; }
-  if (state === "interior") { for (const tch of e.changedTouches) interiorTapAt(tch.clientX, tch.clientY); return; }
+  if (state === "interior") { for (const tch of e.changedTouches) { const c = intCloseRect(); if (tch.clientX >= c.x && tch.clientX <= c.x + c.w && tch.clientY >= c.y && tch.clientY <= c.y + c.h) { exitInterior(); return; } if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
   if (state === "players") { for (const tch of e.changedTouches) playersTapAt(tch.clientX, tch.clientY); return; }
   if (state === "wardrobe") { const tch = e.changedTouches[0]; if (tch) wbDrag = { id: tch.identifier, y0: tch.clientY, x0: tch.clientX, s0: wbScroll, moved: 0 }; return; }
   if (state === "challenge") { for (const tch of e.changedTouches) { const o = challengeOptAt(tch.clientX, tch.clientY); if (o >= 0) answerChallenge(o); } return; }
@@ -995,6 +995,7 @@ function update(dt) {
   if (bannerT > 0) bannerT -= dt;
   for (let i = rings.length - 1; i >= 0; i--) { const rg = rings[i]; rg.r += (rg.max - rg.r) * dt * 6; rg.life -= dt * 1.6; if (rg.life <= 0) rings.splice(i, 1); }
 
+  if (state === "interior") { if (!paused) updateInterior(dt); return; }
   if (state === "challenge") { if (challenge && challenge.sel >= 0) { challenge.fb -= dt; if (challenge.fb <= 0) { if (challenge.sel === challenge.correct) state = "wardrobe"; else challenge.sel = -1; } } return; }
   if (state === "quiz") {
     if (quiz && quiz.phase === "pronounce") { if (quiz.micState === "ok") { quiz.okT -= dt; if (quiz.okT <= 0) nextLevel(); } return; }
@@ -1143,45 +1144,67 @@ function drawShop() {
   text("SALIR", c.x + c.w / 2, c.y + c.h / 2 + 6, 17, "#ff9bb0", "center");
 }
 
-// ---- INTERIOR de tienda (entrar a un edificio) ----
-let interior = null;
+// ---- INTERIOR caminable (free-roam): entras al edificio y lo recorres ----
+let interior = null, intP = { x: 0, y: 0, r: 16 };
 const SHOP_NAMES = ["MINIMERCADO", "FLORERIA", "CAFETERIA", "JUGUETERIA", "PANADERIA", "HELADERIA", "LIBRERIA", "BAZAR"];
-function openInterior(b) { interior = { name: SHOP_NAMES[b.seed % SHOP_NAMES.length], awn: b.awn }; state = "interior"; sPower(); }
-function interiorRows() {
-  return [
-    { label: "SNACK  (cura toda la vida)", cost: 3, col: "#60d050", act: () => { player.hp = MAXHP; } },
-    { label: "CAFE  (escudo 9s)", cost: 4, col: "#5eead4", act: () => { pShield = 9; } },
-    { label: "GASEOSA  (disparo rapido 10s)", cost: 4, col: "#f5cd46", act: () => { pRapid = 10; } },
-    { label: "SALSA TRIPLE  (10s)", cost: 4, col: "#ff963c", act: () => { pTriple = 10; } },
-  ];
+const INT_ITEMS = [
+  { name: "SNACK", desc: "cura vida", icon: "heal", cost: 3, col: "#60d050", act: () => { player.hp = MAXHP; } },
+  { name: "CAFE", desc: "escudo 9s", icon: "shield", cost: 4, col: "#5eead4", act: () => { pShield = 9; } },
+  { name: "GASEOSA", desc: "rapido 10s", icon: "rapid", cost: 4, col: "#f5cd46", act: () => { pRapid = 10; } },
+  { name: "TRIPLE", desc: "triple 10s", icon: "triple", cost: 4, col: "#ff963c", act: () => { pTriple = 10; } },
+];
+function intRoom() { return { x: 18, y: 60 + safeT, w: W - 36, h: H - 116 - safeB }; }
+function openInterior(b) {
+  const R = intRoom(), wallH = Math.min(112, R.h * 0.34), fy = R.y + wallH;
+  const items = INT_ITEMS.map((it, i) => ({ def: it, x: R.x + R.w * (0.2 + i * 0.2), y: fy + (R.y + R.h - fy) * 0.46, bought: false }));
+  const cns = []; for (let i = 0; i < 5; i++) cns.push({ x: R.x + 50 + Math.random() * (R.w - 100), y: fy + 36 + Math.random() * (R.y + R.h - fy - 70), got: false });
+  interior = { name: SHOP_NAMES[b.seed % SHOP_NAMES.length], awn: b.awn, wallH, fy, items, coins: cns };
+  intP.x = R.x + R.w / 2; intP.y = R.y + R.h - 32; stickL.id = null;
+  state = "interior"; sPower();
 }
-function intRect() { const w = Math.min(540, W - 28), h = Math.min(470, H - 40); return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
-function intRowRect(i) { const p = intRect(); return { x: p.x + 24, y: p.y + 190 + i * 52, w: p.w - 48, h: 46 }; }
-function intCloseRect() { const p = intRect(); return { x: p.x + p.w / 2 - 95, y: p.y + p.h - 46, w: 190, h: 36 }; }
-function interiorTapAt(px, py) {
-  const rows = interiorRows();
-  for (let i = 0; i < rows.length; i++) { const r = intRowRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { if (coins >= rows[i].cost) { coins -= rows[i].cost; rows[i].act(); sPower(); floatText(player.x, player.y - 30, "COMPRADO!", "#ffd84a"); } else sWrong(); return; } }
-  const c = intCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) { state = "play"; sRight(); }
+function exitInterior() { interior = null; stickL.id = null; state = "play"; sRight(); }
+function updateInterior(dt) {
+  const inp = readInput(), sp = 215, R = intRoom();
+  intP.x = clamp(intP.x + inp.mx * sp * dt, R.x + 22, R.x + R.w - 22);
+  intP.y = clamp(intP.y + inp.my * sp * dt, interior.fy + 18, R.y + R.h - 22);
+  playerMoving = (Math.abs(inp.mx) + Math.abs(inp.my)) > 0.1; walkPhase += dt * (playerMoving ? 13 : 2.5);
+  if (Math.abs(inp.mx) > 0.06) playerFace = inp.mx > 0 ? 1 : -1;
+  for (const c of interior.coins) if (!c.got && len(c.x - intP.x, c.y - intP.y) < 26) { c.got = true; coins += 1; floatText(c.x, c.y, "+1", "#ffd84a"); sGem(); }
+  for (const it of interior.items) if (!it.bought && len(it.x - intP.x, it.y - intP.y) < 30 && coins >= it.def.cost) { coins -= it.def.cost; it.def.act(); it.bought = true; sPower(); floatText(it.x, it.y - 22, it.def.name + "!", it.def.col); }
+  if (intP.y > R.y + R.h - 30 && Math.abs(intP.x - (R.x + R.w / 2)) < 48 && inp.my > 0.2) exitInterior();
 }
+function intCloseRect() { const R = intRoom(); return { x: R.x + R.w - 112, y: R.y + 8, w: 104, h: 34 }; }
+function interiorTapAt(px, py) { const c = intCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) exitInterior(); }
 function drawInterior() {
-  ctx.fillStyle = "rgba(0,0,0,0.78)"; ctx.fillRect(0, 0, W, H);
-  const p = intRect(), wallH = p.h * 0.4, fy = p.y + 50 + wallH;
-  ctx.fillStyle = "#1b1d28"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill(); ctx.strokeStyle = interior.awn || "#f5cd46"; ctx.lineWidth = 3; ctx.stroke();
-  ctx.save(); ctx.beginPath(); ctx.roundRect(p.x + 3, p.y + 3, p.w - 6, p.h - 6, 14); ctx.clip();
-  ctx.fillStyle = "#2a2d3c"; ctx.fillRect(p.x, p.y + 48, p.w, wallH); // pared
-  ctx.fillStyle = "#22242f"; ctx.fillRect(p.x, fy, p.w, p.h - 48 - wallH); // piso
-  ctx.strokeStyle = "rgba(255,255,255,0.04)"; ctx.lineWidth = 1; for (let gx = p.x + 18; gx < p.x + p.w; gx += 34) { ctx.beginPath(); ctx.moveTo(gx, fy); ctx.lineTo(gx, p.y + p.h); ctx.stroke(); }
-  // estanterias con productos
-  for (let s = 0; s < 2; s++) { const sy = p.y + 76 + s * 34; ctx.fillStyle = "#3a3d50"; ctx.fillRect(p.x + 22, sy, p.w * 0.42, 6); for (let i = 0; i < 7; i++) { ctx.fillStyle = ["#ff6b8a", "#ffd84a", "#7fd6ff", "#60d050", "#ff9b3c", "#c060e0"][i % 6]; ctx.fillRect(p.x + 28 + i * 26, sy - 13, 15, 13); } }
-  // mostrador + cajero (taco)
-  ctx.fillStyle = "#5a4632"; ctx.fillRect(p.x + p.w * 0.55, fy - 6, p.w * 0.4, 26); ctx.fillStyle = "#6a543c"; ctx.fillRect(p.x + p.w * 0.55, fy - 6, p.w * 0.4, 5);
-  drawTaco(p.x + p.w * 0.74, fy - 16, 42, 6);
+  const R = intRoom(), fy = interior.fy;
+  ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(R.x - 4, R.y - 4, R.w + 8, R.h + 8, 14); ctx.fill(); ctx.strokeStyle = interior.awn || "#f5cd46"; ctx.lineWidth = 3; ctx.stroke();
+  ctx.save(); ctx.beginPath(); ctx.roundRect(R.x, R.y, R.w, R.h, 12); ctx.clip();
+  const wg = ctx.createLinearGradient(0, R.y, 0, fy); wg.addColorStop(0, "#343849"); wg.addColorStop(1, "#272a39"); ctx.fillStyle = wg; ctx.fillRect(R.x, R.y, R.w, interior.wallH);
+  const fg = ctx.createLinearGradient(0, fy, 0, R.y + R.h); fg.addColorStop(0, "#262834"); fg.addColorStop(1, "#181a21"); ctx.fillStyle = fg; ctx.fillRect(R.x, fy, R.w, R.y + R.h - fy);
+  ctx.strokeStyle = "rgba(255,255,255,0.05)"; ctx.lineWidth = 1; const mxc = R.x + R.w / 2;
+  for (let gx = R.x; gx <= R.x + R.w; gx += 44) { ctx.beginPath(); ctx.moveTo(gx, fy); ctx.lineTo(mxc + (gx - mxc) * 1.7, R.y + R.h); ctx.stroke(); }
+  for (let gy = fy; gy <= R.y + R.h; gy += 26) { ctx.beginPath(); ctx.moveTo(R.x, gy); ctx.lineTo(R.x + R.w, gy); ctx.stroke(); }
+  for (let s = 0; s < 2; s++) { const sy = R.y + 30 + s * 40; ctx.fillStyle = "#3a3d50"; ctx.fillRect(R.x + 26, sy, R.w * 0.5, 7); for (let i = 0; i < 9; i++) { ctx.fillStyle = ["#ff6b8a", "#ffd84a", "#7fd6ff", "#60d050", "#ff9b3c", "#c060e0"][i % 6]; ctx.fillRect(R.x + 32 + i * 28, sy - 14, 16, 14); } }
+  const wx = R.x + R.w - 116; ctx.fillStyle = nightAmt > 0.5 ? "#0e1430" : "#8fc7f0"; ctx.fillRect(wx, R.y + 22, 92, 54); if (nightAmt > 0.5) { ctx.fillStyle = "#e6ebff"; ctx.beginPath(); ctx.arc(wx + 66, R.y + 40, 8, 0, 7); ctx.fill(); } ctx.strokeStyle = "#2a2d3c"; ctx.lineWidth = 4; ctx.strokeRect(wx, R.y + 22, 92, 54); ctx.beginPath(); ctx.moveTo(wx + 46, R.y + 22); ctx.lineTo(wx + 46, R.y + 76); ctx.moveTo(wx, R.y + 49); ctx.lineTo(wx + 92, R.y + 49); ctx.stroke();
+  ctx.fillStyle = "#5a4632"; ctx.fillRect(R.x + 22, fy - 8, R.w * 0.28, 22); ctx.fillStyle = "#6a543c"; ctx.fillRect(R.x + 22, fy - 8, R.w * 0.28, 5);
+  drawTaco(R.x + 22 + R.w * 0.14, fy - 18, 38, 6); // cajero
+  for (const it of interior.items) {
+    ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(it.x, it.y + 14, 18, 6, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = it.bought ? "#2a2e3a" : "#2c3147"; ctx.beginPath(); ctx.roundRect(it.x - 18, it.y - 6, 36, 22, 7); ctx.fill(); ctx.strokeStyle = it.bought ? "#445" : it.def.col; ctx.lineWidth = 2; ctx.stroke();
+    ctx.globalAlpha = it.bought ? 0.4 : 1; shopIcon(it.def.icon, it.x, it.y + 5, 10); ctx.globalAlpha = 1;
+    if (it.bought) text("LISTO", it.x, it.y - 12, 11, "#6a6", "center");
+    else { text(it.def.name, it.x, it.y - 24, 12, it.def.col, "center"); ctx.fillStyle = "#3a3320"; ctx.beginPath(); ctx.roundRect(it.x - 22, it.y - 18, 44, 15, 6); ctx.fill(); drawCoin(it.x - 10, it.y - 11, 5.5); text(it.def.cost + " mon", it.x + 9, it.y - 6, 11, "#ffd84a", "center"); }
+  }
+  for (const c of interior.coins) if (!c.got) { const bob = Math.sin(t * 5 + c.x) * 2; drawCoin(c.x, c.y + bob, 8); }
+  ctx.fillStyle = "#3a2030"; ctx.fillRect(mxc - 42, R.y + R.h - 16, 84, 13); text("SALIDA  ↓", mxc, R.y + R.h - 5, 11, "#ff9bb0", "center");
+  drawTaco(intP.x, intP.y, intP.r * 2, level); // el jugador
   ctx.restore();
-  text(interior.name, W / 2, p.y + 34, 22, interior.awn || "#f5cd46", "center");
-  const ctxt = coins + " monedas", cw0 = ctx.measureText(ctxt).width; drawCoin(W / 2 - cw0 / 2 - 12, p.y + 174, 8); text(ctxt, W / 2 + 6, p.y + 179, 13, "#ffe896", "center");
-  const rows = interiorRows();
-  for (let i = 0; i < rows.length; i++) { const r = intRowRect(i), ok = coins >= rows[i].cost; ctx.fillStyle = ok ? "#262b3d" : "#221d26"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.strokeStyle = ok ? "#46506e" : "#3a3340"; ctx.lineWidth = 1.5; ctx.stroke(); text(rows[i].label, r.x + 16, r.y + r.h / 2 + 5, fitFont(rows[i].label, r.w - 90, 15), ok ? rows[i].col : "#777", "left"); const pw2 = 62, px2 = r.x + r.w - pw2 - 8, py2 = r.y + r.h / 2 - 13; ctx.fillStyle = ok ? "#3a3320" : "#2a2530"; ctx.beginPath(); ctx.roundRect(px2, py2, pw2, 26, 8); ctx.fill(); drawCoin(px2 + 14, py2 + 13, 7); text(rows[i].cost, px2 + pw2 - 12, py2 + 18, 14, ok ? "#ffd84a" : "#766", "right"); }
-  const c = intCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 10); ctx.fill(); text("SALIR A LA CALLE", c.x + c.w / 2, c.y + c.h / 2 + 5, 15, "#ff9bb0", "center");
+  text(interior.name, W / 2, R.y + 28, 22, interior.awn || "#f5cd46", "center");
+  const ct = coins + " mon"; drawCoin(W / 2 - ctx.measureText(ct).width / 2 - 12, R.y + 47, 7); text(ct, W / 2 + 6, R.y + 51, 13, "#ffe896", "center");
+  text("camina y pisa los productos para comprar  ·  anda a la SALIDA para volver", W / 2, R.y + R.h + 20, 12, "#8a8aa0", "center");
+  const c = intCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); ctx.strokeStyle = "#ff9bb0"; ctx.lineWidth = 1.5; ctx.stroke(); text("SALIR", c.x + c.w / 2, c.y + c.h / 2 + 5, 14, "#ff9bb0", "center");
+  drawStick(stickL, "rgba(94,234,212,0.5)");
 }
 
 // ---------- Render ----------
@@ -1196,22 +1219,27 @@ function drawBlock(g, px, py, s, col) {
 // Edificio 3D extruido: sombra + paredes (sur/este) con ventanas + azotea con parapeto y detalles.
 function draw3DBuilding(g, b) {
   const px = b.x * TS, py = b.y * TS, pw = b.w * TS, ph = b.h * TS;
-  const EH = 16 + (b.seed % 4) * 9;          // altura (varia el skyline)
-  const roof = b.tint, wallS = shadeHex(roof, 0.5), wallE = shadeHex(roof, 0.38);
-  // sombra proyectada en el piso
-  g.fillStyle = "rgba(0,0,0,0.34)"; g.beginPath(); g.roundRect(px + 9, py + 11, pw, ph, 8); g.fill();
-  // pared sur (frontal) con altura
-  g.fillStyle = wallS; g.fillRect(px, py + ph, pw, EH);
-  // pared este (lateral derecha) en perspectiva
-  g.fillStyle = wallE; g.beginPath(); g.moveTo(px + pw, py); g.lineTo(px + pw + EH, py + EH); g.lineTo(px + pw + EH, py + ph + EH); g.lineTo(px + pw, py + ph); g.closePath(); g.fill();
-  // ventanas iluminadas en la pared sur (dan vida 3D)
+  const EH = 22 + (b.seed % 5) * 11;          // altura variable (skyline mas 3D)
+  const roof = b.tint;
+  // sombra proyectada en el piso (mas larga = mas alto)
+  g.fillStyle = "rgba(0,0,0,0.36)"; g.beginPath(); g.roundRect(px + 10, py + 12, pw, ph, 8); g.fill();
+  // pared SUR (frontal) con degradado vertical (luz arriba -> sombra abajo)
+  const sg = g.createLinearGradient(0, py + ph, 0, py + ph + EH); sg.addColorStop(0, shadeHex(roof, 0.64)); sg.addColorStop(1, shadeHex(roof, 0.32));
+  g.fillStyle = sg; g.fillRect(px, py + ph, pw, EH);
+  // pared ESTE (lateral) en perspectiva, mas oscura
+  g.fillStyle = shadeHex(roof, 0.3); g.beginPath(); g.moveTo(px + pw, py); g.lineTo(px + pw + EH, py + EH); g.lineTo(px + pw + EH, py + ph + EH); g.lineTo(px + pw, py + ph); g.closePath(); g.fill();
+  g.fillStyle = shadeHex(roof, 0.88); g.fillRect(px, py + ph - 1, pw, 2); // borde de luz techo/pared
   let _r = b.seed % 97 + 3; const rnd = () => { _r = (_r * 75 + 74) % 65537; return _r / 65537; };
-  const wc = Math.max(2, Math.round(pw / 26)), wr = Math.max(1, Math.round(EH / 13));
-  const ww = (pw - 12) / wc - 4, wh = (EH - 8) / wr - 3;
+  // ventanas iluminadas en la pared SUR (varias filas = mas pisos)
+  const wc = Math.max(2, Math.round(pw / 26)), wr = Math.max(2, Math.round(EH / 15));
+  const ww = (pw - 12) / wc - 5, wh = (EH - 10) / wr - 4;
   for (let c = 0; c < wc; c++) for (let r = 0; r < wr; r++) if (ww > 2 && wh > 2) {
-    g.fillStyle = rnd() < 0.55 ? "#ffe7a0" : shadeHex(roof, 0.28);
-    g.fillRect(px + 6 + c * (pw - 12) / wc + 2, py + ph + 5 + r * (EH - 6) / wr, ww, wh);
+    const wx2 = px + 6 + c * (pw - 12) / wc + 2, wy2 = py + ph + 6 + r * (EH - 8) / wr, lit = rnd() < 0.5;
+    g.fillStyle = lit ? "#ffe7a0" : "#19202c"; g.fillRect(wx2, wy2, ww, wh);
+    if (lit) { g.fillStyle = "rgba(255,255,255,0.3)"; g.fillRect(wx2, wy2, ww, 2); }
   }
+  // lineas de pisos en la pared ESTE (sensacion de altura)
+  g.strokeStyle = shadeHex(roof, 0.2); g.lineWidth = 1; for (let r = 1; r < wr; r++) { const e0 = py + (ph) * r / wr; g.beginPath(); g.moveTo(px + pw, e0); g.lineTo(px + pw + EH, e0 + EH); g.stroke(); }
   // TIENDA: toldo a rayas + vidriera + cartel en la planta baja
   if (b.shop) {
     const ay = py + ph; const stripes = Math.max(3, Math.round(pw / 16));
@@ -1225,15 +1253,16 @@ function draw3DBuilding(g, b) {
     g.fillStyle = "#7fd6ff"; g.fillRect(dx + 3, dy + 4, dw - 6, dh * 0.4); // vidrio
     g.fillStyle = "#e0b840"; g.beginPath(); g.arc(dx + dw - 5, dy + dh * 0.6, 1.8, 0, 7); g.fill();
   }
-  // AZOTEA (techo) con parapeto y borde
-  g.fillStyle = roof; g.beginPath(); g.roundRect(px, py, pw, ph, 4); g.fill();
-  g.fillStyle = shadeHex(roof, 1.14); g.fillRect(px, py, pw, 4);
-  g.fillStyle = shadeHex(roof, 0.7); g.fillRect(px, py + ph - 4, pw, 4);
-  g.strokeStyle = shadeHex(roof, 1.22); g.lineWidth = 2; g.strokeRect(px + 3, py + 3, pw - 6, ph - 6);
-  // detalles de azotea: AC, tanque, caja de escalera
+  // AZOTEA (techo) con degradado diagonal, rim-light y AO
+  const rgd = g.createLinearGradient(px, py, px + pw, py + ph); rgd.addColorStop(0, shadeHex(roof, 1.12)); rgd.addColorStop(0.5, roof); rgd.addColorStop(1, shadeHex(roof, 0.82));
+  g.fillStyle = rgd; g.beginPath(); g.roundRect(px, py, pw, ph, 4); g.fill();
+  g.fillStyle = shadeHex(roof, 1.32); g.fillRect(px, py, pw, 3); g.fillRect(px, py, 3, ph); // luz arriba-izq
+  g.fillStyle = "rgba(0,0,0,0.22)"; g.fillRect(px, py + ph - 3, pw, 3); g.fillRect(px + pw - 3, py, 3, ph); // sombra abajo-der
+  g.strokeStyle = shadeHex(roof, 1.18); g.lineWidth = 2; g.strokeRect(px + 3, py + 3, pw - 6, ph - 6); // parapeto
+  // detalles de azotea: AC, tanque, caja de escalera (con sombra)
   const units = Math.max(1, Math.floor((pw * ph) / (TS * TS * 2.2)));
-  for (let i = 0; i < units; i++) { const ux = px + 10 + rnd() * (pw - 32), uy = py + 10 + rnd() * (ph - 26); g.fillStyle = shadeHex(roof, 0.72); g.fillRect(ux, uy, 16, 12); g.fillStyle = shadeHex(roof, 0.92); g.fillRect(ux + 2, uy + 2, 12, 3); }
-  g.fillStyle = shadeHex(roof, 0.8); g.fillRect(px + pw - 22, py + 8, 13, 13); // acceso azotea
+  for (let i = 0; i < units; i++) { const ux = px + 12 + rnd() * (pw - 38), uy = py + 12 + rnd() * (ph - 30); g.fillStyle = "rgba(0,0,0,0.25)"; g.fillRect(ux + 2, uy + 13, 16, 2); g.fillStyle = shadeHex(roof, 0.7); g.fillRect(ux, uy, 16, 12); g.fillStyle = shadeHex(roof, 0.96); g.fillRect(ux + 2, uy + 2, 12, 3); }
+  g.fillStyle = shadeHex(roof, 0.8); g.fillRect(px + pw - 24, py + 10, 14, 14); // acceso azotea
 }
 // ---- Decoracion de calle (se hornea en el cache) ----
 function decoLamp(g, x, y) {

@@ -134,5 +134,47 @@ memoria de vocabulario (parear es↔idioma). Cada minijuego otorga monedas y ref
 - [ ] Sin dependencias externas ni assets binarios pesados (todo vectorial/sintetizado).
 - [ ] Verificación visual real en dispositivo (capturas) en cada release.
 
+## 7. Prompts de INGENIERÍA / CONSTRUCCIÓN (centro comercial + modo obra)
+
+### 7.1 — Mall de varios pisos (estructura real)
+```
+Diseñá un centro comercial jugable de 4 pisos en canvas 2D top-down. Cada piso tiene su temática y
+sus locales (estaciones): Planta Baja (salud/poderes/comida), Piso 2 Moda (vestuario/accesorios/
+vehículos), Piso 3 Diversión (ruleta/memoria/UNO), Piso 4 Cine y Terraza. Una escalera/elevador con
+botones ▲▼ cambia de piso y regenera las estaciones. Decorá con vidrieras de locales en la pared,
+gente caminando, plantas, bancos, guirnaldas de luces y ventana con vista día/noche. El jugador
+camina con el stick, toca una estación y se despliega un menú de opciones con precios en monedas.
+Mostrá feedback visible de compra (LISTO!/te faltan monedas).
+```
+
+### 7.2 — Modo construcción del taco (con cuadrilla y OSHA)
+```
+Agregá un MODO CONSTRUCCIÓN: el taco puede comprar un terreno y contratar CONSTRUCTORES (NPCs con
+casco y chaleco). El jugador elige un DISEÑO de edificio (casa, tienda, torre) y HERRAMIENTAS
+(grúa, andamio, hormigonera). La obra avanza por etapas (cimientos → estructura → fachada → techo)
+con una barra de progreso y costo en monedas/tiempo; los obreros animan el trabajo. Cumplí seguridad
+OSHA: casco, chaleco reflectivo, antiparras, orejeras, conos y cinta de peligro; mostrá un "puntaje
+de seguridad" que sube si el taco y la cuadrilla usan el equipo correcto. Al terminar, el edificio
+queda en la ciudad y se puede entrar (otro local del mall). Todo vectorial, con sombras y volumen
+4D/5D (extrusión, degradados, rim-light, AO).
+```
+
+### 7.3 — Herramientas de diseño de edificios (editor)
+```
+Construí un editor simple de edificios: el jugador elige cantidad de pisos, color, tipo de techo,
+ventanas (encendidas/apagadas), toldo/cartel de tienda y detalles de azotea (AC, tanque, antena).
+Previsualizá el edificio extruido en tiempo real (paredes con degradado, parapeto, rim-light, AO).
+Guardá el diseño por jugador y permití colocarlo en un terreno de la ciudad. Reglas de seguridad
+(OSHA): vallado de obra, señalización y EPP obligatorio para habilitar la construcción.
+```
+
+### 7.4 — Seguridad laboral (OSHA) como mecánica educativa
+```
+Convertí la seguridad en aprendizaje: antes de construir, un mini-quiz de EPP (¿qué te ponés para
+trabajar en altura?) con casco/arnés/chaleco; acertar desbloquea el equipo y sube el "puntaje de
+seguridad". Accesorios OSHA en el vestuario: CASCO DE OBRA, ANTIPARRAS, OREJERAS y traje
+CONSTRUCTOR (chaleco reflectivo). Basado en buenas prácticas reales de seguridad en el trabajo.
+```
+
 ---
 *Este documento acompaña a `index.html` y describe el juego tal como está y a dónde va.*

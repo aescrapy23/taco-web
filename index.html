@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v37 - FIX CINE: ahora reproduce una PELICULA (cutscene) y da el premio + feedback visible al comprar en el mall (LISTO!/te faltan monedas)";
+const VERSION = "v38 - MALL DE 4 PISOS (escalera ▲▼ + locales por piso) + accesorios OSHA (casco/antiparras/orejeras) + traje CONSTRUCTOR + prompts de obra";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -187,6 +187,7 @@ const OUTFITS = [
   { name: "MAGO", c1: "#3a2a6a", c2: "#7a4ad6", suit: "mago", cost: 72 },
   { name: "PIRATA", c1: "#6a3030", c2: "#c01a2a", suit: "pirata", cost: 68 },
   { name: "BUZO", c1: "#1aa0a0", c2: "#0e6a6a", suit: "buzo", cost: 66 },
+  { name: "CONSTRUCTOR", c1: "#ff7a1a", c2: "#f2c200", suit: "obra", cost: 64 },
 ];
 let bank = 0, outfit = 0, unlocked = { 0: true };
 function saveWardrobe() { lset("bank", bank); lset("outfit", outfit); lset("unlocked", JSON.stringify(unlocked)); }
@@ -199,6 +200,7 @@ const FACES = [
 const ACCS = [
   { name: "NADA" }, { name: "GORRO RANA" }, { name: "GAFAS DE SOL" }, { name: "MONIO" },
   { name: "SOMBRERO" }, { name: "AUDIFONOS" }, { name: "FLOR" }, { name: "ANTIFAZ" }, { name: "GORRA" },
+  { name: "CASCO OBRA" }, { name: "ANTIPARRAS" }, { name: "OREJERAS" },
 ];
 // Vehiculos (mounts): se PAGAN con monedas del banco y suben la velocidad del taco
 const MOUNTS = [
@@ -1175,48 +1177,74 @@ function drawShop() {
   text("SALIR", c.x + c.w / 2, c.y + c.h / 2 + 6, 17, "#ff9bb0", "center");
 }
 
-// ---- CENTRO COMERCIAL caminable: estaciones que al tocarlas despliegan opciones ----
+// ---- CENTRO COMERCIAL de 4 PISOS: estaciones que al tocar despliegan opciones ----
 let interior = null, intP = { x: 0, y: 0, r: 16 };
-const MALL_STATIONS = [
-  { kind: "salud", name: "SALUD", icon: "heal", col: "#60d050", opts: [
-    { label: "Curar toda la vida", cost: 3, act: () => { player.hp = MAXHP; } },
-    { label: "Vida +30", cost: 1, act: () => { player.hp = Math.min(MAXHP, player.hp + 30); } },
+const MALL_FLOORS = [
+  { name: "PLANTA BAJA", stations: [
+    { kind: "salud", name: "SALUD", icon: "heal", col: "#60d050", opts: [
+      { label: "Curar toda la vida", cost: 3, act: () => { player.hp = MAXHP; } },
+      { label: "Vida +30", cost: 1, act: () => { player.hp = Math.min(MAXHP, player.hp + 30); } },
+    ] },
+    { kind: "poder", name: "PODERES", icon: "shield", col: "#5eead4", opts: [
+      { label: "Escudo 9s", cost: 4, act: () => { pShield = 9; } },
+      { label: "Disparo rapido 10s", cost: 4, act: () => { pRapid = 10; } },
+      { label: "Salsa triple 10s", cost: 4, act: () => { pTriple = 10; } },
+    ] },
+    { kind: "comida", name: "COMIDA", icon: "food", col: "#ff9b3c", opts: [
+      { label: "Taco combo (cura toda la vida)", cost: 2, act: () => { player.hp = MAXHP; } },
+      { label: "Postre (disparo rapido 10s)", cost: 3, act: () => { pRapid = 10; } },
+    ] },
   ] },
-  { kind: "poder", name: "PODERES", icon: "shield", col: "#5eead4", opts: [
-    { label: "Escudo 9s", cost: 4, act: () => { pShield = 9; } },
-    { label: "Disparo rapido 10s", cost: 4, act: () => { pRapid = 10; } },
-    { label: "Salsa triple 10s", cost: 4, act: () => { pTriple = 10; } },
+  { name: "PISO 2 · MODA", stations: [
+    { kind: "ropa", name: "VESTUARIO", icon: "shirt", col: "#f5cd46", opts: [
+      { label: "Equipos del Mundial", cost: 0, act: () => { interior.popup = null; wbTab = 0; openWb("interior"); } },
+    ] },
+    { kind: "caras", name: "ACCESORIOS", icon: "shirt", col: "#e0479a", opts: [
+      { label: "Caras", cost: 0, act: () => { interior.popup = null; wbTab = 1; openWb("interior"); } },
+      { label: "Accesorios y cascos", cost: 0, act: () => { interior.popup = null; wbTab = 2; openWb("interior"); } },
+    ] },
+    { kind: "veh", name: "VEHICULOS", icon: "wheel", col: "#7fd6ff", opts: [
+      { label: "Patines, bici, scooter...", cost: 0, act: () => { interior.popup = null; wbTab = 3; openWb("interior"); } },
+    ] },
   ] },
-  { kind: "ropa", name: "VESTUARIO", icon: "shirt", col: "#f5cd46", opts: [
-    { label: "Abrir vestuario", cost: 0, act: () => { interior.popup = null; wbTab = 0; openWb("interior"); } },
-    { label: "Caras y accesorios", cost: 0, act: () => { interior.popup = null; wbTab = 1; openWb("interior"); } },
+  { name: "PISO 3 · DIVERSION", stations: [
+    { kind: "ruleta", name: "RULETA", icon: "dice", col: "#ffd84a", opts: [
+      { label: "Girar (2 mon)", cost: 0, act: () => { interior.popup = null; openRoulette(); } },
+    ] },
+    { kind: "memo", name: "JUEGOS", icon: "dice", col: "#7fd6ff", opts: [
+      { label: "Memoria de palabras", cost: 0, act: () => { interior.popup = null; openMemory(); } },
+    ] },
+    { kind: "casino", name: "CASINO", icon: "dice", col: "#ff6b8a", opts: [
+      { label: "UNO de colores vs NPCs", cost: 0, act: () => { interior.popup = null; openUno(); } },
+    ] },
   ] },
-  { kind: "veh", name: "VEHICULOS", icon: "wheel", col: "#7fd6ff", opts: [
-    { label: "Abrir vehiculos", cost: 0, act: () => { interior.popup = null; wbTab = 3; openWb("interior"); } },
-  ] },
-  { kind: "comida", name: "COMIDA", icon: "food", col: "#ff9b3c", opts: [
-    { label: "Taco combo (cura toda la vida)", cost: 2, act: () => { player.hp = MAXHP; } },
-    { label: "Postre (disparo rapido 10s)", cost: 3, act: () => { pRapid = 10; } },
-  ] },
-  { kind: "cine", name: "CINE", icon: "film", col: "#c060e0", opts: [
-    { label: "Ver funcion (+vida +escudo)", cost: 2, act: () => { interior.popup = null; openCine(); } },
-  ] },
-  { kind: "arcade", name: "ARCADE", icon: "dice", col: "#ff6b8a", opts: [
-    { label: "Ruleta de premios (2 mon)", cost: 0, act: () => { interior.popup = null; openRoulette(); } },
-    { label: "Memoria de palabras", cost: 0, act: () => { interior.popup = null; openMemory(); } },
-    { label: "UNO de colores vs NPCs", cost: 0, act: () => { interior.popup = null; openUno(); } },
+  { name: "PISO 4 · CINE Y TERRAZA", stations: [
+    { kind: "cine", name: "CINE", icon: "film", col: "#c060e0", opts: [
+      { label: "Ver funcion (+vida +escudo)", cost: 2, act: () => { interior.popup = null; openCine(); } },
+    ] },
+    { kind: "cafe", name: "CAFETERIA", icon: "food", col: "#caa050", opts: [
+      { label: "Cafe (escudo 9s)", cost: 3, act: () => { pShield = 9; } },
+      { label: "Helado (cura vida)", cost: 2, act: () => { player.hp = MAXHP; } },
+    ] },
+    { kind: "mirador", name: "MIRADOR", icon: "film", col: "#5aa0f0", opts: [
+      { label: "Relax con vista (+vida +escudo)", cost: 1, act: () => { player.hp = Math.min(MAXHP, player.hp + 50); pShield = 8; } },
+    ] },
   ] },
 ];
 function intRoom() { return { x: 18, y: 60 + safeT, w: W - 36, h: H - 116 - safeB }; }
+function mallFloorStations(floor) {
+  const R = intRoom(), wallH = Math.min(120, R.h * 0.34), fy = R.y + wallH, floorH = R.y + R.h - fy;
+  const defs = MALL_FLOORS[floor].stations, n = defs.length, cols = Math.min(n, 4), rows = Math.ceil(n / cols);
+  return defs.map((d, i) => { const c = i % cols, r = Math.floor(i / cols); return { def: d, x: R.x + R.w * ((c + 0.5) / cols), y: fy + floorH * (rows === 1 ? 0.46 : (0.3 + r * 0.34)) }; });
+}
+function changeFloor(d) { const nf = clamp(interior.floor + d, 0, MALL_FLOORS.length - 1); if (nf === interior.floor) { sWrong(); return; } interior.floor = nf; interior.stations = mallFloorStations(nf); interior.popup = null; sPower(); }
 function openInterior(b) {
   const R = intRoom(), wallH = Math.min(120, R.h * 0.34), fy = R.y + wallH, floorH = R.y + R.h - fy;
-  const n = MALL_STATIONS.length, cols = Math.min(n, 4), rows = Math.ceil(n / cols);
-  const stations = MALL_STATIONS.map((d, i) => { const c = i % cols, r = Math.floor(i / cols); return { def: d, x: R.x + R.w * ((c + 0.5) / cols), y: fy + floorH * (rows === 1 ? 0.45 : (0.28 + r * 0.34)) }; });
   const cns = []; for (let i = 0; i < 6; i++) cns.push({ x: R.x + 50 + Math.random() * (R.w - 100), y: fy + 40 + Math.random() * (floorH - 80), got: false });
   const npcs = []; for (let i = 0; i < 5; i++) { const a = Math.random() * 6.28; npcs.push({ x: R.x + 60 + Math.random() * (R.w - 120), y: fy + 30 + Math.random() * (floorH - 60), vx: Math.cos(a) * 34, vy: Math.sin(a) * 34, col: PEDCOLS[randi(0, PEDCOLS.length)], wp: Math.random() * 6.28, rescued: false }); }
   const plants = [{ x: R.x + 28, y: fy + 22 }, { x: R.x + R.w - 28, y: fy + 22 }, { x: R.x + 28, y: R.y + R.h - 46 }, { x: R.x + R.w - 28, y: R.y + R.h - 46 }];
   const benches = [{ x: R.x + R.w * 0.3, y: fy + floorH * 0.92 }, { x: R.x + R.w * 0.7, y: fy + floorH * 0.92 }];
-  interior = { wallH, fy, floorH, stations, coins: cns, npcs, plants, benches, popup: null };
+  interior = { wallH, fy, floorH, floor: 0, stations: mallFloorStations(0), coins: cns, npcs, plants, benches, popup: null };
   intP.x = R.x + R.w / 2; intP.y = R.y + R.h - 30; stickL.id = null;
   state = "interior"; sPower();
 }
@@ -1261,6 +1289,8 @@ function drawStorefront(x, y, w, h, col) {
   ctx.fillStyle = "rgba(0,0,0,0.2)"; ctx.fillRect(x, y + 9, w, 2);
 }
 function intCloseRect() { const R = intRoom(); return { x: R.x + R.w - 112, y: R.y + 8, w: 104, h: 34 }; }
+function escUpRect() { const R = intRoom(); return { x: R.x + 10, y: R.y + 8, w: 38, h: 34 }; }
+function escDownRect() { const R = intRoom(); return { x: R.x + 52, y: R.y + 8, w: 38, h: 34 }; }
 function mallPopRect() { const st = interior.popup, n = st.opts.length, w = Math.min(420, W - 40), h = 92 + n * 52; return { x: (W - w) / 2, y: (H - h) / 2, w, h }; }
 function mallOptRect(i) { const p = mallPopRect(); return { x: p.x + 22, y: p.y + 64 + i * 52, w: p.w - 44, h: 44 }; }
 function mallPopCloseRect() { const p = mallPopRect(); return { x: p.x + p.w / 2 - 70, y: p.y + p.h - 42, w: 140, h: 34 }; }
@@ -1272,6 +1302,8 @@ function interiorTapAt(px, py) {
     return true;
   }
   const c = intCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) { exitInterior(); return true; }
+  const eu = escUpRect(); if (px >= eu.x && px <= eu.x + eu.w && py >= eu.y && py <= eu.y + eu.h) { changeFloor(1); return true; }
+  const ed = escDownRect(); if (px >= ed.x && px <= ed.x + ed.w && py >= ed.y && py <= ed.y + ed.h) { changeFloor(-1); return true; }
   for (const s of interior.stations) if (len(px - s.x, py - s.y) < 42) { interior.popup = s.def; sRight(); return true; }
   return false;
 }
@@ -1311,9 +1343,14 @@ function drawInterior() {
   ctx.fillStyle = "#3a2030"; ctx.fillRect(mxc - 42, R.y + R.h - 16, 84, 13); text("SALIDA  ↓", mxc, R.y + R.h - 5, 11, "#ff9bb0", "center");
   drawTaco(intP.x, intP.y, intP.r * 2, level); // el jugador
   ctx.restore();
-  text("CENTRO COMERCIAL", W / 2, R.y + 28, 21, "#e0479a", "center");
+  text("CENTRO COMERCIAL  ·  " + MALL_FLOORS[interior.floor].name, W / 2, R.y + 28, 19, "#e0479a", "center");
   const ct = coins + " mon"; drawCoin(W / 2 - ctx.measureText(ct).width / 2 - 12, R.y + 47, 7); text(ct, W / 2 + 6, R.y + 51, 13, "#ffe896", "center");
-  text("camina y TOCA una estacion para ver opciones  ·  anda a la SALIDA para volver", W / 2, R.y + R.h + 20, 12, "#8a8aa0", "center");
+  // botones de ESCALERA (subir / bajar piso)
+  const eu = escUpRect(), ed = escDownRect();
+  ctx.fillStyle = interior.floor < MALL_FLOORS.length - 1 ? "#1f2a30" : "#1a1d24"; ctx.beginPath(); ctx.roundRect(eu.x, eu.y, eu.w, eu.h, 8); ctx.fill(); ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = 1.5; ctx.stroke(); text("▲", eu.x + eu.w / 2, eu.y + eu.h / 2 + 6, 16, interior.floor < MALL_FLOORS.length - 1 ? "#7fd6ff" : "#445", "center");
+  ctx.fillStyle = interior.floor > 0 ? "#1f2a30" : "#1a1d24"; ctx.beginPath(); ctx.roundRect(ed.x, ed.y, ed.w, ed.h, 8); ctx.fill(); ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = 1.5; ctx.stroke(); text("▼", ed.x + ed.w / 2, ed.y + ed.h / 2 + 6, 16, interior.floor > 0 ? "#7fd6ff" : "#445", "center");
+  text("PISO " + (interior.floor + 1) + "/4", ed.x + ed.w + 10, ed.y + ed.h / 2 + 5, 12, "#9aa0b4", "left");
+  text("escalera ▲▼ cambia de piso  ·  TOCA una estacion  ·  SALIDA para volver", W / 2, R.y + R.h + 20, 12, "#8a8aa0", "center");
   const c = intCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); ctx.strokeStyle = "#ff9bb0"; ctx.lineWidth = 1.5; ctx.stroke(); text("SALIR", c.x + c.w / 2, c.y + c.h / 2 + 5, 14, "#ff9bb0", "center");
   if (!interior.popup) drawStick(stickL, "rgba(94,234,212,0.5)");
   // POPUP de opciones de la estacion
@@ -1830,6 +1867,12 @@ function drawAccessory(a, w, h, s) {
     ctx.fillStyle = "#2540c0"; ctx.beginPath(); ctx.roundRect(-w * 0.26, ey - w * 0.1, w * 0.52, w * 0.16, 6); ctx.fill(); ctx.fillStyle = "#fff"; for (const sg of [-1, 1]) { ctx.beginPath(); ctx.ellipse(sg * ex, ey, w * 0.06, w * 0.04, 0, 0, 7); ctx.fill(); }
   } else if (a === 8) { // GORRA
     const ty = hy + w * 0.18; ctx.fillStyle = "#d62828"; ctx.beginPath(); ctx.arc(0, ty, w * 0.26, Math.PI, 0, false); ctx.fill(); ctx.fillStyle = "#a81f1f"; ctx.fillRect(0, ty - w * 0.02, w * 0.34, w * 0.07); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, ty - w * 0.12, w * 0.04, 0, 7); ctx.fill();
+  } else if (a === 9) { // CASCO DE OBRA (OSHA)
+    const ty = hy + w * 0.14; ctx.fillStyle = "#f2c200"; ctx.beginPath(); ctx.arc(0, ty, w * 0.32, Math.PI, 0, false); ctx.fill(); ctx.fillRect(-w * 0.38, ty - 2, w * 0.76, w * 0.07); ctx.fillStyle = "#d9a800"; ctx.fillRect(-w * 0.05, ty - w * 0.32, w * 0.1, w * 0.2); ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.beginPath(); ctx.arc(-w * 0.1, ty - w * 0.12, w * 0.08, Math.PI, Math.PI * 1.5); ctx.fill();
+  } else if (a === 10) { // ANTIPARRAS de seguridad
+    ctx.fillStyle = "rgba(180,230,255,0.6)"; for (const sg of [-1, 1]) { ctx.beginPath(); ctx.roundRect(sg * ex - w * 0.11, ey - w * 0.08, w * 0.22, w * 0.16, 5); ctx.fill(); } ctx.strokeStyle = "#caa23a"; ctx.lineWidth = w * 0.025; ctx.beginPath(); ctx.moveTo(-ex + w * 0.1, ey); ctx.lineTo(ex - w * 0.1, ey); ctx.stroke();
+  } else if (a === 11) { // OREJERAS de proteccion
+    ctx.strokeStyle = "#2a2c38"; ctx.lineWidth = w * 0.05; ctx.beginPath(); ctx.arc(0, -h * 0.1, w * 0.48, Math.PI * 1.18, Math.PI * 1.82, false); ctx.stroke(); ctx.fillStyle = "#f2c200"; for (const sg of [-1, 1]) { ctx.beginPath(); ctx.roundRect(sg * w * 0.44 - w * 0.07, -h * 0.16, w * 0.14, w * 0.2, 5); ctx.fill(); }
   }
 }
 function star5(cx, cy, r) { ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = i * Math.PI / 5 - Math.PI / 2, rr = i % 2 ? r * 0.5 : r, px = cx + Math.cos(a) * rr, py = cy + Math.sin(a) * rr; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); } ctx.closePath(); ctx.fill(); }
@@ -1866,6 +1909,12 @@ function drawSuitFront(suit, w, h, s, O) {
   } else if (suit === "buzo") {
     ctx.strokeStyle = "#0e6a6a"; ctx.lineWidth = w * 0.045; ctx.beginPath(); ctx.roundRect(-w * 0.27, ey - w * 0.1, w * 0.54, w * 0.2, 8); ctx.stroke(); ctx.fillStyle = "rgba(150,210,255,0.45)"; ctx.beginPath(); ctx.roundRect(-w * 0.25, ey - w * 0.085, w * 0.5, w * 0.17, 7); ctx.fill();
     ctx.fillStyle = "#0e6a6a"; ctx.fillRect(w * 0.24, ey + w * 0.05, w * 0.12, w * 0.04); // snorkel
+  } else if (suit === "obra") {
+    // chaleco reflectivo: franjas plateadas/grises en el cuerpo (OSHA)
+    ctx.fillStyle = "#d9d9d9"; ctx.fillRect(-w * 0.46, h * 0.02, w * 0.92, h * 0.045); ctx.fillRect(-w * 0.46, h * 0.16, w * 0.92, h * 0.045);
+    ctx.fillStyle = "#7a8088"; ctx.fillRect(-w * 0.46, h * 0.02, w * 0.92, h * 0.012);
+    // casco de obra amarillo
+    const ty = hy + w * 0.14; ctx.fillStyle = "#f2c200"; ctx.beginPath(); ctx.arc(0, ty, w * 0.32, Math.PI, 0, false); ctx.fill(); ctx.fillRect(-w * 0.38, ty - 2, w * 0.76, w * 0.07); ctx.fillStyle = "#d9a800"; ctx.fillRect(-w * 0.05, ty - w * 0.32, w * 0.1, w * 0.2); ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.beginPath(); ctx.arc(-w * 0.1, ty - w * 0.12, w * 0.08, Math.PI, Math.PI * 1.5); ctx.fill();
   }
 }
 // VEHICULO (mount) bajo el taco: ruedas que giran al moverse

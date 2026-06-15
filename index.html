@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v47 - IA EN LA NUBE (Gemini/Nano Banana) con tu API key guardada SOLO en tu dispositivo: Tutor IA (consejos) + Nano Banana (genera arte). Menu/Opciones -> IA EN LA NUBE";
+const VERSION = "v48 - IA EN LA NUBE: detecta SOLO el modelo de imagen disponible en tu cuenta (arregla 'model not found') + fallback de modelo de texto";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -1631,28 +1631,45 @@ let iaHub = null;
 function aiKey() { try { return localStorage.getItem("gemini_key") || ""; } catch (e) { return ""; } }
 function openIA(back) { iaHub = { busy: false, text: "", img: null, err: "", back: back || "title" }; state = "ia"; }
 function iaSetKey() { let k = null; try { k = prompt("Pega tu API key de Google AI Studio (Gemini / Nano Banana).\nSe guarda SOLO en este dispositivo (no se sube a internet).", aiKey()); } catch (e) {} if (k != null) { try { localStorage.setItem("gemini_key", k.trim()); } catch (e) {} } }
+async function iaGen(model, key, prompt, withModalities) {
+  const body = { contents: [{ parts: [{ text: prompt }] }] };
+  if (withModalities) body.generationConfig = { responseModalities: ["TEXT", "IMAGE"] };
+  let r, j;
+  try { r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); j = await r.json(); }
+  catch (e) { return { err: e.message }; }
+  if (!r.ok) return { err: (j && j.error && j.error.message) || ("HTTP " + r.status), status: r.status };
+  const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
+  let b64 = null, txt = "";
+  for (const p of parts) { const d = p.inlineData || p.inline_data; if (d && d.data) b64 = d.data; if (p.text) txt += p.text; }
+  return { b64, txt };
+}
 async function iaCallText(prompt) {
   const key = aiKey(); if (!key) { iaHub.err = "Configura tu API key primero."; return; }
   iaHub.busy = true; iaHub.err = ""; iaHub.text = ""; iaHub.img = null;
+  const models = [IA_TEXT_MODEL, "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"];
+  let lastErr = "(sin respuesta)";
+  for (const m of models) { const res = await iaGen(m, key, prompt, false); if (res.txt) { iaHub.text = res.txt.trim(); iaHub.busy = false; return; } lastErr = res.err || "(sin texto)"; if (res.status && res.status !== 404) break; }
+  iaHub.err = "Error: " + lastErr; iaHub.busy = false;
+}
+async function iaImageModel(key) {
   try {
-    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + IA_TEXT_MODEL + ":generateContent?key=" + encodeURIComponent(key), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
-    const j = await r.json(); if (!r.ok) throw new Error((j.error && j.error.message) || ("HTTP " + r.status));
-    const parts = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts || [];
-    iaHub.text = (parts.map(p => p.text || "").join(" ") || "(sin respuesta)").trim();
-  } catch (e) { iaHub.err = "Error: " + e.message; }
-  iaHub.busy = false;
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?key=" + encodeURIComponent(key)); const j = await r.json();
+    if (!r.ok || !j.models) return null;
+    const cand = j.models.filter(m => (m.supportedGenerationMethods || []).indexOf("generateContent") >= 0 && /image/i.test(m.name || "") && !/embedding|imagen/i.test(m.name || ""));
+    cand.sort((a, b) => (/2\.5.*image/i.test(b.name) ? 1 : 0) - (/2\.5.*image/i.test(a.name) ? 1 : 0));
+    return cand.length ? cand[0].name.replace(/^models\//, "") : null;
+  } catch (e) { return null; }
 }
 async function iaCallImage(prompt) {
   const key = aiKey(); if (!key) { iaHub.err = "Configura tu API key primero."; return; }
   iaHub.busy = true; iaHub.err = ""; iaHub.text = ""; iaHub.img = null;
-  try {
-    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + IA_IMG_MODEL + ":generateContent?key=" + encodeURIComponent(key), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
-    const j = await r.json(); if (!r.ok) throw new Error((j.error && j.error.message) || ("HTTP " + r.status));
-    const parts = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts || []; let b64 = null;
-    for (const p of parts) { const d = (p.inlineData || p.inline_data); if (d && d.data) { b64 = d.data; break; } }
-    if (!b64) throw new Error("El modelo no devolvio imagen. Proba otro modelo de imagen en IA_IMG_MODEL.");
-    const im = new Image(); im.onload = () => { iaHub.img = im; }; im.onerror = () => { iaHub.err = "No se pudo cargar la imagen."; }; im.src = "data:image/png;base64," + b64;
-  } catch (e) { iaHub.err = "Error: " + e.message; }
+  const model = await iaImageModel(key);
+  if (!model) { iaHub.err = "Tu cuenta no tiene un modelo de imagen (Nano Banana) habilitado para generateContent. Usá el TUTOR IA, o habilitá Gemini Image en aistudio.google.com."; iaHub.busy = false; return; }
+  let res = await iaGen(model, key, prompt, true);
+  if (!res.b64 && !res.err) res = await iaGen(model, key, prompt, false);
+  if (res.err) { iaHub.err = "Error (" + model + "): " + res.err; iaHub.busy = false; return; }
+  if (!res.b64) { iaHub.err = "El modelo " + model + " no devolvio imagen" + (res.txt ? (": " + res.txt.slice(0, 140)) : "."); iaHub.busy = false; return; }
+  const im = new Image(); im.onload = () => { iaHub.img = im; }; im.onerror = () => { iaHub.err = "No se pudo cargar la imagen."; }; im.src = "data:image/png;base64," + res.b64;
   iaHub.busy = false;
 }
 function iaTutorPrompt() { const age = profile ? profile.age : 10, lng = lang === "ZH" ? "chino mandarin" : "ingles"; return "Sos un tutor de idiomas divertido para un nino de " + age + " anos que aprende " + lng + " jugando un juego del taco. En ESPANOL, en 2 frases cortas: dale animo y un consejo para aprender mejor, y al final una palabra nueva en " + lng + " con su traduccion para practicar. Sin markdown."; }

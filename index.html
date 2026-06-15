@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v43 - TU EDIFICIO QUEDA EN LA CIUDAD: lo que construis en MODO OBRA se planta en tu ciudad (con cartel MI CASA/TIENDA/TORRE + puerta para entrar), guardado por jugador";
+const VERSION = "v44 - DIMENSION 3D conectada: boton en el titulo y en el menu lleva al modo ISOMETRICO (game-iso); comparten jugador y BANCO de monedas (un modo alimenta al otro)";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -525,7 +525,7 @@ addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 canvas.addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
 canvas.addEventListener("mousedown", e => {
   mouse.down = true; audioInit();
-  if (state === "title") { const cr = titleContinueRect(); if (loadRun() && e.clientX >= cr.x && e.clientX <= cr.x + cr.w && e.clientY >= cr.y && e.clientY <= cr.y + cr.h) { resumeRun(); mouse.down = false; return; } const w = titleWbRect(); if (e.clientX >= w.x && e.clientX <= w.x + w.w && e.clientY >= w.y && e.clientY <= w.y + w.h) { openWb(); mouse.down = false; return; } const o = titleOptRect(); if (e.clientX >= o.x && e.clientX <= o.x + o.w && e.clientY >= o.y && e.clientY <= o.y + o.h) { openOptions(); mouse.down = false; return; } startOrRestart(); return; }
+  if (state === "title") { const ir = titleIsoRect(); if (e.clientX >= ir.x && e.clientX <= ir.x + ir.w && e.clientY >= ir.y && e.clientY <= ir.y + ir.h) { gotoIso(); return; } const cr = titleContinueRect(); if (loadRun() && e.clientX >= cr.x && e.clientX <= cr.x + cr.w && e.clientY >= cr.y && e.clientY <= cr.y + cr.h) { resumeRun(); mouse.down = false; return; } const w = titleWbRect(); if (e.clientX >= w.x && e.clientX <= w.x + w.w && e.clientY >= w.y && e.clientY <= w.y + w.h) { openWb(); mouse.down = false; return; } const o = titleOptRect(); if (e.clientX >= o.x && e.clientX <= o.x + o.w && e.clientY >= o.y && e.clientY <= o.y + o.h) { openOptions(); mouse.down = false; return; } startOrRestart(); return; }
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { optTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "menu") { menuTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -555,7 +555,7 @@ const stickL = { id: null, bx: 0, by: 0, x: 0, y: 0 };
 const stickR = { id: null, bx: 0, by: 0, x: 0, y: 0 };
 function onTouchStart(e) {
   e.preventDefault(); audioInit();
-  if (state === "title") { for (const tch of e.changedTouches) { const cr = titleContinueRect(); if (loadRun() && tch.clientX >= cr.x && tch.clientX <= cr.x + cr.w && tch.clientY >= cr.y && tch.clientY <= cr.y + cr.h) { resumeRun(); return; } const w = titleWbRect(); if (tch.clientX >= w.x && tch.clientX <= w.x + w.w && tch.clientY >= w.y && tch.clientY <= w.y + w.h) { openWb(); return; } const o = titleOptRect(); if (tch.clientX >= o.x && tch.clientX <= o.x + o.w && tch.clientY >= o.y && tch.clientY <= o.y + o.h) { openOptions(); return; } } startOrRestart(); return; }
+  if (state === "title") { for (const tch of e.changedTouches) { const ir = titleIsoRect(); if (tch.clientX >= ir.x && tch.clientX <= ir.x + ir.w && tch.clientY >= ir.y && tch.clientY <= ir.y + ir.h) { gotoIso(); return; } const cr = titleContinueRect(); if (loadRun() && tch.clientX >= cr.x && tch.clientX <= cr.x + cr.w && tch.clientY >= cr.y && tch.clientY <= cr.y + cr.h) { resumeRun(); return; } const w = titleWbRect(); if (tch.clientX >= w.x && tch.clientX <= w.x + w.w && tch.clientY >= w.y && tch.clientY <= w.y + w.h) { openWb(); return; } const o = titleOptRect(); if (tch.clientX >= o.x && tch.clientX <= o.x + o.w && tch.clientY >= o.y && tch.clientY <= o.y + o.h) { openOptions(); return; } } startOrRestart(); return; }
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { for (const tch of e.changedTouches) optTapAt(tch.clientX, tch.clientY); return; }
   if (state === "menu") { for (const tch of e.changedTouches) menuTapAt(tch.clientX, tch.clientY); return; }
@@ -922,6 +922,7 @@ function drawWardrobe() {
 function titleWbRect() { return { x: W / 2 - 152, y: H / 2 + 140, w: 144, h: 42 }; }
 function titleOptRect() { return { x: W / 2 + 8, y: H / 2 + 140, w: 144, h: 42 }; }
 function titleContinueRect() { return { x: W / 2 - 120, y: H / 2 + 34, w: 240, h: 46 }; }
+function titleIsoRect() { return { x: W / 2 - 120, y: H / 2 + 190, w: 240, h: 40 }; }
 
 // ---- OPCIONES ----
 function openOptions(back) { uiBack = back || "title"; state = "options"; }
@@ -957,9 +958,11 @@ function drawOptions() {
 
 // ---- MENU del juego (boton casa) : continuar / opciones / vestuario / jugador / titulo ----
 function openMenu() { saveRun(); state = "menu"; }
+function gotoIso() { try { saveRun(); } catch (e) {} try { location.href = "game-iso.html"; } catch (e) {} }
 function menuRows() {
   return [
     { label: "CONTINUAR", col: "#5eead4", act: () => { state = "play"; } },
+    { label: "DIMENSION 3D (ISO)", col: "#b480ff", act: () => { gotoIso(); } },
     { label: "OPCIONES", col: "#7fd6ff", act: () => { openOptions("menu"); } },
     { label: "VESTUARIO", col: "#f5cd46", act: () => { openWb("menu"); } },
     { label: "CAMBIAR JUGADOR", col: "#9be7c0", act: () => { openPlayers(); } },
@@ -2698,6 +2701,9 @@ function render() {
     const orr = titleOptRect();
     ctx.fillStyle = "#1f2a30"; ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(orr.x, orr.y, orr.w, orr.h, 10); ctx.fill(); ctx.stroke();
     text("OPCIONES", orr.x + orr.w / 2, orr.y + orr.h / 2 + 6, 15, "#7fd6ff", "center");
+    const ir = titleIsoRect(); const ip = 0.5 + 0.5 * Math.sin(t * 4);
+    ctx.shadowColor = "#b480ff"; ctx.shadowBlur = 6 + ip * 8; ctx.fillStyle = "#241a33"; ctx.strokeStyle = "#b480ff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(ir.x, ir.y, ir.w, ir.h, 10); ctx.fill(); ctx.shadowBlur = 0; ctx.stroke();
+    text("DIMENSION 3D (ISO)  ·  tu banco viaja con vos", ir.x + ir.w / 2, ir.y + ir.h / 2 + 5, fitFont("DIMENSION 3D (ISO)  ·  tu banco viaja con vos", ir.w - 12, 13), "#c8a0ff", "center");
     text("build " + VERSION, W / 2, H - 14 - safeB, 11, "#586", "center");
   }
   if (state === "over") {

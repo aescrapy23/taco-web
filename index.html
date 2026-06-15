@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v29 - DIA/NOCHE + CLIMA (sol/nublado/lluvia) + TEMPERATURA + faroles que encienden de noche + ARMA BAZUCA explosiva";
+const VERSION = "v30 - QUIZ: sin acertar NO pasas de nivel + hay que PRONUNCIARLO (voz) | pulido: boton MANEJAR/ENTRAR central, cohete bazuca, luz nocturna";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -443,8 +443,9 @@ function buttons() {
   let x = W - m; const arr = [];
   const add = (id, w) => { x -= w; arr.push({ id, x, y, w, h: s }); x -= 8; };
   add("menu", s); add("mute", s); add("pause", s); add("weapon", Math.max(66, Math.round(s * 1.5))); add("lang", s);
-  if (driving || nearCar()) add("car", Math.max(58, Math.round(s * 1.2))); // solo aparece cerca de un auto
-  if (!driving && nearDoor()) add("enter", Math.max(64, Math.round(s * 1.3))); // cerca de la puerta de una tienda
+  // boton de interaccion GRANDE al centro-abajo (no satura la fila de arriba): manejar/entrar
+  let act = driving ? "car" : nearDoor() ? "enter" : nearCar() ? "car" : null;
+  if (act) { const bw = Math.min(180, W * 0.42), bh = 54; arr.push({ id: act, x: W / 2 - bw / 2, y: H - 150 - safeB, w: bw, h: bh, big: true }); }
   return arr; // el DASH es por doble-toque en la zona de mover (sin boton)
 }
 function btnAt(px, py) { for (const b of buttons()) if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) return b.id; return null; }
@@ -478,7 +479,7 @@ addEventListener("keydown", e => {
   if (state === "players") { if (k === "escape" && profile) state = "title"; return; }
   if (state === "wardrobe") { if (k === "escape") state = uiBack; return; }
   if (state === "challenge") { if (k === "escape") state = "wardrobe"; else if (k >= "1" && k <= "3") answerChallenge(+k - 1); return; }
-  if (state === "quiz") { if (k >= "1" && k <= "3") answerQuiz(+k - 1); return; }
+  if (state === "quiz") { if (quiz && quiz.phase === "pronounce") { if (k === " ") { if (SR) startRecog(); else speak(quiz.say, quiz.L.code); } else if (k === "enter" && !SR) { quiz.micState = "ok"; quiz.okT = 0.4; } return; } if (k >= "1" && k <= "3") answerQuiz(+k - 1); return; }
   if (state === "shop") { if (k === "escape" || k === "enter") { shopLock = true; state = "play"; } return; }
   if (k === "1" && weaponUnlocked(0)) weapon = 0; if (k === "2" && weaponUnlocked(1)) weapon = 1; if (k === "3" && weaponUnlocked(2)) weapon = 2;
   if (k === "p") paused = !paused; if (k === "m") { mute = !mute; } if (k === "l") cycleLang();
@@ -497,7 +498,7 @@ canvas.addEventListener("mousedown", e => {
   if (state === "wardrobe") { wbTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "shop") { shopTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "challenge") { const o = challengeOptAt(e.clientX, e.clientY); if (o >= 0) answerChallenge(o); mouse.down = false; return; }
-  if (state === "quiz") { const o = quizOptAt(e.clientX, e.clientY); if (o >= 0) answerQuiz(o); return; }
+  if (state === "quiz") { if (quiz && quiz.phase === "pronounce") { pronounceTapAt(e.clientX, e.clientY); return; } const o = quizOptAt(e.clientX, e.clientY); if (o >= 0) answerQuiz(o); return; }
   const b = btnAt(e.clientX, e.clientY); if (b) { doButton(b); mouse.down = false; }
 });
 addEventListener("mouseup", () => { mouse.down = false; });
@@ -519,7 +520,7 @@ function onTouchStart(e) {
   if (state === "shop") { for (const tch of e.changedTouches) shopTapAt(tch.clientX, tch.clientY); return; }
   for (const tch of e.changedTouches) {
     const x = tch.clientX, y = tch.clientY;
-    if (state === "quiz") { const o = quizOptAt(x, y); if (o >= 0) answerQuiz(o); continue; }
+    if (state === "quiz") { if (quiz && quiz.phase === "pronounce") { pronounceTapAt(x, y); continue; } const o = quizOptAt(x, y); if (o >= 0) answerQuiz(o); continue; }
     const b = btnAt(x, y); if (b) { doButton(b); continue; }
     if (paused) continue;
     if (x < W / 2 && stickL.id === null) { const now = performance.now(); if (now - lastLeftTap < 320) doDash(); lastLeftTap = now; stickL.id = tch.identifier; stickL.bx = stickL.x = x; stickL.by = stickL.y = y; }
@@ -577,7 +578,7 @@ function openLangQuiz() {
   const opts = [ans]; let guard = 0;
   while (opts.length < 3 && all.length && guard++ < 300) { const o = all[randi(0, all.length)]; if (opts.indexOf(o) < 0) opts.push(o); }
   shuffle(opts);
-  quiz = { kind: "lang", L, prompt: item[0], key: itemKey(item), say: item[1], options: opts, correct: opts.indexOf(ans), sel: -1, fb: 0, t0: t };
+  quiz = { kind: "lang", L, prompt: item[0], key: itemKey(item), say: item[1], pin: L.code === "zh-CN" ? item[2] : null, options: opts, correct: opts.indexOf(ans), sel: -1, fb: 0, t0: t };
   state = "quiz";
 }
 
@@ -660,6 +661,38 @@ function answerQuiz(i) {
   quiz.fb = 1.9;
 }
 function nextLevel() { level++; score += 120; player.hp = Math.min(MAXHP, player.hp + 30); genLevel(); state = "play"; flash("245,205,70", 0.3); floatText(player.x, player.y - 34, "DIMENSION " + level + "  " + theme.name, "#f5cd46"); sLevel(); }
+
+// ---- PRONUNCIACION: hay que decir bien la palabra para pasar (reconocimiento de voz + fallback) ----
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recog = null;
+function normWord(s) { try { return (s || "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, ""); } catch (e) { return (s || "").toLowerCase().replace(/[^a-z0-9]/g, ""); } }
+function enterPronounce() { quiz.phase = "pronounce"; quiz.micState = "idle"; quiz.heard = ""; quiz.okT = 0.7; speak(quiz.say, quiz.L.code); }
+function startRecog() {
+  if (!SR) return;
+  try {
+    if (recog) { try { recog.abort(); } catch (e) {} }
+    recog = new SR(); recog.lang = quiz.L.code; recog.interimResults = false; recog.maxAlternatives = 4;
+    quiz.micState = "listening"; quiz.heard = "";
+    recog.onresult = (e) => {
+      let ok = false, best = ""; const tgt = normWord(quiz.say);
+      for (let i = 0; i < e.results.length; i++) for (let j = 0; j < e.results[i].length; j++) { const tr = e.results[i][j].transcript; if (!best) best = tr; const a = normWord(tr); if (a && (a === tgt || a.includes(tgt) || tgt.includes(a))) ok = true; }
+      quiz.heard = best;
+      if (ok) { quiz.micState = "ok"; quiz.okT = 0.8; const s = lstat(quiz.key); s.ok++; saveL(); sRight(); flash("96,208,80", 0.2); }
+      else { quiz.micState = "retry"; quiz.tries = (quiz.tries || 0) + 1; sWrong(); }
+    };
+    recog.onerror = () => { if (quiz) { quiz.micState = "retry"; quiz.tries = (quiz.tries || 0) + 1; } };
+    recog.onend = () => { if (quiz && quiz.micState === "listening") quiz.micState = "idle"; };
+    recog.start();
+  } catch (e) { quiz.micState = "idle"; }
+}
+function pronMicRect() { const p = quizPanelRect(); return { x: W / 2 - 44, y: p.y + p.h - 154, w: 88, h: 88 }; }
+function pronListenRect() { const p = quizPanelRect(); return { x: W / 2 - 150, y: p.y + p.h - 54, w: 132, h: 40 }; }
+function pronSaidRect() { const p = quizPanelRect(); return { x: W / 2 + 18, y: p.y + p.h - 54, w: 132, h: 40 }; }
+function pronounceTapAt(px, py) {
+  const m = pronMicRect(); if (px >= m.x && px <= m.x + m.w && py >= m.y && py <= m.y + m.h) { if (SR) startRecog(); else speak(quiz.say, quiz.L.code); return; }
+  const l = pronListenRect(); if (px >= l.x && px <= l.x + l.w && py >= l.y && py <= l.y + l.h) { speak(quiz.say, quiz.L.code); return; }
+  if (!SR || (quiz.tries || 0) >= 2) { const s = pronSaidRect(); if (px >= s.x && px <= s.x + s.w && py >= s.y && py <= s.y + s.h) { quiz.micState = "ok"; quiz.okT = 0.4; sRight(); } }
+}
 
 function addParts(x, y, n, col, spd) { for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, s = spd * (0.3 + Math.random()); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.5, max: 0.5, col, r: 2 + Math.random() * 3 }); } }
 
@@ -951,7 +984,14 @@ function update(dt) {
 
   if (state === "challenge") { if (challenge && challenge.sel >= 0) { challenge.fb -= dt; if (challenge.fb <= 0) { if (challenge.sel === challenge.correct) state = "wardrobe"; else challenge.sel = -1; } } return; }
   if (state === "quiz") {
-    if (quiz && quiz.sel >= 0) { quiz.fb -= dt; if (quiz.fb <= 0) nextLevel(); }
+    if (quiz && quiz.phase === "pronounce") { if (quiz.micState === "ok") { quiz.okT -= dt; if (quiz.okT <= 0) nextLevel(); } return; }
+    if (quiz && quiz.sel >= 0) {
+      quiz.fb -= dt;
+      if (quiz.fb <= 0) {
+        if (quiz.sel === quiz.correct) { if (quiz.kind === "lang") enterPronounce(); else nextLevel(); }
+        else { quiz.sel = -1; } // INCORRECTO: reintenta, no pasa de nivel
+      }
+    }
     return;
   }
   if (state !== "play" || paused) return;
@@ -1523,6 +1563,12 @@ function fitTextLeft(s, x, y, maxW, base, col) { text(s, x, y, fitFont(s, maxW, 
 
 function drawButtons() {
   for (const b of buttons()) {
+    if (b.big) { // boton de interaccion grande (manejar/entrar)
+      const c2 = b.id === "enter" ? "#9be7c0" : "#7fd6ff"; const pulse = 0.5 + 0.5 * Math.sin(t * 5);
+      ctx.shadowColor = c2; ctx.shadowBlur = 10 + pulse * 8; ctx.fillStyle = "rgba(20,28,40,0.95)"; ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 14); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = c2; ctx.lineWidth = 3; ctx.stroke();
+      text(b.id === "enter" ? "ENTRAR" : driving ? "BAJAR" : "MANEJAR", b.x + b.w / 2, b.y + b.h / 2 + 7, 20, c2, "center");
+      continue;
+    }
     ctx.fillStyle = "rgba(28,30,42,0.9)"; ctx.strokeStyle = "rgba(120,120,150,0.6)"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 9); ctx.fill(); ctx.stroke();
     if (b.id === "menu") { drawHouse(b.x + b.w / 2, b.y + b.h / 2 + 3, b.h * 0.3); continue; }
@@ -1547,6 +1593,8 @@ function drawWeatherSky() {
   if (dusk > 0.01) { ctx.fillStyle = "rgba(255,110,40," + (dusk * 0.16).toFixed(3) + ")"; ctx.fillRect(0, 0, W, H); }
   // faroles encendidos de noche (additive, mundo->pantalla)
   if (nightAmt > 0.32) { ctx.save(); ctx.globalCompositeOperation = "lighter"; for (const L of cityLamps) { const sx = L.x - camX, sy = L.y - camY - 29; if (sx < -40 || sx > W + 40 || sy < -40 || sy > H + 40) continue; const g = ctx.createRadialGradient(sx, sy, 2, sx, sy, 30); g.addColorStop(0, "rgba(255,224,150," + (nightAmt * 0.5).toFixed(3) + ")"); g.addColorStop(1, "rgba(255,224,150,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy, 30, 0, 7); ctx.fill(); } ctx.restore(); }
+  // luz del taco de noche (visibilidad)
+  if (nightAmt > 0.35 && state === "play") { ctx.save(); ctx.globalCompositeOperation = "lighter"; const px = player.x - camX, py = player.y - camY, g = ctx.createRadialGradient(px, py, 8, px, py, 120); g.addColorStop(0, "rgba(255,240,200," + (nightAmt * 0.28).toFixed(3) + ")"); g.addColorStop(1, "rgba(255,240,200,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, 120, 0, 7); ctx.fill(); ctx.restore(); }
   // sol o luna
   const cx = W * (0.12 + ((tod + 0.25) % 1) * 0.76), cy = 54 + safeT;
   if (nightAmt < 0.5) { ctx.save(); const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, 42); g.addColorStop(0, "rgba(255,235,150," + (0.85 - nightAmt).toFixed(3) + ")"); g.addColorStop(1, "rgba(255,235,150,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 42, 0, 7); ctx.fill(); ctx.fillStyle = "#ffe79a"; ctx.beginPath(); ctx.arc(cx, cy, 15, 0, 7); ctx.fill(); ctx.restore(); }
@@ -1561,7 +1609,7 @@ function drawHUD() {
   text("RECORD " + best, W / 2, 60 + tp, 13, "#9a9ab0", "center");
   if (combo >= 2) text("COMBO x" + (1 + Math.min(Math.floor(combo / 3), 4)) + "  (" + combo + ")", W / 2, 84 + tp, 17, "#ff9b3c", "center");
   const wlab = weather.kind === "sol" ? "SOL" : weather.kind === "nubes" ? "NUBLADO" : "LLUVIA", tdlab = nightAmt > 0.5 ? "NOCHE" : "DIA";
-  text("MUNDO " + level + " " + theme.name + "  ·  " + tdlab + " " + wlab + " " + weather.temp + "°  ·  ING " + words + "  ·  MON " + coins, 16, 26 + tp, 13, "#7fd6ff", "left");
+  fitTextLeft("MUNDO " + level + " " + theme.name + " · " + tdlab + " " + wlab + " " + weather.temp + "° · ING " + words + " · MON " + coins, 16, 26 + tp, W * 0.6, 13, "#7fd6ff");
   bar(16, 36 + tp, 180, 14, player.hp / MAXHP, player.hp > 50 ? "#eb5046" : player.hp > 25 ? "#f0aa3c" : "#dc322d");
   let cx = 16;
   [[0, pShield, 7], [1, pTriple, 9], [2, pRapid, 9]].forEach(([k, v, mx]) => { if (v > 0) { const w = 78; bar(cx, 60 + tp, w, 16, v / mx, powerCol(k)); text(powerName(k), cx + 4, 73 + tp, 11, "#0c0c12", "left"); cx += w + 8; } });
@@ -1576,6 +1624,7 @@ function quizPanelRect() { const w = Math.min(580, W - 32), h = Math.min(400, H 
 function quizOptRect(i) { const p = quizPanelRect(); const w = p.w - 52, h = 50, gap = 11; return { x: p.x + 26, y: p.y + 146 + i * (h + gap), w, h }; }
 function quizOptAt(px, py) { if (state !== "quiz" || !quiz || quiz.sel >= 0) return -1; for (let i = 0; i < quiz.options.length; i++) { const r = quizOptRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) return i; } return -1; }
 function drawQuiz() {
+  if (quiz.phase === "pronounce") { drawPronounce(); return; }
   const kind = quiz.kind || "lang", isLang = kind === "lang";
   const zh = isLang && quiz.L.code === "zh-CN";
   const acc = kind === "math" ? "#5eead4" : kind === "logic" ? "#ffb060" : (zh ? "#e85d9a" : "#b480ff");
@@ -1616,8 +1665,31 @@ function drawQuiz() {
     ctx.fillStyle = "#60d050"; ctx.beginPath(); ctx.roundRect(bx, by, bw * (md[0] / Math.max(1, md[1])), 8, 4); ctx.fill();
     text("Dominadas " + md[0] + "/" + md[1] + "   ·   boton " + lang + " cambia idioma", W / 2, p.y + p.h - 30, 12, "#8a8aa0", "center");
   } else text(kind === "math" ? "Matematica neural · gana monedas resolviendo" : "Logica · encontra el patron", W / 2, p.y + p.h - 30, 12, "#8a8aa0", "center");
-  if (quiz.sel >= 0) text(quiz.sel === quiz.correct ? "CORRECTO!  +80" : "Era:  " + quiz.options[quiz.correct], W / 2, p.y + p.h - 12, 16, quiz.sel === quiz.correct ? "#60d050" : "#eb6050", "center");
+  if (quiz.sel >= 0) text(quiz.sel === quiz.correct ? "CORRECTO!  +80" : "INCORRECTO - INTENTA DE NUEVO (no pasas sin acertar)", W / 2, p.y + p.h - 12, quiz.sel === quiz.correct ? 16 : 13, quiz.sel === quiz.correct ? "#60d050" : "#eb6050", "center");
   ctx.restore();
+}
+function drawPronounce() {
+  ctx.fillStyle = "rgba(4,4,10,0.7)"; ctx.fillRect(0, 0, W, H);
+  const p = quizPanelRect();
+  ctx.shadowColor = "#5eead4"; ctx.shadowBlur = glowOn() ? 18 : 0; ctx.fillStyle = "#161826"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#5eead4"; ctx.lineWidth = 3; ctx.stroke();
+  text("PRONUNCIALO BIEN  ·  " + quiz.L.name, W / 2, p.y + 38, 16, "#5eead4", "center");
+  text("Deci en voz alta:", W / 2, p.y + 70, 13, "#9a9ab0", "center");
+  fitText(quiz.say, W / 2, p.y + 116, p.w - 56, 34, "#fff");
+  if (quiz.L.code === "zh-CN" && quiz.pin) text(quiz.pin, W / 2, p.y + 144, 15, "#9be7c0", "center");
+  // boton MICROFONO grande
+  const m = pronMicRect(), st = quiz.micState;
+  const mc = st === "ok" ? "#60d050" : st === "retry" ? "#eb6050" : st === "listening" ? "#f5cd46" : "#5eead4";
+  ctx.fillStyle = "rgba(20,28,40,0.95)"; ctx.beginPath(); ctx.arc(m.x + m.w / 2, m.y + m.h / 2, m.w / 2, 0, 7); ctx.fill();
+  ctx.strokeStyle = mc; ctx.lineWidth = 4; ctx.stroke();
+  if (st === "listening") { ctx.globalAlpha = 0.25 + 0.2 * Math.sin(t * 10); ctx.fillStyle = mc; ctx.beginPath(); ctx.arc(m.x + m.w / 2, m.y + m.h / 2, m.w / 2 + 8, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+  // icono microfono
+  const cx = m.x + m.w / 2, cy = m.y + m.h / 2; ctx.fillStyle = mc; ctx.beginPath(); ctx.roundRect(cx - 9, cy - 20, 18, 26, 9); ctx.fill(); ctx.strokeStyle = mc; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy + 2, 14, 0.2 * Math.PI, 0.8 * Math.PI); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx, cy + 16); ctx.lineTo(cx, cy + 24); ctx.stroke();
+  const status = st === "ok" ? "MUY BIEN! ✓" : st === "listening" ? "ESCUCHANDO..." : st === "retry" ? "CASI - PROBA DE NUEVO" : (SR ? "Toca el microfono y decilo" : "Escucha, repeti y confirma");
+  text(status, W / 2, m.y + m.h + 24, 15, mc, "center");
+  if (quiz.heard) text("escuche: " + quiz.heard, W / 2, m.y + m.h + 44, 12, "#8a8aa0", "center");
+  // botones inferiores: escuchar + (fallback) lo dije
+  const l = pronListenRect(); ctx.fillStyle = "#23273a"; ctx.beginPath(); ctx.roundRect(l.x, l.y, l.w, l.h, 9); ctx.fill(); ctx.strokeStyle = "#3a3f55"; ctx.lineWidth = 1.5; ctx.stroke(); text("🔊 ESCUCHAR", l.x + l.w / 2, l.y + l.h / 2 + 5, 14, "#cfd3e0", "center");
+  if (!SR || (quiz.tries || 0) >= 2) { const sd = pronSaidRect(); ctx.fillStyle = "#1d3a24"; ctx.beginPath(); ctx.roundRect(sd.x, sd.y, sd.w, sd.h, 9); ctx.fill(); ctx.strokeStyle = "#62e074"; ctx.lineWidth = 1.5; ctx.stroke(); text("LO DIJE ✓", sd.x + sd.w / 2, sd.y + sd.h / 2 + 5, 14, "#9be7c0", "center"); }
 }
 
 function render() {
@@ -1637,7 +1709,16 @@ function render() {
   for (const pd of powerDrops) drawPower(pd.x, pd.y, pd.kind);
   if (shop) { const yb = Math.sin(t * 4) * 2; ctx.fillStyle = "#caa23a"; ctx.fillRect(shop.x - 14, shop.y - 14 + yb, 28, 26); ctx.fillStyle = "#3a2a08"; ctx.fillRect(shop.x - 14, shop.y - 14 + yb, 28, 7); text("$", shop.x, shop.y + 6 + yb, 18, "#3a2408", "center"); }
   if (portal) drawPortal(portal.x, portal.y);
-  for (const b of bullets) { ctx.fillStyle = "#ff8c32"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill(); ctx.fillStyle = "#ffe896"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.5, 0, 7); ctx.fill(); }
+  for (const b of bullets) {
+    if (b.explosive) { // COHETE de bazuca
+      const ang = Math.atan2(b.vy, b.vx); ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(ang);
+      ctx.fillStyle = "#ff7a3c"; ctx.beginPath(); ctx.arc(-b.r - 3 - rand(0, 3), 0, 3.5 + rand(0, 2), 0, 7); ctx.fill(); // llama
+      ctx.fillStyle = "#ffe071"; ctx.beginPath(); ctx.arc(-b.r - 2, 0, 2.5, 0, 7); ctx.fill();
+      ctx.fillStyle = "#d8d8e0"; ctx.beginPath(); ctx.moveTo(b.r, 0); ctx.lineTo(-b.r, -b.r * 0.55); ctx.lineTo(-b.r, b.r * 0.55); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#d64545"; ctx.beginPath(); ctx.moveTo(b.r, 0); ctx.lineTo(b.r * 0.3, -b.r * 0.4); ctx.lineTo(b.r * 0.3, b.r * 0.4); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    } else { ctx.fillStyle = "#ff8c32"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill(); ctx.fillStyle = "#ffe896"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.5, 0, 7); ctx.fill(); }
+  }
   for (const s of eshots) { ctx.fillStyle = "#78d2eb"; ctx.beginPath(); ctx.arc(s.x, s.y, 8, 0, 7); ctx.fill(); ctx.fillStyle = "#dff4ff"; ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, 7); ctx.fill(); }
   for (const c of cars) drawCar(c);
   for (const p of peds) drawPed(p);

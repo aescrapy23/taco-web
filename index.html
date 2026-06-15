@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v60 - progresion por niveles en TODO: el candado-por-mundo (visible pero bloqueado) ahora tambien aplica a las MATERIAS de la ACADEMIA (Ortografia y Memoria en mundo 2, Logica/Secuencias en mundo 3; Mates e Idiomas libres) y a las ESTACIONES de DIVERSION del mall (Ruleta/Juegos mundo 2, Casino mundo 3, Cine mundo 4); las de supervivencia (Salud/Poderes/Comida/Vestuario) quedan libres. Cada bloqueado se VE atenuado con candado + 'Mundo N' y avisa al tocarlo. Sobre v59: menu desbloqueable, tutor hablado por materia";
+const VERSION = "v61 - aprendizaje NEURAL (sin nombrar materias) + ¡NUEVO MUNDO! + reconocimientos: las actividades ahora son juegos con nombres ludicos (RETO MENTAL, PALABRAS DEL MUNDO, ARMA LA PALABRA, PAREJAS, DESCUBRE EL PATRON) en vez de 'matematicas/idiomas'; el tutor y los stats hablan de 'mente' y 'palabras'. Al subir de mundo aparece un aviso ¡NUEVO MUNDO N! con lo desbloqueado. Al terminar una actividad, el tutor da un RECONOCIMIENTO hablado al esfuerzo. Sobre v60: progresion candado-por-nivel en todo";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -222,6 +222,20 @@ let achToast = null, achT = 0, lpanel = null; // aviso de logro + timer de chequ
 let mirador = null; // MIRADOR: vista panoramica (normal + infrarroja), se desbloquea por nivel
 let menuMsg = "", menuMsgT = 0; // aviso "se desbloquea en el mundo N" al tocar algo bloqueado
 const ISO_LV = 3; // mundo necesario para la DIMENSION 3D (portal + menu)
+let worldToast = null, recogToast = null; // aviso de NUEVO MUNDO desbloqueado + reconocimiento (refuerzo positivo)
+// que se abre en cada mundo (texto neutro: aprende sin etiquetar las materias)
+const WORLD_UNLOCKS = {
+  2: ["mas retos del tutor", "KPIs y Logros", "Mirador", "Juegos del mall"],
+  3: ["Dimension 3D", "nuevos desafios del tutor", "Casino del mall"],
+  4: ["Cine", "Vision infrarroja del mirador"],
+};
+// reconocimiento por esfuerzo/progreso (neurolinguistico: elogia el intento, sin nombrar materias)
+function recognize(correct, total) {
+  const ratio = total ? correct / total : 0;
+  const msg = ratio >= 0.9 ? "Increible! Tu mente esta brillando." : ratio >= 0.6 ? "Muy bien! Cada intento te hace mas fuerte." : "Buen esfuerzo! Equivocarse tambien es aprender.";
+  recogToast = { msg: msg, t: 3.6 };
+  try { speak(msg, "es-ES"); } catch (e) {}
+}
 function saveCosmetics() { lset("face", face); lset("acc", acc); lset("mount", mount); lset("uface", JSON.stringify(uFace)); lset("uacc", JSON.stringify(uAcc)); lset("umount", JSON.stringify(uMount)); }
 let wbScroll = 0, wbDrag = null;
 let uiBack = "title"; // a donde vuelve "VOLVER" (title o menu del juego)
@@ -527,7 +541,7 @@ function genLevel() {
   buildWorld();
   buildMission();
   weather.kind = ["sol", "sol", "sol", "nubes", "nubes", "lluvia"][randi(0, 6)]; rain.length = 0; // clima del nivel
-  maxWorld = Math.max(maxWorld, level); lset("maxworld", maxWorld);
+  if (level > maxWorld) { maxWorld = level; lset("maxworld", maxWorld); const items = WORLD_UNLOCKS[level]; if (items) { worldToast = { world: level, items: items, t: 5.5 }; try { sPower(); speak("Nuevo mundo desbloqueado", "es-ES"); } catch (e) {} } } else { maxWorld = Math.max(maxWorld, level); lset("maxworld", maxWorld); }
   // recompensa: 1 skin gratis cada 2 mundos
   const freeSkins = Math.min(Math.floor(maxWorld / 2), OUTFITS.length - 1); let newSkin = false;
   for (let i = 1; i <= freeSkins; i++) if (!unlocked[i]) { unlocked[i] = true; newSkin = true; }
@@ -1243,6 +1257,25 @@ function drawAchToast() {
   if (achToast.rew) text("+" + achToast.rew + " al banco", x + w - 12, y + 30, 12, "#ffd84a", "right");
   ctx.globalAlpha = 1;
 }
+function drawWorldToast() {
+  if (!worldToast) return;
+  ctx.globalAlpha = Math.min(1, worldToast.t / 0.5);
+  const n = worldToast.items.length, w = Math.min(360, W - 32), h = 64 + n * 22, x = (W - w) / 2, y = H * 0.22 + safeT;
+  ctx.fillStyle = "rgba(12,16,26,0.96)"; ctx.beginPath(); ctx.roundRect(x, y, w, h, 14); ctx.fill(); ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 3; ctx.stroke();
+  text("¡NUEVO MUNDO " + worldToast.world + "!", W / 2, y + 28, 21, "#ffd84a", "center");
+  text("Desbloqueaste:", W / 2, y + 48, 12, "#9aa6c0", "center");
+  for (let i = 0; i < n; i++) text("· " + worldToast.items[i], W / 2, y + 68 + i * 22, 13, "#dfe7fa", "center");
+  ctx.globalAlpha = 1;
+}
+function drawRecogToast() {
+  if (!recogToast) return;
+  ctx.globalAlpha = Math.min(1, recogToast.t / 0.4);
+  const w = Math.min(340, W - 40), x = (W - w) / 2, y = H * 0.4;
+  ctx.fillStyle = "rgba(12,22,16,0.94)"; ctx.beginPath(); ctx.roundRect(x, y, w, 44, 12); ctx.fill(); ctx.strokeStyle = "#62e074"; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = "#62e074"; ctx.beginPath(); ctx.arc(x + 24, y + 22, 12, 0, 7); ctx.fill(); text("*", x + 24, y + 28, 16, "#0c160e", "center");
+  text("RECONOCIMIENTO", x + 42, y + 18, 9, "#9be7c0", "left"); fitTextLeft(recogToast.msg, x + 42, y + 34, w - 54, 13, "#eafff2");
+  ctx.globalAlpha = 1;
+}
 // ---- MIRADOR: vista panoramica de TODA la ciudad, normal e INFRARROJA (ver en la oscuridad). Se gana por nivel. ----
 const MIR_PANO_LV = 2, MIR_IR_LV = 4; // mundos necesarios para desbloquear panorama / infrarrojo
 function openMirador(back) { mirador = { back: back || "menu", mode: 0, msg: "", msgT: 0, zoom: 1, panX: 0, panY: 0, drag: null, pinch: null }; state = "mirador"; }
@@ -1330,11 +1363,11 @@ function drawThermalRadar() {
 }
 // ---- ACADEMIA: hub del TUTOR. Reusa las actividades educativas existentes (mates/idiomas/ortografia/logica/memoria). ----
 const ACADEMIA_SUBJECTS = [
-  { key: "math", name: "MATEMATICAS", desc: "sumas, restas, tablas, logica", col: "#ffd84a", lv: 1, say: "Vamos con matematicas. Pensa cada paso con calma, vos podes.", open: openMath },
-  { key: "lang", name: "IDIOMAS (INGLES/CHINO)", desc: "vocabulario y traduccion", col: "#62e074", lv: 1, say: "Practiquemos idiomas. Escucha y repeti en voz alta.", open: openTrivia },
-  { key: "spell", name: "ORTOGRAFIA", desc: "arma la palabra (anagrama)", col: "#7fd6ff", lv: 2, say: "Ordena las letras para formar la palabra. Tomate tu tiempo.", open: openAnagram },
-  { key: "memory", name: "MEMORIA", desc: "parea palabras", col: "#ff9bb0", lv: 2, say: "Encuentra las parejas. Concentrate y memoriza!", open: openMemory },
-  { key: "logic", name: "LOGICA / SECUENCIAS", desc: "encuentra el patron", col: "#b480ff", lv: 3, say: "Observa la secuencia y descubri el patron.", open: openSeq },
+  { key: "math", name: "RETO MENTAL", desc: "piensa rapido y resuelve", col: "#ffd84a", lv: 1, say: "Vamos con un reto. Pensa con calma, paso a paso, vos podes.", open: openMath },
+  { key: "lang", name: "PALABRAS DEL MUNDO", desc: "descubri como suenan y que dicen", col: "#62e074", lv: 1, say: "Escucha y repeti en voz alta. Lo estas haciendo muy bien.", open: openTrivia },
+  { key: "spell", name: "ARMA LA PALABRA", desc: "ordena las letras", col: "#7fd6ff", lv: 2, say: "Ordena las letras con calma. Vos podes.", open: openAnagram },
+  { key: "memory", name: "PAREJAS", desc: "encuentra los pares", col: "#ff9bb0", lv: 2, say: "Concentrate y encontra las parejas!", open: openMemory },
+  { key: "logic", name: "DESCUBRE EL PATRON", desc: "que sigue en la secuencia", col: "#b480ff", lv: 3, say: "Observa con atencion y descubri que sigue.", open: openSeq },
 ];
 // lanza una materia: el tutor da un mini saludo hablado y abre la actividad (vuelve al tutor al terminar)
 function academiaStart(s) { eduReturn = "academia"; try { speak(s.say, "es-ES"); } catch (e) {} s.open(); }
@@ -1375,8 +1408,8 @@ function drawAcademia() {
   acaWrap(academia.greet, p.x + 66, p.y + 66, p.w - 96, 12, "#dfe7fa", 15, 3);
   // franja de stats: nivel de mates + mejor racha + palabras dominadas (feedback visible / neuro-adaptativo)
   { const ms = aiMastery(), ml = kpi.mathLvl || 0, mst = kpi.mathStreak || 0; const sy = p.y + 118;
-    text("Mates: nivel " + ml + "/5 · racha " + mst, p.x + 18, sy, 11, "#ffd84a", "left");
-    text("Idiomas: " + ms.m + "/" + ms.tt + " dominadas", p.x + p.w - 18, sy, 11, "#62e074", "right"); }
+    text("Mente: nivel " + ml + "/5 · racha " + mst, p.x + 18, sy, 11, "#ffd84a", "left");
+    text("Palabras: " + ms.m + "/" + ms.tt, p.x + p.w - 18, sy, 11, "#62e074", "right"); }
   // materias (reusan actividades existentes); la sugerida queda resaltada
   for (let i = 0; i < ACADEMIA_SUBJECTS.length; i++) {
     const r = acaRowRect(i), s = ACADEMIA_SUBJECTS[i], locked = maxWorld < (s.lv || 1), rec = !locked && s.key === academia.rec;
@@ -1397,7 +1430,7 @@ function drawAcademia() {
 function menuRows() {
   return [
     { label: "CONTINUAR", col: "#5eead4", lv: 1, act: () => { state = "play"; } },
-    { label: "ACADEMIA (tutor: mates + idiomas)", col: "#7fb0ff", lv: 1, act: () => { openAcademia("menu"); } },
+    { label: "ACADEMIA (tu tutor neural)", col: "#7fb0ff", lv: 1, act: () => { openAcademia("menu"); } },
     { label: "BODEGA (items + accesorios)", col: "#ffd84a", lv: 1, act: () => { openBodega("play"); } },
     { label: "VESTUARIO", col: "#f5cd46", lv: 1, act: () => { openWb("menu"); } },
     { label: "KPIS + LOGROS (" + achCount() + "/" + ACHS.length + ")", col: "#7fd6ff", lv: 2, act: () => { openKpis("menu"); } },
@@ -1493,6 +1526,8 @@ function update(dt) {
   if (state === "play" && !paused) { daySec += dt; kpi.playSec = (kpi.playSec || 0) + dt; kpiDirty = true; achT -= dt; if (achT <= 0) { achT = 1.2; achCheck(); } }
   if (achToast) { achToast.t -= dt; if (achToast.t <= 0) achToast = null; }
   if (menuMsgT > 0) menuMsgT -= dt;
+  if (worldToast) { worldToast.t -= dt; if (worldToast.t <= 0) worldToast = null; }
+  if (recogToast) { recogToast.t -= dt; if (recogToast.t <= 0) recogToast = null; }
   tod = (daySec % dayLen) / dayLen;
   nightAmt = 0.5 - 0.5 * Math.cos(tod * 2 * Math.PI); // 0 = mediodia, 1 = medianoche
   const tbase = weather.kind === "sol" ? 27 : weather.kind === "nubes" ? 20 : 16;
@@ -1731,14 +1766,14 @@ const MALL_FLOORS = [
       { label: "Girar (2 mon)", cost: 0, act: () => { interior.popup = null; openRoulette(); } },
     ] },
     { kind: "memo", name: "JUEGOS", icon: "dice", col: "#7fd6ff", lv: 2, opts: [
-      { label: "Memoria de palabras", cost: 0, act: () => { interior.popup = null; openMemory(); } },
+      { label: "Parejas", cost: 0, act: () => { interior.popup = null; openMemory(); } },
     ] },
     { kind: "casino", name: "CASINO", icon: "dice", col: "#ff6b8a", lv: 3, opts: [
       { label: "UNO de colores vs NPCs", cost: 0, act: () => { interior.popup = null; openUno(); } },
-      { label: "Trivia neural (idiomas)", cost: 0, act: () => { interior.popup = null; openTrivia(); } },
-      { label: "Anagrama (ortografia)", cost: 0, act: () => { interior.popup = null; openAnagram(); } },
-      { label: "Matematicas neural", cost: 0, act: () => { interior.popup = null; openMath(); } },
-      { label: "Secuencias (logica/mate)", cost: 0, act: () => { interior.popup = null; openSeq(); } },
+      { label: "Palabras del mundo", cost: 0, act: () => { interior.popup = null; openTrivia(); } },
+      { label: "Arma la palabra", cost: 0, act: () => { interior.popup = null; openAnagram(); } },
+      { label: "Reto mental", cost: 0, act: () => { interior.popup = null; openMath(); } },
+      { label: "Descubre el patron", cost: 0, act: () => { interior.popup = null; openSeq(); } },
     ] },
   ] },
   { name: "PISO 4 · CINE Y TERRAZA", stations: [
@@ -2299,7 +2334,7 @@ function memoryTapAt(px, py) {
   for (let i = 0; i < memory.cards.length; i++) { const card = memory.cards[i]; if (card.matched || card.flipped) continue; const r = memCardRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
     card.flipped = true; sRight();
     if (memory.first < 0) { memory.first = i; if (card.say) speak(card.say, card.code); }
-    else { const a = memory.cards[memory.first]; if (a.pair === card.pair) { a.matched = card.matched = true; memory.matches++; const tgt = a.side === "t" ? a : card; if (tgt.say) speak(tgt.say, tgt.code); sPower(); memory.first = -1; if (memory.matches >= memory.total) { memory.done = true; coins += 10; words += memory.total; kpiBump("wordsLearned", memory.total); floatText(W / 2, H / 2, "GANASTE +10 mon!", "#60d050"); flash("96,208,80", 0.25); } } else { memory.lockT = 0.85; sWrong(); } }
+    else { const a = memory.cards[memory.first]; if (a.pair === card.pair) { a.matched = card.matched = true; memory.matches++; const tgt = a.side === "t" ? a : card; if (tgt.say) speak(tgt.say, tgt.code); sPower(); memory.first = -1; if (memory.matches >= memory.total) { memory.done = true; coins += 10; words += memory.total; kpiBump("wordsLearned", memory.total); floatText(W / 2, H / 2, "GANASTE +10 mon!", "#60d050"); flash("96,208,80", 0.25); recognize(memory.total, memory.total); } } else { memory.lockT = 0.85; sWrong(); } }
     return;
   } }
 }
@@ -2430,7 +2465,7 @@ let trivia = null;
 function triviaOptions(L, it) { const correct = dispOf(L, it), opts = [correct]; let g = 0; while (opts.length < 4 && g++ < 60) { const d = dispOf(L, trivia.pool[randi(0, trivia.pool.length)]); if (!opts.includes(d)) opts.push(d); } shuffle(opts); return { correct, opts }; }
 function triviaPick() { const L = trivia.L, ranked = trivia.pool.slice().sort((a, b) => lstat(itemKey(a)).streak - lstat(itemKey(b)).streak), it = ranked[randi(0, Math.max(1, Math.min(5, ranked.length)))], o = triviaOptions(L, it); trivia.it = it; trivia.opts = o.opts; trivia.answer = o.correct; trivia.time = trivia.maxTime; trivia.locked = false; trivia.lastPick = -1; }
 function openTrivia() { const L = LESSONS[lang]; trivia = { L, pool: eduPool(L), it: null, opts: [], answer: "", time: 9, maxTime: 9, qi: 0, total: 8, correct: 0, locked: false, done: false, fbT: 0, lastOk: false, lastPick: -1, requeue: null }; triviaPick(); state = "trivia"; speak(trivia.it[1], L.code); }
-function triviaFinish() { trivia.done = true; const bonus = 8 + trivia.correct * 2; coins += bonus; words += trivia.correct; kpiBump("wordsLearned", trivia.correct); floatText(W / 2, H / 2, "¡+" + bonus + " mon!", "#60d050"); flash("96,208,80", 0.25); sPower(); }
+function triviaFinish() { trivia.done = true; const bonus = 8 + trivia.correct * 2; coins += bonus; words += trivia.correct; kpiBump("wordsLearned", trivia.correct); floatText(W / 2, H / 2, "¡+" + bonus + " mon!", "#60d050"); flash("96,208,80", 0.25); sPower(); recognize(trivia.correct, trivia.total); }
 function triviaNext() { if (trivia.qi >= trivia.total && !trivia.requeue) return triviaFinish(); if (trivia.requeue) { const it = trivia.requeue; trivia.requeue = null; const o = triviaOptions(trivia.L, it); trivia.it = it; trivia.opts = o.opts; trivia.answer = o.correct; trivia.time = trivia.maxTime; trivia.locked = false; trivia.lastPick = -1; } else triviaPick(); }
 function triviaAnswer(i) {
   if (trivia.locked || trivia.done) return; trivia.locked = true; trivia.lastPick = i;
@@ -2457,7 +2492,7 @@ let anag = null;
 function anagText(L, it) { return (L.code === "zh-CN" ? it[2] : it[1]).toUpperCase().replace(/[^A-ZÁÉÍÓÚÜÑ0-9]/g, ""); }
 function anagSetup() { const L = anag.L, it = anag.pool[randi(0, anag.pool.length)], w = anagText(L, it), order = w.split("").map((_, i) => i); shuffle(order); anag.it = it; anag.word = w; anag.order = order; anag.built = []; anag.locked = false; anag.fbT = 0; speak(it[1], L.code); }
 function openAnagram() { const L = LESSONS[lang]; let pool = eduPool(L).filter(it => { const len = anagText(L, it).length; return len >= 3 && len <= 9; }); if (!pool.length) pool = eduPool(L); anag = { L, pool, it: null, word: "", order: [], built: [], qi: 0, total: 6, correct: 0, done: false, locked: false, fbT: 0 }; anagSetup(); state = "anagram"; }
-function anagNext() { if (anag.qi >= anag.total) { anag.done = true; const bonus = 6 + anag.correct * 2; coins += bonus; words += anag.correct; kpiBump("wordsLearned", anag.correct); floatText(W / 2, H / 2, "¡+" + bonus + " mon!", "#60d050"); flash("96,208,80", 0.25); sPower(); return; } anagSetup(); }
+function anagNext() { if (anag.qi >= anag.total) { anag.done = true; const bonus = 6 + anag.correct * 2; coins += bonus; words += anag.correct; kpiBump("wordsLearned", anag.correct); floatText(W / 2, H / 2, "¡+" + bonus + " mon!", "#60d050"); flash("96,208,80", 0.25); sPower(); recognize(anag.correct, anag.total); return; } anagSetup(); }
 function anagCheck() {
   const made = anag.built.map(i => anag.word[anag.order[i]]).join(""), L = anag.L, it = anag.it, s = lstat(itemKey(it)); s.seen++; anag.qi++; anag.locked = true;
   if (made === anag.word) { s.ok++; s.streak++; saveL(); anag.correct++; sPower(); speak(it[1], L.code); neuralTip("¡Bien escrito! '" + it[1].toLowerCase() + "' = " + it[0].toLowerCase() + "."); anag.fbT = 0.8; }
@@ -2511,7 +2546,7 @@ function mathGen(lvl) {
 }
 function mathLvl() { return clamp(1 + Math.floor(mathq.streak / 2), 1, 5); }
 function openMath() { mathq = { cur: null, qi: 0, total: 10, correct: 0, streak: 0, time: 12, maxTime: 12, locked: false, done: false, fbT: 0, lastOk: false, lastPick: -1 }; mathq.cur = mathGen(1); state = "mathq"; }
-function mathNext() { if (mathq.qi >= mathq.total) { mathq.done = true; const bonus = 10 + mathq.correct * 2; coins += bonus; floatText(W / 2, H / 2, "¡+" + bonus + " mon!", "#60d050"); flash("96,208,80", 0.25); sPower(); return; } mathq.cur = mathGen(mathLvl()); mathq.time = mathq.maxTime; mathq.locked = false; mathq.lastPick = -1; }
+function mathNext() { if (mathq.qi >= mathq.total) { mathq.done = true; const bonus = 10 + mathq.correct * 2; coins += bonus; floatText(W / 2, H / 2, "¡+" + bonus + " mon!", "#60d050"); flash("96,208,80", 0.25); sPower(); recognize(mathq.correct, mathq.total); return; } mathq.cur = mathGen(mathLvl()); mathq.time = mathq.maxTime; mathq.locked = false; mathq.lastPick = -1; }
 function mathAnswer(i) {
   if (mathq.locked || mathq.done) return; mathq.locked = true; mathq.lastPick = i;
   const c = mathq.cur, ok = i >= 0 && c.opts[i] === c.ans; mathq.lastOk = ok; mathq.qi++;
@@ -2543,7 +2578,7 @@ function seqGen(lvl) {
 }
 function seqLvl() { return clamp(1 + Math.floor(seqg.streak / 2), 1, 4); }
 function openSeq() { seqg = { cur: null, qi: 0, total: 8, correct: 0, streak: 0, locked: false, done: false, fbT: 0, lastOk: false, lastPick: -1 }; seqg.cur = seqGen(1); state = "seq"; }
-function seqNext() { if (seqg.qi >= seqg.total) { seqg.done = true; const bonus = 8 + seqg.correct * 2; coins += bonus; floatText(W / 2, H / 2, "¡+" + bonus + " mon!", "#60d050"); flash("96,208,80", 0.25); sPower(); return; } seqg.cur = seqGen(seqLvl()); seqg.locked = false; seqg.lastPick = -1; }
+function seqNext() { if (seqg.qi >= seqg.total) { seqg.done = true; const bonus = 8 + seqg.correct * 2; coins += bonus; floatText(W / 2, H / 2, "¡+" + bonus + " mon!", "#60d050"); flash("96,208,80", 0.25); sPower(); recognize(seqg.correct, seqg.total); return; } seqg.cur = seqGen(seqLvl()); seqg.locked = false; seqg.lastPick = -1; }
 function seqAnswer(i) {
   if (seqg.locked || seqg.done) return; seqg.locked = true; seqg.lastPick = i;
   const c = seqg.cur, ok = i >= 0 && c.opts[i] === c.ans; seqg.lastOk = ok; seqg.qi++;
@@ -3425,6 +3460,8 @@ function render() {
   drawAI();
   drawThermalRadar();
   drawAchToast();
+  drawWorldToast();
+  drawRecogToast();
   if (state === "play") { drawMinimap(); drawStick(stickL, "rgba(94,234,212,0.5)"); drawStick(stickR, "rgba(255,150,60,0.6)"); drawButtons(); }
   if (bannerT > 0 && (state === "play" || state === "quiz")) { const a = clamp(bannerT / 0.6, 0, 1) * clamp((2.4 - bannerT) / 0.3, 0, 1); ctx.globalAlpha = a; text("MUNDO " + level, W / 2, H * 0.3, Math.min(46, W / 9), "#fff", "center"); text(theme.name, W / 2, H * 0.3 + 38, Math.min(32, W / 11), hexA(theme.stud, 1), "center"); text("MISION: " + (mission ? mission.text : "junta las gemas"), W / 2, H * 0.3 + 70, 14, "#f5cd46", "center"); ctx.globalAlpha = 1; }
   if (state === "quiz") drawQuiz();

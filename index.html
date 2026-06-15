@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v56 - PORTAL fisico al 3D + RANGOS + recompensas + MIRADOR + edificios mejorados: (1) portal cyan en la ciudad: te paras y viajas a la DIMENSION 3D; (2) las medallas dan MONEDAS al banco al ganarlas (ambas plataformas); (3) RANGOS Bronce/Plata/Oro/Diamante que combinan KPIs (el aprendizaje pesa mas) en KPIS y LOGROS; (4) pantalla LOGROS+RANGO nativa dentro del 3D; (5) MIRADOR (menu casa o tecla M): vista panoramica de toda la ciudad, normal e INFRARROJA para ver en la oscuridad, se gana por nivel (mundo 2 / mundo 4); (6) edificios 3D rectificados (paredes mas altas, pisos, ventanas con brillo, techo con relieve)";
+const VERSION = "v57 - MIRADOR con ZOOM + ARRASTRE + RADAR TERMICO: el mirador ahora hace zoom (botones +/-, rueda o pellizco) y se arrastra para explorar todo el mapa; nuevo RADAR TERMICO en el juego (se gana en MUNDO 4 con el infrarrojo): flechas de calor hacia enemigos cercanos fuera de pantalla + aura termica de noche. Sobre v56: portal 3D fisico, rangos Bronce/Plata/Oro/Diamante, recompensas por medalla, LOGROS nativo en 3D, edificios rectificados";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -621,7 +621,7 @@ addEventListener("keydown", e => {
   if (k === " " || k === "shift") doDash();
 });
 addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
-canvas.addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+canvas.addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; if (state === "mirador" && mirador && mirador.drag && mirador.drag.mouse) { mirador.panX = mirador.drag.px + (e.clientX - mirador.drag.x0); mirador.panY = mirador.drag.py + (e.clientY - mirador.drag.y0); mirClampPan(); } });
 canvas.addEventListener("mousedown", e => {
   mouse.down = true; audioInit();
   if (state === "title") { const ir = titleIsoRect(); if (e.clientX >= ir.x && e.clientX <= ir.x + ir.w && e.clientY >= ir.y && e.clientY <= ir.y + ir.h) { gotoIso(); return; } const cr = titleContinueRect(); if (loadRun() && e.clientX >= cr.x && e.clientX <= cr.x + cr.w && e.clientY >= cr.y && e.clientY <= cr.y + cr.h) { resumeRun(); mouse.down = false; return; } const w = titleWbRect(); if (e.clientX >= w.x && e.clientX <= w.x + w.w && e.clientY >= w.y && e.clientY <= w.y + w.h) { openWb(); mouse.down = false; return; } const o = titleOptRect(); if (e.clientX >= o.x && e.clientX <= o.x + o.w && e.clientY >= o.y && e.clientY <= o.y + o.h) { openOptions(); mouse.down = false; return; } startOrRestart(); return; }
@@ -631,7 +631,7 @@ canvas.addEventListener("mousedown", e => {
   if (state === "bodega") { bodegaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "kpis") { kpisTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "logros") { logrosTapAt(e.clientX, e.clientY); mouse.down = false; return; }
-  if (state === "mirador") { miradorTapAt(e.clientX, e.clientY); mouse.down = false; return; }
+  if (state === "mirador") { if (!miradorTapAt(e.clientX, e.clientY)) mirador.drag = { mouse: true, x0: e.clientX, y0: e.clientY, px: mirador.panX, py: mirador.panY }; mouse.down = false; return; }
   if (state === "ia") { iaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "interior") { interiorTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "store") { storeTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -652,9 +652,9 @@ canvas.addEventListener("mousedown", e => {
   if (settings.ai && state === "play") { const ar = aiRect(); if (e.clientX >= ar.x && e.clientX <= ar.x + ar.w + 16 && e.clientY >= ar.y - 4 && e.clientY <= ar.y + ar.h) { aiHelp(); mouse.down = false; return; } }
   const b = btnAt(e.clientX, e.clientY); if (b) { doButton(b); mouse.down = false; }
 });
-addEventListener("mouseup", () => { mouse.down = false; });
+addEventListener("mouseup", () => { mouse.down = false; if (mirador && mirador.drag) mirador.drag = null; });
 canvas.addEventListener("contextmenu", e => e.preventDefault());
-canvas.addEventListener("wheel", e => { if (state === "wardrobe") { wbScroll = clamp(wbScroll + e.deltaY, 0, wbMaxScroll()); e.preventDefault(); } }, { passive: false });
+canvas.addEventListener("wheel", e => { if (state === "wardrobe") { wbScroll = clamp(wbScroll + e.deltaY, 0, wbMaxScroll()); e.preventDefault(); } else if (state === "mirador") { mirSetZoom(mirador.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)); e.preventDefault(); } }, { passive: false });
 
 const stickL = { id: null, bx: 0, by: 0, x: 0, y: 0 };
 const stickR = { id: null, bx: 0, by: 0, x: 0, y: 0 };
@@ -667,7 +667,13 @@ function onTouchStart(e) {
   if (state === "bodega") { for (const tch of e.changedTouches) bodegaTapAt(tch.clientX, tch.clientY); return; }
   if (state === "kpis") { for (const tch of e.changedTouches) kpisTapAt(tch.clientX, tch.clientY); return; }
   if (state === "logros") { for (const tch of e.changedTouches) logrosTapAt(tch.clientX, tch.clientY); return; }
-  if (state === "mirador") { for (const tch of e.changedTouches) miradorTapAt(tch.clientX, tch.clientY); return; }
+  if (state === "mirador") {
+    if (e.touches.length >= 2) { mirador.pinch = { d0: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), z0: mirador.zoom }; mirador.drag = null; return; }
+    const tch = e.changedTouches[0]; if (!tch) return;
+    if (miradorTapAt(tch.clientX, tch.clientY)) return;
+    mirador.drag = { id: tch.identifier, x0: tch.clientX, y0: tch.clientY, px: mirador.panX, py: mirador.panY };
+    return;
+  }
   if (state === "ia") { for (const tch of e.changedTouches) iaTapAt(tch.clientX, tch.clientY); return; }
   if (state === "interior") { for (const tch of e.changedTouches) { if (interiorTapAt(tch.clientX, tch.clientY)) return; if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
   if (state === "store") { for (const tch of e.changedTouches) { if (storeTapAt(tch.clientX, tch.clientY)) return; if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
@@ -696,6 +702,11 @@ function onTouchStart(e) {
 }
 function onTouchMove(e) {
   e.preventDefault();
+  if (state === "mirador") {
+    if (mirador.pinch && e.touches.length >= 2) { mirSetZoom(mirador.pinch.z0 * (Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY) / mirador.pinch.d0)); return; }
+    if (mirador.drag) { for (const tch of e.changedTouches) if (tch.identifier === mirador.drag.id) { mirador.panX = mirador.drag.px + (tch.clientX - mirador.drag.x0); mirador.panY = mirador.drag.py + (tch.clientY - mirador.drag.y0); mirClampPan(); } }
+    return;
+  }
   if (state === "wardrobe" && wbDrag) { for (const tch of e.changedTouches) if (tch.identifier === wbDrag.id) { const dy = tch.clientY - wbDrag.y0; wbDrag.moved = Math.max(wbDrag.moved, Math.abs(dy) + Math.abs(tch.clientX - wbDrag.x0)); wbScroll = clamp(wbDrag.s0 - dy, 0, wbMaxScroll()); } return; }
   for (const tch of e.changedTouches) {
     if (tch.identifier === stickL.id) { stickL.x = tch.clientX; stickL.y = tch.clientY; }
@@ -704,6 +715,7 @@ function onTouchMove(e) {
 }
 function onTouchEnd(e) {
   e.preventDefault();
+  if (state === "mirador") { if (mirador.drag) { for (const tch of e.changedTouches) if (tch.identifier === mirador.drag.id) mirador.drag = null; } if (e.touches.length < 2) mirador.pinch = null; return; }
   if (state === "wardrobe" && wbDrag) { for (const tch of e.changedTouches) if (tch.identifier === wbDrag.id) { if (wbDrag.moved < 10) wbTapAt(wbDrag.x0, wbDrag.y0); wbDrag = null; } return; }
   for (const tch of e.changedTouches) {
     if (tch.identifier === stickL.id) stickL.id = null;
@@ -1223,16 +1235,26 @@ function drawAchToast() {
 }
 // ---- MIRADOR: vista panoramica de TODA la ciudad, normal e INFRARROJA (ver en la oscuridad). Se gana por nivel. ----
 const MIR_PANO_LV = 2, MIR_IR_LV = 4; // mundos necesarios para desbloquear panorama / infrarrojo
-function openMirador(back) { mirador = { back: back || "menu", mode: 0, msg: "", msgT: 0 }; state = "mirador"; }
+function openMirador(back) { mirador = { back: back || "menu", mode: 0, msg: "", msgT: 0, zoom: 1, panX: 0, panY: 0, drag: null, pinch: null }; state = "mirador"; }
 function updateMirador(dt) { if (mirador.msgT > 0) mirador.msgT -= dt; }
+function mirView() { const vy = 56 + safeT, vh = (H - 96 - safeB) - vy, vx = 16, vw = W - 32, mapW = cols * TS, mapH = rows * TS; return { vx: vx, vy: vy, vw: vw, vh: vh, mapW: mapW, mapH: mapH, baseSc: Math.min(vw / mapW, vh / mapH) }; }
+function mirClampPan() { const v = mirView(), sc = v.baseSc * mirador.zoom, dW = v.mapW * sc, dH = v.mapH * sc, ox0 = v.vx + (v.vw - dW) / 2, oy0 = v.vy + (v.vh - dH) / 2;
+  if (dW <= v.vw) mirador.panX = 0; else mirador.panX = clamp(mirador.panX, (v.vx - ox0) - (dW - v.vw), v.vx - ox0);
+  if (dH <= v.vh) mirador.panY = 0; else mirador.panY = clamp(mirador.panY, (v.vy - oy0) - (dH - v.vh), v.vy - oy0);
+}
+function mirSetZoom(z) { mirador.zoom = clamp(z, 1, 4); mirClampPan(); }
+function mirZoomBtns() { const v = mirView(), s = 34; return [{ x: v.vx + v.vw - s - 6, y: v.vy + 6, w: s, h: s, id: "zin" }, { x: v.vx + v.vw - s - 6, y: v.vy + 6 + s + 6, w: s, h: s, id: "zout" }]; }
 function mirBtns() { const gap = 8, total = W - 32, bw = (total - gap * 2) / 3, y = H - 48 - safeB; return [{ x: 16, y: y, w: bw, h: 36, id: "normal" }, { x: 16 + bw + gap, y: y, w: bw, h: 36, id: "ir" }, { x: 16 + 2 * (bw + gap), y: y, w: bw, h: 36, id: "close" }]; }
 function miradorTapAt(px, py) {
-  const bs = mirBtns(); for (const b of bs) if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) {
+  const hit = (b) => px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h;
+  if (maxWorld >= MIR_PANO_LV && dcanvas.width > 0) for (const z of mirZoomBtns()) if (hit(z)) { mirSetZoom(mirador.zoom * (z.id === "zin" ? 1.5 : 1 / 1.5)); sRight(); return true; }
+  for (const b of mirBtns()) if (hit(b)) {
     if (b.id === "normal") { mirador.mode = 0; sRight(); }
     else if (b.id === "ir") { if (maxWorld >= MIR_IR_LV) { mirador.mode = 1; sPower(); } else { sWrong(); mirador.msg = "INFRARROJA se desbloquea en el MUNDO " + MIR_IR_LV; mirador.msgT = 2.2; } }
     else state = mirador.back;
-    return;
+    return true;
   }
+  return false;
 }
 function drawMirador() {
   ctx.fillStyle = "rgba(2,6,10,0.94)"; ctx.fillRect(0, 0, W, H);
@@ -1244,10 +1266,10 @@ function drawMirador() {
     const bs = mirBtns(), c = bs[2]; ctx.fillStyle = "#23303a"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); text("CERRAR", c.x + c.w / 2, c.y + c.h / 2 + 5, 14, "#9be7c0", "center");
     return;
   }
-  const vy = 56 + safeT, vh = (H - 96 - safeB) - vy, vx = 16, vw = W - 32;
-  const mapW = cols * TS, mapH = rows * TS, sc = Math.min(vw / mapW, vh / mapH), dW = mapW * sc, dH = mapH * sc, ox = vx + (vw - dW) / 2, oy = vy + (vh - dH) / 2;
-  ctx.save(); ctx.beginPath(); ctx.rect(ox - 2, oy - 2, dW + 4, dH + 4); ctx.clip();
-  ctx.fillStyle = ir ? "#001a0e" : "#0a0f18"; ctx.fillRect(ox - 2, oy - 2, dW + 4, dH + 4);
+  const v = mirView(), vx = v.vx, vy = v.vy, vw = v.vw, vh = v.vh;
+  const sc = v.baseSc * mirador.zoom, dW = v.mapW * sc, dH = v.mapH * sc, ox = vx + (vw - dW) / 2 + mirador.panX, oy = vy + (vh - dH) / 2 + mirador.panY;
+  ctx.save(); ctx.beginPath(); ctx.rect(vx, vy, vw, vh); ctx.clip();
+  ctx.fillStyle = ir ? "#001a0e" : "#0a0f18"; ctx.fillRect(vx, vy, vw, vh);
   if (ir) {
     ctx.globalAlpha = 0.30; ctx.drawImage(dcanvas, ox, oy, dW, dH); ctx.globalAlpha = 1;
     ctx.fillStyle = "rgba(0,255,110,0.10)"; ctx.fillRect(ox, oy, dW, dH);
@@ -1264,7 +1286,10 @@ function drawMirador() {
   if (isoPortal) { const m = M(isoPortal.x, isoPortal.y); ctx.fillStyle = "#36e0c8"; ctx.beginPath(); ctx.arc(m.x, m.y, 4, 0, 7); ctx.fill(); }
   { const m = M(player.x, player.y); if (ir) { const rg = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, 12); rg.addColorStop(0, "#eafff2"); rg.addColorStop(0.5, "#7dff9a"); rg.addColorStop(1, "rgba(125,255,154,0)"); ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(m.x, m.y, 12, 0, 7); ctx.fill(); } ctx.fillStyle = ir ? "#eafff2" : "#ffd84a"; ctx.beginPath(); ctx.arc(m.x, m.y, 3.4, 0, 7); ctx.fill(); ctx.strokeStyle = "#15161f"; ctx.lineWidth = 1; ctx.stroke(); }
   ctx.restore();
-  ctx.strokeStyle = ir ? "rgba(125,255,154,0.5)" : "rgba(127,230,255,0.4)"; ctx.lineWidth = 2; ctx.strokeRect(ox - 2, oy - 2, dW + 4, dH + 4);
+  ctx.strokeStyle = ir ? "rgba(125,255,154,0.5)" : "rgba(127,230,255,0.4)"; ctx.lineWidth = 2; ctx.strokeRect(vx, vy, vw, vh);
+  // botones de ZOOM (+/-) y nivel de zoom
+  for (const z of mirZoomBtns()) { const en = z.id === "zin" ? mirador.zoom < 4 : mirador.zoom > 1; ctx.fillStyle = "rgba(16,22,32,0.85)"; ctx.beginPath(); ctx.roundRect(z.x, z.y, z.w, z.h, 8); ctx.fill(); ctx.strokeStyle = en ? "#7fe6ff" : "#3a4252"; ctx.lineWidth = 1.5; ctx.stroke(); text(z.id === "zin" ? "+" : "-", z.x + z.w / 2, z.y + z.h / 2 + 7, 22, en ? "#dff3ff" : "#556", "center"); }
+  if (mirador.zoom > 1.01) text("x" + mirador.zoom.toFixed(1) + "  (arrastra para moverte)", vx + 8, vy + 18, 11, "#7fe6ff", "left");
   text(ir ? "rojo = enemigos · verde = vos/objetos · ves en la oscuridad" : "amarillo = vos · violeta/cyan = portales · rojo = enemigos", W / 2, H - 60 - safeB, 10, "#9aa0b4", "center");
   if (mirador.msgT > 0) { ctx.globalAlpha = Math.min(1, mirador.msgT); text(mirador.msg, W / 2, H - 74 - safeB, 12, "#ffba6b", "center"); ctx.globalAlpha = 1; }
   const bs = mirBtns();
@@ -1275,6 +1300,22 @@ function drawMirador() {
     ctx.strokeStyle = b.id === "close" ? "#9be7c0" : lock ? "#555b6a" : sel ? (b.id === "ir" ? "#7dff9a" : "#7fe6ff") : "#3a4252"; ctx.lineWidth = sel ? 2 : 1.4; ctx.stroke();
     const lbl = b.id === "normal" ? "NORMAL" : b.id === "ir" ? (irOk ? "INFRARROJA" : "INFRA (Mundo " + MIR_IR_LV + ")") : "CERRAR";
     text(lbl, b.x + b.w / 2, b.y + b.h / 2 + 5, b.id === "ir" && !irOk ? 10 : 13, b.id === "close" ? "#9be7c0" : lock ? "#777" : sel ? "#fff" : "#aeb6c6", "center");
+  }
+}
+// ---- RADAR TERMICO (se gana en el MUNDO 4 junto con el infrarrojo): flechas de calor hacia enemigos cercanos fuera de pantalla ----
+function drawThermalRadar() {
+  if (state !== "play" || maxWorld < MIR_IR_LV || !enemies.length) return;
+  const cx = W / 2, cy = H / 2, range = 1100, rad = Math.min(W, H) * 0.40;
+  for (const e of enemies) {
+    const sx = e.x - camX, sy = e.y - camY, onScreen = sx > -16 && sx < W + 16 && sy > -16 && sy < H + 16;
+    if (onScreen) { if (nightAmt > 0.28) { const rg = ctx.createRadialGradient(sx, sy, 0, sx, sy, 24); rg.addColorStop(0, e.boss ? "rgba(206,130,255,0.34)" : "rgba(255,90,60,0.3)"); rg.addColorStop(1, "rgba(255,90,60,0)"); ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(sx, sy, 24, 0, 7); ctx.fill(); } continue; }
+    const d = len(e.x - player.x, e.y - player.y); if (d > range) continue;
+    const ang = Math.atan2(e.y - player.y, e.x - player.x), heat = 1 - Math.min(1, d / range), sz = e.boss ? 13 : 9;
+    const ax = cx + Math.cos(ang) * rad, ay = cy + Math.sin(ang) * rad;
+    ctx.save(); ctx.translate(ax, ay); ctx.rotate(ang); ctx.globalAlpha = 0.45 + 0.5 * heat;
+    ctx.fillStyle = e.boss ? "#ce82ff" : ("rgb(255," + Math.round(40 + 110 * (1 - heat)) + ",40)");
+    ctx.beginPath(); ctx.moveTo(sz, 0); ctx.lineTo(-sz * 0.7, -sz * 0.7); ctx.lineTo(-sz * 0.7, sz * 0.7); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1; ctx.restore();
   }
 }
 function menuRows() {
@@ -3259,6 +3300,7 @@ function render() {
 
   if (state === "play" || state === "quiz" || state === "shop") { drawHUD(); }
   drawAI();
+  drawThermalRadar();
   drawAchToast();
   if (state === "play") { drawMinimap(); drawStick(stickL, "rgba(94,234,212,0.5)"); drawStick(stickR, "rgba(255,150,60,0.6)"); drawButtons(); }
   if (bannerT > 0 && (state === "play" || state === "quiz")) { const a = clamp(bannerT / 0.6, 0, 1) * clamp((2.4 - bannerT) / 0.3, 0, 1); ctx.globalAlpha = a; text("MUNDO " + level, W / 2, H * 0.3, Math.min(46, W / 9), "#fff", "center"); text(theme.name, W / 2, H * 0.3 + 38, Math.min(32, W / 11), hexA(theme.stud, 1), "center"); text("MISION: " + (mission ? mission.text : "junta las gemas"), W / 2, H * 0.3 + 70, 14, "#f5cd46", "center"); ctx.globalAlpha = 1; }

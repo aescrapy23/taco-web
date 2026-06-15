@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v54 - BODEGA con ACCESORIOS + KPIs + API interna GAME: la bodega ahora tiene 2 pestanas (ITEMS para usar / ACCESORIOS adquiridos para equipar). Nueva pantalla KPIS (menu casa) con tus estadisticas por jugador (partidas, enemigos, palabras aprendidas y DOMINADAS, items, accesorios, monedas, tiempo) + coach IA. Capa de funciones unica GAME (inv/eco/cosmetic/stats) que usa todo el juego";
+const VERSION = "v55 - LOGROS/MEDALLAS + SPARKLINES en AMBAS plataformas (normal + 3D): 15 medallas que se desbloquean por KPIs (cazador, poliglota, maestro, constructor, sobreviviente, oleadas 3D...) con aviso animado al ganarlas; pantalla LOGROS (boton en KPIS) con grafica de puntaje por partida. El juego 3D ahora suma a los MISMOS KPIs y logros (kills/partidas/tiempo/oleadas) y los comparte por jugador. Sobre v54: BODEGA con pestanas ITEMS/ACCESORIOS, KPIS + coach IA, API interna GAME";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -216,6 +216,9 @@ let myBuilds = [], builtMarkers = []; // edificios que el jugador construyo (pla
 let inv = {}; // BODEGA: items que compraste y podes usar cuando los necesites (por jugador)
 let kpi = {}; // KPIs: estadisticas del jugador (partidas, kills, palabras, economia...) por perfil
 let kpanel = null; // estado de la pantalla de KPIs
+let ach = {}; // LOGROS desbloqueados { id: 1 } (compartido con el juego 3D)
+let hist = []; // historial de partidas para las sparklines [{ s, w, lvl }]
+let achToast = null, achT = 0, lpanel = null; // aviso de logro + timer de chequeo + pantalla de logros
 function saveCosmetics() { lset("face", face); lset("acc", acc); lset("mount", mount); lset("uface", JSON.stringify(uFace)); lset("uacc", JSON.stringify(uAcc)); lset("umount", JSON.stringify(uMount)); }
 let wbScroll = 0, wbDrag = null;
 let uiBack = "title"; // a donde vuelve "VOLVER" (title o menu del juego)
@@ -272,7 +275,7 @@ function loadPlayerData() {
   try { uMount = JSON.parse(lget("umount") || "{}"); } catch (e) { uMount = {}; } uMount[0] = true;
   try { myBuilds = JSON.parse(lget("mybuilds") || "[]"); } catch (e) { myBuilds = []; }
   try { inv = JSON.parse(lget("inv") || "{}"); } catch (e) { inv = {}; }
-  loadKpi();
+  loadKpi(); loadAch();
   face = clamp(face, 0, FACES.length - 1); acc = clamp(acc, 0, ACCS.length - 1); mount = clamp(mount, 0, MOUNTS.length - 1);
 }
 function saveBuilds() { lset("mybuilds", JSON.stringify(myBuilds)); }
@@ -313,6 +316,38 @@ const GAME = {
   cosmetic: { owns: (ty, i) => !!(COSMO[ty] && COSMO[ty].owned()[i]), equip: cosmEquip, list: cosmOwnedList, count: cosmOwnedCount },
   stats: { bump: kpiBump, get: (k) => kpi[k] || 0, save: saveKpi, list: () => buildKpis(), coach: () => kpiCoach() },
 };
+// ===== LOGROS / MEDALLAS (mismas definiciones que el juego 3D para compartir progreso) =====
+const ACHS = [
+  { id: "first", name: "PRIMER TACO", need: s => s.games >= 1, hint: "Juga 1 partida", c: "#ffd84a" },
+  { id: "hunter", name: "CAZADOR", need: s => s.kills >= 10, hint: "Vence 10 enemigos", c: "#ff7a6b" },
+  { id: "slayer", name: "EXTERMINADOR", need: s => s.kills >= 50, hint: "Vence 50 enemigos", c: "#ff7a6b" },
+  { id: "legend", name: "LEYENDA", need: s => s.kills >= 150, hint: "Vence 150 enemigos", c: "#ff5a4a" },
+  { id: "learn10", name: "APRENDIZ", need: s => s.words >= 10, hint: "Aprende 10 palabras", c: "#62e074" },
+  { id: "learn50", name: "POLIGLOTA", need: s => s.words >= 50, hint: "Aprende 50 palabras", c: "#62e074" },
+  { id: "master", name: "MAESTRO", need: s => s.mastered >= 10, hint: "Domina 10 palabras", c: "#5eead4" },
+  { id: "buyer", name: "COMPRADOR", need: s => s.bought >= 20, hint: "Compra 20 items", c: "#f5cd46" },
+  { id: "tactic", name: "ESTRATEGA", need: s => s.used >= 10, hint: "Usa 10 items de bodega", c: "#8ee07a" },
+  { id: "builder", name: "CONSTRUCTOR", need: s => s.builds >= 1, hint: "Construi 1 edificio", c: "#ffb060" },
+  { id: "fashion", name: "FASHIONISTA", need: s => s.cosmetics >= 8, hint: "Ten 8 accesorios", c: "#ff9bb0" },
+  { id: "endure", name: "SOBREVIVIENTE", need: s => s.playSec >= 600, hint: "Juga 10 minutos", c: "#7fd6ff" },
+  { id: "rich", name: "MILLONARIO", need: s => s.best >= 1000, hint: "Llega a 1000 puntos", c: "#ffd84a" },
+  { id: "wave5", name: "OLEADA 5 (3D)", need: s => s.isoWave >= 5, hint: "Oleada 5 en DIMENSION 3D", c: "#b480ff" },
+  { id: "wave10", name: "OLEADA 10 (3D)", need: s => s.isoWave >= 10, hint: "Oleada 10 en DIMENSION 3D", c: "#b480ff" },
+];
+function loadAch() { try { ach = JSON.parse(lget("ach") || "{}"); } catch (e) { ach = {}; } try { hist = JSON.parse(lget("hist") || "[]"); } catch (e) { hist = []; } if (!Array.isArray(hist)) hist = []; }
+function saveAch() { lset("ach", JSON.stringify(ach)); }
+function statsSnapshot() {
+  const ms = aiMastery(); let isoWave = 0; try { isoWave = parseInt(lget("isowave")) || 0; } catch (e) {}
+  return { games: kpi.games || 0, kills: kpi.kills || 0, words: kpi.wordsLearned || 0, bought: kpi.bought || 0, used: kpi.used || 0, playSec: kpi.playSec || 0, deaths: kpi.deaths || 0, best: best, maxWorld: maxWorld, cosmetics: cosmOwnedCount(), builds: (myBuilds ? myBuilds.length : 0), mastered: ms.m, isoWave: isoWave };
+}
+function achCount() { let n = 0; for (const a of ACHS) if (ach[a.id]) n++; return n; }
+function achCheck() {
+  const s = statsSnapshot(); let last = null, changed = false;
+  for (const a of ACHS) if (!ach[a.id] && a.need(s)) { ach[a.id] = 1; changed = true; last = a; }
+  if (changed) { saveAch(); if (last) { achToast = { name: last.name, c: last.c, t: 3.4 }; try { sPower(); speak("Logro desbloqueado", "es-ES"); } catch (e) {} } }
+  return changed;
+}
+function histPush(entry) { hist.push(entry); if (hist.length > 30) hist = hist.slice(-30); lset("hist", JSON.stringify(hist)); }
 function switchPlayer(name) { curPlayer = name; savePlayers(); loadPlayerData(); }
 function createPlayer() {
   let nm = null; try { nm = prompt("Nombre del jugador:", ""); } catch (e) {}
@@ -322,7 +357,7 @@ function createPlayer() {
   if (players.indexOf(nm) < 0) players.push(nm);
   curPlayer = nm; savePlayers();
   best = 0; bank = 0; outfit = 0; maxWorld = 1; unlocked = { 0: true }; lstats = {}; lang = "EN";
-  face = 0; acc = 1; mount = 0; uFace = { 0: true }; uAcc = { 0: true, 1: true }; uMount = { 0: true }; myBuilds = []; inv = {}; kpiReset(); lset("kpi", JSON.stringify(kpi));
+  face = 0; acc = 1; mount = 0; uFace = { 0: true }; uAcc = { 0: true, 1: true }; uMount = { 0: true }; myBuilds = []; inv = {}; kpiReset(); lset("kpi", JSON.stringify(kpi)); ach = {}; hist = []; lset("ach", "{}"); lset("hist", "[]");
   profile = { name: nm, age: age, eng: ageToTier(age, LESSONS.EN.levels.length - 1), zh: ageToTier(Math.max(6, age - 3), LESSONS.ZH.levels.length - 1) };
   lset("best", 0); lset("bank", 0); lset("outfit", 0); lset("maxworld", 1); lset("unlocked", JSON.stringify(unlocked)); lset("lstats", "{}"); lset("lang", "EN"); lset("profile", JSON.stringify(profile));
   saveCosmetics();
@@ -331,7 +366,7 @@ function createPlayer() {
 function deletePlayer(name) {
   const i = players.indexOf(name); if (i < 0) return;
   players.splice(i, 1);
-  try { ["best", "bank", "outfit", "maxworld", "lang", "unlocked", "lstats", "profile", "face", "acc", "mount", "uface", "uacc", "umount", "mybuilds", "inv", "kpi", "run"].forEach(k => localStorage.removeItem("pl_" + name + "_" + k)); } catch (e) {}
+  try { ["best", "bank", "outfit", "maxworld", "lang", "unlocked", "lstats", "profile", "face", "acc", "mount", "uface", "uacc", "umount", "mybuilds", "inv", "kpi", "ach", "hist", "isowave", "run"].forEach(k => localStorage.removeItem("pl_" + name + "_" + k)); } catch (e) {}
   if (curPlayer === name) { curPlayer = players[0] || ""; if (curPlayer) loadPlayerData(); else profile = null; }
   savePlayers();
 }
@@ -549,6 +584,7 @@ addEventListener("keydown", e => {
   if (state === "menu") { if (k === "escape") state = "play"; return; }
   if (state === "bodega") { if (k === "escape") state = bodega.back; return; }
   if (state === "kpis") { if (k === "escape") state = kpanel.back; return; }
+  if (state === "logros") { if (k === "escape") state = lpanel.back; return; }
   if (state === "ia") { if (k === "escape") state = iaHub.back; return; }
   if (state === "interior") { if (k === "escape") { if (interior.popup) interior.popup = null; else exitInterior(); } return; }
   if (state === "store") { if (k === "escape") exitStore(); return; }
@@ -577,6 +613,7 @@ canvas.addEventListener("mousedown", e => {
   if (state === "menu") { menuTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "bodega") { bodegaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "kpis") { kpisTapAt(e.clientX, e.clientY); mouse.down = false; return; }
+  if (state === "logros") { logrosTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "ia") { iaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "interior") { interiorTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "store") { storeTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -611,6 +648,7 @@ function onTouchStart(e) {
   if (state === "menu") { for (const tch of e.changedTouches) menuTapAt(tch.clientX, tch.clientY); return; }
   if (state === "bodega") { for (const tch of e.changedTouches) bodegaTapAt(tch.clientX, tch.clientY); return; }
   if (state === "kpis") { for (const tch of e.changedTouches) kpisTapAt(tch.clientX, tch.clientY); return; }
+  if (state === "logros") { for (const tch of e.changedTouches) logrosTapAt(tch.clientX, tch.clientY); return; }
   if (state === "ia") { for (const tch of e.changedTouches) iaTapAt(tch.clientX, tch.clientY); return; }
   if (state === "interior") { for (const tch of e.changedTouches) { if (interiorTapAt(tch.clientX, tch.clientY)) return; if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
   if (state === "store") { for (const tch of e.changedTouches) { if (storeTapAt(tch.clientX, tch.clientY)) return; if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
@@ -673,7 +711,7 @@ function readInput() {
 }
 
 // ---------- Flujo ----------
-function startOrRestart() { if (!profile || !curPlayer) { openPlayers(); return; } clearRun(); level = 1; score = 0; words = 0; coins = 5; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; dashT = 0; dashCD = 0; driving = null; genLevel(); state = "play"; sLevel(); ai.lastKey = ""; ai.n = 0; kpiBump("games"); saveKpi(); aiSay("Hola! soy tu coach. Te enseño palabras y te doy pistas; tocame (arriba-izq) y te las pronuncio en voz.", "#7fd6ff", "hi"); }
+function startOrRestart() { if (!profile || !curPlayer) { openPlayers(); return; } clearRun(); level = 1; score = 0; words = 0; coins = 5; player.hp = MAXHP; pShield = pTriple = pRapid = 0; weapon = 0; paused = false; floaters = []; combo = 0; comboT = 0; flashT = 0; dashT = 0; dashCD = 0; driving = null; genLevel(); state = "play"; sLevel(); ai.lastKey = ""; ai.n = 0; kpiBump("games"); saveKpi(); achT = 1.2; achCheck(); aiSay("Hola! soy tu coach. Te enseño palabras y te doy pistas; tocame (arriba-izq) y te las pronuncio en voz.", "#7fd6ff", "hi"); }
 // ---- RESUME DE SESION: guarda la partida en curso por jugador y permite CONTINUAR ----
 function saveRun() { if (state === "over" || !curPlayer) return; try { lset("run", JSON.stringify({ level, score, words, coins, hp: Math.round(player.hp), weapon })); } catch (e) {} }
 function loadRun() { try { return JSON.parse(lget("run") || "null"); } catch (e) { return null; } }
@@ -1099,8 +1137,9 @@ function kpiCoach() {
 }
 function kpiRect() { const w = Math.min(480, W - 20), h = Math.min(H - 16, 150 + 7 * 46 + 28); return { x: (W - w) / 2, y: Math.max(12 + safeT, (H - h) / 2), w, h }; }
 function kpiCardRect(i) { const p = kpiRect(), col = i % 2, row = Math.floor(i / 2), cw = (p.w - 36) / 2; return { x: p.x + 18 + col * cw, y: p.y + 64 + row * 46, w: cw - 6, h: 40 }; }
-function kpiCloseRect() { const p = kpiRect(); return { x: p.x + p.w / 2 - 80, y: p.y + p.h - 40, w: 160, h: 32 }; }
-function kpisTapAt(px, py) { const c = kpiCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) state = kpanel.back; }
+function kpiLogRect() { const p = kpiRect(); return { x: p.x + 18, y: p.y + p.h - 40, w: (p.w - 44) / 2, h: 32 }; }
+function kpiCloseRect() { const p = kpiRect(); return { x: p.x + p.w / 2 + 4, y: p.y + p.h - 40, w: (p.w - 44) / 2, h: 32 }; }
+function kpisTapAt(px, py) { const l = kpiLogRect(); if (px >= l.x && px <= l.x + l.w && py >= l.y && py <= l.y + l.h) { openLogros("kpis"); return; } const c = kpiCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) state = kpanel.back; }
 function drawKpis() {
   ctx.fillStyle = "rgba(0,0,0,0.66)"; ctx.fillRect(0, 0, W, H);
   const p = kpiRect(), list = buildKpis();
@@ -1112,13 +1151,53 @@ function drawKpis() {
   ctx.fillStyle = "#10212b"; ctx.beginPath(); ctx.roundRect(p.x + 18, cy, cw, 38, 9); ctx.fill(); ctx.strokeStyle = "#2a6f8a"; ctx.lineWidth = 1; ctx.stroke();
   ctx.fillStyle = "#7fd6ff"; ctx.beginPath(); ctx.arc(p.x + 34, cy + 19, 9, 0, 7); ctx.fill(); text("IA", p.x + 34, cy + 23, 9, "#10212b", "center");
   fitTextLeft(kpiCoach(), p.x + 52, cy + 23, cw - 62, 12, "#cfe6f2");
+  const l = kpiLogRect(); ctx.fillStyle = "#2a2616"; ctx.beginPath(); ctx.roundRect(l.x, l.y, l.w, l.h, 9); ctx.fill(); ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 1.5; ctx.stroke(); text("LOGROS " + achCount() + "/" + ACHS.length, l.x + l.w / 2, l.y + l.h / 2 + 5, 13, "#ffd84a", "center");
   const c = kpiCloseRect(); ctx.fillStyle = "#23303a"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); text("VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 5, 14, "#9be7c0", "center");
+}
+// ---- LOGROS / MEDALLAS: pantalla con todas las medallas + sparkline de progreso ----
+function drawSpark(vals, x, y, w, h, col) {
+  ctx.fillStyle = "#10131c"; ctx.beginPath(); ctx.roundRect(x, y, w, h, 6); ctx.fill();
+  if (!vals.length) { text("sin datos aun", x + w / 2, y + h / 2 + 4, 10, "#5a6172", "center"); return; }
+  const mx = Math.max.apply(null, vals.concat([1])), n = vals.length;
+  ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath();
+  for (let i = 0; i < n; i++) { const px = x + 6 + (n === 1 ? (w - 12) / 2 : (i / (n - 1)) * (w - 12)), py = y + h - 6 - (vals[i] / mx) * (h - 12); if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py); }
+  ctx.stroke();
+  const lpx = x + 6 + (n === 1 ? (w - 12) / 2 : (w - 12)), lpy = y + h - 6 - (vals[n - 1] / mx) * (h - 12); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(lpx, lpy, 2.6, 0, 7); ctx.fill();
+}
+function openLogros(back) { lpanel = { back: back || "menu" }; state = "logros"; }
+function logRect() { const w = Math.min(480, W - 20), h = Math.min(H - 14, 116 + Math.ceil(ACHS.length / 2) * 34 + 50); return { x: (W - w) / 2, y: Math.max(10 + safeT, (H - h) / 2), w, h }; }
+function logCardRect(i) { const p = logRect(), col = i % 2, row = Math.floor(i / 2), cw = (p.w - 36) / 2; return { x: p.x + 18 + col * cw, y: p.y + 96 + row * 34, w: cw - 6, h: 30 }; }
+function logCloseRect() { const p = logRect(); return { x: p.x + p.w / 2 - 80, y: p.y + p.h - 40, w: 160, h: 32 }; }
+function logrosTapAt(px, py) { const c = logCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) state = lpanel.back; }
+function drawLogros() {
+  ctx.fillStyle = "rgba(0,0,0,0.66)"; ctx.fillRect(0, 0, W, H);
+  const p = logRect();
+  ctx.shadowColor = "#ffd84a"; ctx.shadowBlur = 16; ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 14); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 3; ctx.stroke();
+  text("LOGROS  ·  " + achCount() + "/" + ACHS.length + " medallas", W / 2, p.y + 28, 18, "#ffd84a", "center");
+  text("puntaje por partida (normal + 3D)", p.x + 18, p.y + 52, 10, "#9aa0b4", "left");
+  drawSpark(hist.map(h => h.s || 0), p.x + p.w - 160, p.y + 38, 142, 24, "#7fd6ff");
+  for (let i = 0; i < ACHS.length; i++) { const r = logCardRect(i), a = ACHS[i], on = !!ach[a.id];
+    ctx.fillStyle = on ? "#222717" : "#191c24"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 8); ctx.fill(); ctx.strokeStyle = on ? a.c : "#2a2f3c"; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.globalAlpha = on ? 1 : 0.5; ctx.fillStyle = on ? a.c : "#3a3f4c"; ctx.beginPath(); ctx.arc(r.x + 16, r.y + r.h / 2, 8, 0, 7); ctx.fill(); text(on ? "*" : "?", r.x + 16, r.y + r.h / 2 + 4, 12, "#15161f", "center"); ctx.globalAlpha = 1;
+    text(a.name, r.x + 31, r.y + r.h / 2 - 2, 11.5, on ? "#fff" : "#888", "left");
+    text(on ? "desbloqueado" : a.hint, r.x + 31, r.y + r.h / 2 + 11, 9, on ? a.c : "#667", "left");
+  }
+  const c = logCloseRect(); ctx.fillStyle = "#23303a"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); text("VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 5, 14, "#9be7c0", "center");
+}
+function drawAchToast() {
+  if (!achToast) return;
+  ctx.globalAlpha = Math.min(1, achToast.t / 0.4);
+  const w = Math.min(320, W - 40), x = (W - w) / 2, y = 70 + safeT, col = achToast.c || "#ffd84a";
+  ctx.fillStyle = "rgba(12,14,22,0.94)"; ctx.beginPath(); ctx.roundRect(x, y, w, 50, 12); ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x + 26, y + 25, 13, 0, 7); ctx.fill(); text("*", x + 26, y + 30, 18, "#15161f", "center");
+  text("LOGRO DESBLOQUEADO", x + 48, y + 20, 10, col, "left"); text(achToast.name, x + 48, y + 38, 15, "#fff", "left");
+  ctx.globalAlpha = 1;
 }
 function menuRows() {
   return [
     { label: "CONTINUAR", col: "#5eead4", act: () => { state = "play"; } },
     { label: "BODEGA (items + accesorios)", col: "#ffd84a", act: () => { openBodega("play"); } },
-    { label: "KPIS · MIS ESTADISTICAS", col: "#7fd6ff", act: () => { openKpis("menu"); } },
+    { label: "KPIS + LOGROS (" + achCount() + "/" + ACHS.length + ")", col: "#7fd6ff", act: () => { openKpis("menu"); } },
     { label: "DIMENSION 3D (ISO)", col: "#b480ff", act: () => { gotoIso(); } },
     { label: "OPCIONES", col: "#7fd6ff", act: () => { openOptions("menu"); } },
     { label: "VESTUARIO", col: "#f5cd46", act: () => { openWb("menu"); } },
@@ -1188,13 +1267,14 @@ function drawPlayers() {
 function hurt(d) {
   if (player.inv > 0 || pShield > 0) return;
   player.hp -= d; player.inv = 0.7; shake = Math.min(shake + 8, 14); flash("235,80,64", 0.22); vib(70); sHurt(); addParts(player.x, player.y, 14, "#eb5040", 200);
-  if (player.hp <= 0) { player.hp = 0; combo = 0; best = Math.max(best, score); lset("best", best); bank += coins; saveWardrobe(); clearRun(); ai.deaths = (ai.deaths || 0) + 1; kpiBump("deaths"); saveKpi(); state = "over"; }
+  if (player.hp <= 0) { player.hp = 0; combo = 0; best = Math.max(best, score); lset("best", best); bank += coins; saveWardrobe(); clearRun(); ai.deaths = (ai.deaths || 0) + 1; kpiBump("deaths"); saveKpi(); histPush({ s: score, w: words, lvl: level }); achCheck(); state = "over"; }
 }
 
 function update(dt) {
   t += dt;
   // ciclo dia/noche + clima
-  if (state === "play" && !paused) { daySec += dt; kpi.playSec = (kpi.playSec || 0) + dt; kpiDirty = true; }
+  if (state === "play" && !paused) { daySec += dt; kpi.playSec = (kpi.playSec || 0) + dt; kpiDirty = true; achT -= dt; if (achT <= 0) { achT = 1.2; achCheck(); } }
+  if (achToast) { achToast.t -= dt; if (achToast.t <= 0) achToast = null; }
   tod = (daySec % dayLen) / dayLen;
   nightAmt = 0.5 - 0.5 * Math.cos(tod * 2 * Math.PI); // 0 = mediodia, 1 = medianoche
   const tbase = weather.kind === "sol" ? 27 : weather.kind === "nubes" ? 20 : 16;
@@ -1212,6 +1292,7 @@ function update(dt) {
 
   if (state === "bodega") { updateBodega(dt); return; }
   if (state === "kpis") { return; }
+  if (state === "logros") { return; }
   if (state === "interior") { if (!paused) updateInterior(dt); return; }
   if (state === "store") { if (!paused) updateStore(dt); return; }
   if (state === "build") { updateBuild(dt); return; }
@@ -3050,6 +3131,7 @@ function render() {
 
   if (state === "play" || state === "quiz" || state === "shop") { drawHUD(); }
   drawAI();
+  drawAchToast();
   if (state === "play") { drawMinimap(); drawStick(stickL, "rgba(94,234,212,0.5)"); drawStick(stickR, "rgba(255,150,60,0.6)"); drawButtons(); }
   if (bannerT > 0 && (state === "play" || state === "quiz")) { const a = clamp(bannerT / 0.6, 0, 1) * clamp((2.4 - bannerT) / 0.3, 0, 1); ctx.globalAlpha = a; text("MUNDO " + level, W / 2, H * 0.3, Math.min(46, W / 9), "#fff", "center"); text(theme.name, W / 2, H * 0.3 + 38, Math.min(32, W / 11), hexA(theme.stud, 1), "center"); text("MISION: " + (mission ? mission.text : "junta las gemas"), W / 2, H * 0.3 + 70, 14, "#f5cd46", "center"); ctx.globalAlpha = 1; }
   if (state === "quiz") drawQuiz();
@@ -3059,6 +3141,7 @@ function render() {
   if (state === "menu") drawMenu();
   if (state === "bodega") drawBodega();
   if (state === "kpis") drawKpis();
+  if (state === "logros") drawLogros();
   if (state === "ia") drawIA();
   if (state === "interior") drawInterior();
   if (state === "store") drawStore();
@@ -3107,7 +3190,8 @@ function render() {
     text("PUNTAJE  " + score, W / 2, H / 2 + 22, 26, "#fff", "center");
     text("APRENDIDAS " + words + "    DOMINADAS " + mAll + "/" + tAll + " (EN+ZH)", W / 2, H / 2 + 52, 15, "#60d050", "center");
     text("RECORD  " + best, W / 2, H / 2 + 76, 15, "#9a9ab0", "center");
-    text("TOCA PARA REINTENTAR", W / 2, H / 2 + 110, 20, "#f5cd46", "center");
+    text("LOGROS  " + achCount() + "/" + ACHS.length + "   ·   KPIS en menu casa", W / 2, H / 2 + 98, 13, "#ffd84a", "center");
+    text("TOCA PARA REINTENTAR", W / 2, H / 2 + 128, 20, "#f5cd46", "center");
   }
 }
 

@@ -331,6 +331,78 @@
   loadBank();
 
   // ============================================================
+  //  PROGRESO COMPARTIDO con el juego normal (index.html):
+  //  KPIs (pl_<name>_kpi), LOGROS (pl_<name>_ach) e historial (pl_<name>_hist).
+  //  Asi jugar en 3D suma a las mismas estadisticas y medallas.
+  // ============================================================
+  var kpi = {};
+  function kpiKey() { return "pl_" + playerName + "_kpi"; }
+  function loadKpiIso() {
+    try { kpi = JSON.parse(localStorage.getItem(kpiKey()) || "{}"); } catch (e) { kpi = {}; }
+    var ks = ["games", "kills", "wordsLearned", "coinsSpent", "bought", "used", "deaths", "playSec"];
+    for (var i = 0; i < ks.length; i++) if (typeof kpi[ks[i]] !== "number") kpi[ks[i]] = 0;
+  }
+  function saveKpiIso() { try { localStorage.setItem(kpiKey(), JSON.stringify(kpi)); } catch (e) {} }
+  function kpiBumpIso(k, n) { kpi[k] = (kpi[k] || 0) + (n == null ? 1 : n); }
+  var ach = {};
+  function achKey() { return "pl_" + playerName + "_ach"; }
+  function loadAchIso() { try { ach = JSON.parse(localStorage.getItem(achKey()) || "{}"); } catch (e) { ach = {}; } }
+  function saveAchIso() { try { localStorage.setItem(achKey(), JSON.stringify(ach)); } catch (e) {} }
+  function rdNumIso(k, d) { try { var n = parseInt(localStorage.getItem("pl_" + playerName + "_" + k), 10); return isNaN(n) ? d : n; } catch (e) { return d; } }
+  function rdCountIso(k) { try { var o = JSON.parse(localStorage.getItem("pl_" + playerName + "_" + k) || "{}"); var n = 0; for (var x in o) if (o[x]) n++; return n; } catch (e) { return 0; } }
+  function rdLenIso(k) { try { var a = JSON.parse(localStorage.getItem("pl_" + playerName + "_" + k) || "[]"); return (a && a.length) || 0; } catch (e) { return 0; } }
+  // mismas medallas que index.html (compartidas)
+  var ACHS = [
+    { id: "first", name: "PRIMER TACO", need: function (s) { return s.games >= 1; }, c: "#ffd84a" },
+    { id: "hunter", name: "CAZADOR", need: function (s) { return s.kills >= 10; }, c: "#ff7a6b" },
+    { id: "slayer", name: "EXTERMINADOR", need: function (s) { return s.kills >= 50; }, c: "#ff7a6b" },
+    { id: "legend", name: "LEYENDA", need: function (s) { return s.kills >= 150; }, c: "#ff5a4a" },
+    { id: "learn10", name: "APRENDIZ", need: function (s) { return s.words >= 10; }, c: "#62e074" },
+    { id: "learn50", name: "POLIGLOTA", need: function (s) { return s.words >= 50; }, c: "#62e074" },
+    { id: "master", name: "MAESTRO", need: function (s) { return s.mastered >= 10; }, c: "#5eead4" },
+    { id: "buyer", name: "COMPRADOR", need: function (s) { return s.bought >= 20; }, c: "#f5cd46" },
+    { id: "tactic", name: "ESTRATEGA", need: function (s) { return s.used >= 10; }, c: "#8ee07a" },
+    { id: "builder", name: "CONSTRUCTOR", need: function (s) { return s.builds >= 1; }, c: "#ffb060" },
+    { id: "fashion", name: "FASHIONISTA", need: function (s) { return s.cosmetics >= 8; }, c: "#ff9bb0" },
+    { id: "endure", name: "SOBREVIVIENTE", need: function (s) { return s.playSec >= 600; }, c: "#7fd6ff" },
+    { id: "rich", name: "MILLONARIO", need: function (s) { return s.best >= 1000; }, c: "#ffd84a" },
+    { id: "wave5", name: "OLEADA 5 (3D)", need: function (s) { return s.isoWave >= 5; }, c: "#b480ff" },
+    { id: "wave10", name: "OLEADA 10 (3D)", need: function (s) { return s.isoWave >= 10; }, c: "#b480ff" }
+  ];
+  function snapshotIso() {
+    return {
+      games: kpi.games || 0, kills: kpi.kills || 0, words: kpi.wordsLearned || 0,
+      bought: kpi.bought || 0, used: kpi.used || 0, playSec: kpi.playSec || 0, deaths: kpi.deaths || 0,
+      best: rdNumIso("best", 0), maxWorld: rdNumIso("maxworld", 1),
+      cosmetics: rdCountIso("unlocked") + rdCountIso("uface") + rdCountIso("uacc") + rdCountIso("umount"),
+      builds: rdLenIso("mybuilds"), mastered: 0, isoWave: loadWaveRecord()
+    };
+  }
+  function achCountIso() { var n = 0; for (var i = 0; i < ACHS.length; i++) if (ach[ACHS[i].id]) n++; return n; }
+  function achCheckIso() {
+    var s = snapshotIso(), last = null, changed = false;
+    for (var i = 0; i < ACHS.length; i++) { var a = ACHS[i]; if (!ach[a.id] && a.need(s)) { ach[a.id] = 1; changed = true; last = a; } }
+    if (changed) { saveAchIso(); if (last) showAchToast(last); }
+    return changed;
+  }
+  function histPushIso(entry) {
+    try { var key = "pl_" + playerName + "_hist"; var arr = JSON.parse(localStorage.getItem(key) || "[]"); if (!Array.isArray(arr)) arr = []; arr.push(entry); if (arr.length > 30) arr = arr.slice(-30); localStorage.setItem(key, JSON.stringify(arr)); } catch (e) {}
+  }
+  var _achEl = null, _achTmr = null;
+  function showAchToast(a) {
+    try {
+      if (!_achEl) { _achEl = document.createElement("div"); _achEl.style.cssText = "position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:60;background:rgba(12,14,22,0.94);border:2px solid #ffd84a;border-radius:12px;padding:8px 16px;font-family:sans-serif;font-weight:900;color:#fff;text-align:center;pointer-events:none;box-shadow:0 6px 24px rgba(0,0,0,0.5);transition:opacity .3s;opacity:0;max-width:82vw;"; document.body.appendChild(_achEl); }
+      _achEl.style.borderColor = a.c || "#ffd84a";
+      _achEl.innerHTML = "<div style='font-size:10px;letter-spacing:1px;color:" + (a.c || "#ffd84a") + "'>LOGRO DESBLOQUEADO</div><div style='font-size:15px'>" + a.name + "</div>";
+      _achEl.style.opacity = "1";
+      if (_achTmr) clearTimeout(_achTmr);
+      _achTmr = setTimeout(function () { if (_achEl) _achEl.style.opacity = "0"; }, 3000);
+      try { if (typeof sndPower === "function") sndPower(); } catch (e) {}
+    } catch (e) {}
+  }
+  loadKpiIso(); loadAchIso();
+
+  // ============================================================
   //  COSMETIC CARRYOVER  (the look the player designed in index.html)
   //  index.html stores, per player:
   //    pl_<name>_outfit  -> index into OUTFITS (shirts / themed suits)
@@ -1980,6 +2052,7 @@
   function update(dt) {
     // ---- day/night clock ----
     computeDayNight(dt);
+    kpi.playSec = (kpi.playSec || 0) + dt; // suma al tiempo jugado compartido
     if (mallEnterCd > 0) mallEnterCd -= dt;
 
     // ---- player move ----
@@ -2255,6 +2328,7 @@
     if (e.fromWave) waveAlive = Math.max(0, waveAlive - 1);
     enemies.splice(index, 1);
     enemyKills++;
+    kpiBumpIso("kills"); achCheckIso();
     if (mission.type === "kills") { mission.cur++; checkMission(); }
     updateHUD();
   }
@@ -2716,6 +2790,7 @@
     ensureAudio();
     if (AC && AC.state === "suspended") { try { AC.resume(); } catch (e) {} }
     resetGame();
+    kpiBumpIso("games"); saveKpiIso(); achCheckIso();
     state = STATE_PLAY;
     titleOverlay.classList.add("hidden");
     overOverlay.classList.add("hidden");
@@ -2729,11 +2804,15 @@
     state = STATE_OVER;
     saveWaveRecord(wave);
     var rec = loadWaveRecord();
+    kpiBumpIso("deaths"); saveKpiIso();
+    histPushIso({ s: score, w: Math.max(1, wave), k: enemyKills, iso: 1 });
+    achCheckIso();
     overTitle.textContent = "GAME OVER";
     overTitle.style.color = "#ff6b5e";
     goStats.innerHTML = "Llegaste a la <b>OLEADA " + Math.max(1, wave) + "</b>" +
       "<br>Puntaje: <b>" + score + "</b> · Enemigos: " + enemyKills + " · Gemas: " + gemsCollected +
-      "<br><span style='color:#ffae5d'>Récord: oleada " + rec + "</span>";
+      "<br><span style='color:#ffae5d'>Récord: oleada " + rec + "</span>" +
+      "<br><span style='color:#ffd84a'>Logros: " + achCountIso() + "/" + ACHS.length + "</span>";
     overOverlay.classList.remove("hidden");
     // hide contextual UI
     if (enterBtn) enterBtn.classList.remove("show"); enterShown = false;
@@ -2747,6 +2826,7 @@
   // ---- Back button: persist shared bank, then return to main game ----
   function goBack() {
     saveBank();
+    saveKpiIso(); achCheckIso();
     location.href = "index.html";
   }
   var backBtn = document.getElementById("backBtn");

@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v57 - MIRADOR con ZOOM + ARRASTRE + RADAR TERMICO: el mirador ahora hace zoom (botones +/-, rueda o pellizco) y se arrastra para explorar todo el mapa; nuevo RADAR TERMICO en el juego (se gana en MUNDO 4 con el infrarrojo): flechas de calor hacia enemigos cercanos fuera de pantalla + aura termica de noche. Sobre v56: portal 3D fisico, rangos Bronce/Plata/Oro/Diamante, recompensas por medalla, LOGROS nativo en 3D, edificios rectificados";
+const VERSION = "v58 - ACADEMIA (tutor + materias): nuevo edificio ACADEMIA en la ciudad (al sur del spawn) al que entras y un TUTOR te saluda, lee tu progreso (palabras dominadas + rango) y te SUGIERE que practicar. Reune las materias que ya existian en un solo hub: MATEMATICAS, IDIOMAS (ingles/chino), ORTOGRAFIA, LOGICA/SECUENCIAS y MEMORIA; al terminar una actividad volves al tutor. Tambien en menu casa. (No duplica: reusa openMath/openTrivia/openAnagram/openSeq/openMemory). Sobre v57: mirador zoom+arrastre, radar termico";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -403,6 +403,9 @@ const MAXHP = 100;
 const player = { x: 0, y: 0, r: 18, vx: 0, vy: 0, hp: MAXHP, inv: 0, aimx: 1, aimy: 0, fire: 0 };
 let gems = [], enemies = [], bullets = [], parts = [], heals = [], powerDrops = [], eshots = [], portal = null;
 let isoPortal = null, isoPortalDwell = 0; // PORTAL fisico a la DIMENSION 3D (game-iso.html)
+let academiaSpot = null, academiaDwell = 0; // edificio ACADEMIA en la ciudad (tutor + materias)
+let academia = null, eduReturn = null; // estado del hub de la ACADEMIA / a donde vuelve una actividad
+function eduExit() { state = eduReturn || (interior ? "interior" : "play"); eduReturn = null; }
 let peds = [], cars = [], props = [], mission = null; // mundo vivo (gente, autos, casas) + mision
 let cityBlocks = []; // manzanas (rectangulos) para dibujar edificios 3D
 let pShield = 0, pTriple = 0, pRapid = 0, weapon = 0;
@@ -505,6 +508,8 @@ function genLevel() {
   for (let y = sy - 1; y <= sy + 1; y++) for (let x = sx - 1; x <= sx + 1; x++) if (x > 0 && y > 0 && x < cols - 1 && y < rows - 1) grid[y * cols + x] = 0;
   // PORTAL a la DIMENSION 3D: plaza despejada al norte del spawn; al pararte en el remolino viajas al juego iso
   { const ppx = sx, ppy = Math.max(2, sy - 4); for (let yy = ppy - 1; yy <= ppy + 1; yy++) for (let xx = ppx - 1; xx <= ppx + 1; xx++) if (xx > 0 && yy > 0 && xx < cols - 1 && yy < rows - 1) grid[yy * cols + xx] = 0; isoPortal = { x: (ppx + 0.5) * TS, y: (ppy + 0.5) * TS }; isoPortalDwell = 0; }
+  // ACADEMIA: edificio-escuela al sur del spawn; al pararte en la puerta entra el tutor (mates + idiomas)
+  { const apx = sx, apy = Math.min(rows - 3, sy + 4); for (let yy = apy - 1; yy <= apy + 1; yy++) for (let xx = apx - 1; xx <= apx + 1; xx++) if (xx > 0 && yy > 0 && xx < cols - 1 && yy < rows - 1) grid[yy * cols + xx] = 0; academiaSpot = { x: (apx + 0.5) * TS, y: (apy + 0.5) * TS }; academiaDwell = 0; }
 
   player.x = (sx + 0.5) * TS; player.y = (sy + 0.5) * TS; player.vx = player.vy = 0;
   { const c = camClamp(); camX = c.tx; camY = c.ty; }
@@ -601,15 +606,16 @@ addEventListener("keydown", e => {
   if (state === "kpis") { if (k === "escape") state = kpanel.back; return; }
   if (state === "logros") { if (k === "escape") state = lpanel.back; return; }
   if (state === "mirador") { if (k === "escape") state = mirador.back; else if (k === "i" && maxWorld >= MIR_IR_LV) mirador.mode = mirador.mode === 1 ? 0 : 1; return; }
+  if (state === "academia") { if (k === "escape") state = academia.back; return; }
   if (state === "play" && k === "m") { openMirador("play"); return; }
   if (state === "ia") { if (k === "escape") state = iaHub.back; return; }
   if (state === "interior") { if (k === "escape") { if (interior.popup) interior.popup = null; else exitInterior(); } return; }
   if (state === "store") { if (k === "escape") exitStore(); return; }
   if (state === "build") { if (k === "escape") state = interior ? "interior" : "play"; return; }
   if (state === "roulette") { if (k === "escape") state = interior ? "interior" : "play"; else if (k === " ") spinRoulette(); return; }
-  if (state === "memory") { if (k === "escape") state = interior ? "interior" : "play"; return; }
+  if (state === "memory") { if (k === "escape") eduExit(); return; }
   if (state === "uno") { if (k === "escape") state = interior ? "interior" : "play"; return; }
-  if (state === "trivia" || state === "anagram" || state === "mathq" || state === "seq") { if (k === "escape") { if (nhelp) nhelp = null; else state = interior ? "interior" : "play"; } return; }
+  if (state === "trivia" || state === "anagram" || state === "mathq" || state === "seq") { if (k === "escape") { if (nhelp) nhelp = null; else eduExit(); } return; }
   if (state === "cine") { if (k === "escape") state = interior ? "interior" : "play"; return; }
   if (state === "players") { if (k === "escape" && profile) state = "title"; return; }
   if (state === "wardrobe") { if (k === "escape") state = uiBack; return; }
@@ -631,6 +637,7 @@ canvas.addEventListener("mousedown", e => {
   if (state === "bodega") { bodegaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "kpis") { kpisTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "logros") { logrosTapAt(e.clientX, e.clientY); mouse.down = false; return; }
+  if (state === "academia") { academiaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "mirador") { if (!miradorTapAt(e.clientX, e.clientY)) mirador.drag = { mouse: true, x0: e.clientX, y0: e.clientY, px: mirador.panX, py: mirador.panY }; mouse.down = false; return; }
   if (state === "ia") { iaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "interior") { interiorTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -667,6 +674,7 @@ function onTouchStart(e) {
   if (state === "bodega") { for (const tch of e.changedTouches) bodegaTapAt(tch.clientX, tch.clientY); return; }
   if (state === "kpis") { for (const tch of e.changedTouches) kpisTapAt(tch.clientX, tch.clientY); return; }
   if (state === "logros") { for (const tch of e.changedTouches) logrosTapAt(tch.clientX, tch.clientY); return; }
+  if (state === "academia") { for (const tch of e.changedTouches) academiaTapAt(tch.clientX, tch.clientY); return; }
   if (state === "mirador") {
     if (e.touches.length >= 2) { mirador.pinch = { d0: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), z0: mirador.zoom }; mirador.drag = null; return; }
     const tch = e.changedTouches[0]; if (!tch) return;
@@ -1318,9 +1326,65 @@ function drawThermalRadar() {
     ctx.globalAlpha = 1; ctx.restore();
   }
 }
+// ---- ACADEMIA: hub del TUTOR. Reusa las actividades educativas existentes (mates/idiomas/ortografia/logica/memoria). ----
+const ACADEMIA_SUBJECTS = [
+  { key: "math", name: "MATEMATICAS", desc: "sumas, restas, tablas, logica", col: "#ffd84a", launch: () => { eduReturn = "academia"; openMath(); } },
+  { key: "lang", name: "IDIOMAS (INGLES/CHINO)", desc: "vocabulario y traduccion", col: "#62e074", launch: () => { eduReturn = "academia"; openTrivia(); } },
+  { key: "spell", name: "ORTOGRAFIA", desc: "arma la palabra (anagrama)", col: "#7fd6ff", launch: () => { eduReturn = "academia"; openAnagram(); } },
+  { key: "logic", name: "LOGICA / SECUENCIAS", desc: "encuentra el patron", col: "#b480ff", launch: () => { eduReturn = "academia"; openSeq(); } },
+  { key: "memory", name: "MEMORIA", desc: "parea palabras", col: "#ff9bb0", launch: () => { eduReturn = "academia"; openMemory(); } },
+];
+function academiaRec() { const ms = aiMastery(); const ratio = ms.tt ? ms.m / ms.tt : 0; return ratio < 0.35 ? "lang" : "math"; }
+function academiaGreeting() {
+  const ms = aiMastery(), rk = curRank(), nm = (profile && profile.name) || curPlayer || "amigo";
+  const rec = academiaRec(), recName = (ACADEMIA_SUBJECTS.find(s => s.key === rec) || ACADEMIA_SUBJECTS[0]).name;
+  return "Hola " + nm + "! Soy tu tutor. Llevas " + ms.m + "/" + ms.tt + " palabras dominadas y rango " + rk.name + ". Hoy te sugiero: " + recName + ". Que practicamos?";
+}
+function openAcademia(back) { academia = { back: back || "play", rec: academiaRec(), greet: academiaGreeting() }; state = "academia"; sPower(); try { speak(academia.greet, "es-ES"); } catch (e) {} }
+function updateAcademia(dt) { }
+function acaRect() { const n = ACADEMIA_SUBJECTS.length, w = Math.min(460, W - 24), h = Math.min(H - 14, 130 + n * 56 + 50); return { x: (W - w) / 2, y: Math.max(12 + safeT, (H - h) / 2), w, h }; }
+function acaRowRect(i) { const p = acaRect(); return { x: p.x + 18, y: p.y + 128 + i * 56, w: p.w - 36, h: 50 }; }
+function acaCloseRect() { const p = acaRect(); return { x: p.x + p.w / 2 - 90, y: p.y + p.h - 40, w: 180, h: 32 }; }
+function acaWrap(txt, x, y, maxW, size, col, lineH, maxLines) {
+  ctx.font = "700 " + size + "px -apple-system, Segoe UI, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = col;
+  const words = txt.split(" "); let line = "", yy = y, n = 0;
+  for (const w of words) { const test = line ? line + " " + w : w; if (ctx.measureText(test).width > maxW && line) { ctx.fillText(line, x, yy); line = w; yy += lineH; if (++n >= maxLines - 1) break; } else line = test; }
+  if (line) ctx.fillText(line, x, yy);
+}
+function academiaTapAt(px, py) {
+  const inR = (r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  for (let i = 0; i < ACADEMIA_SUBJECTS.length; i++) if (inR(acaRowRect(i))) { ACADEMIA_SUBJECTS[i].launch(); return; }
+  if (inR(acaCloseRect())) state = academia.back;
+}
+function drawAcademia() {
+  ctx.fillStyle = "rgba(0,0,0,0.66)"; ctx.fillRect(0, 0, W, H);
+  const p = acaRect();
+  ctx.shadowColor = "#7fb0ff"; ctx.shadowBlur = 16; ctx.fillStyle = "#141826"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 14); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#7fb0ff"; ctx.lineWidth = 3; ctx.stroke();
+  text("ACADEMIA  ·  tu tutor", W / 2, p.y + 30, 19, "#bcd6ff", "center");
+  // tutor (avatar con birrete) + globo de saludo
+  const ax = p.x + 32, ay = p.y + 70;
+  ctx.fillStyle = "#1b2540"; ctx.beginPath(); ctx.arc(ax, ay, 16, 0, 7); ctx.fill(); ctx.strokeStyle = "#7fb0ff"; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = "#bcd6ff"; ctx.beginPath(); ctx.arc(ax - 5, ay - 1, 2.4, 0, 7); ctx.arc(ax + 5, ay - 1, 2.4, 0, 7); ctx.fill(); ctx.fillRect(ax - 5, ay + 6, 10, 2);
+  ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.moveTo(ax, ay - 19); ctx.lineTo(ax + 10, ay - 14); ctx.lineTo(ax, ay - 9); ctx.lineTo(ax - 10, ay - 14); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#ffd84a"; ctx.fillRect(ax - 1, ay - 14, 2, 5);
+  ctx.fillStyle = "rgba(20,28,52,0.92)"; ctx.beginPath(); ctx.roundRect(p.x + 56, p.y + 48, p.w - 74, 56, 10); ctx.fill(); ctx.strokeStyle = "#33406a"; ctx.lineWidth = 1; ctx.stroke();
+  acaWrap(academia.greet, p.x + 66, p.y + 66, p.w - 96, 12, "#dfe7fa", 15, 3);
+  // materias (reusan actividades existentes); la sugerida queda resaltada
+  for (let i = 0; i < ACADEMIA_SUBJECTS.length; i++) {
+    const r = acaRowRect(i), s = ACADEMIA_SUBJECTS[i], rec = s.key === academia.rec;
+    ctx.fillStyle = rec ? "#22304a" : "#1b2030"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.strokeStyle = rec ? s.col : "#33384a"; ctx.lineWidth = rec ? 2 : 1.4; ctx.stroke();
+    ctx.fillStyle = s.col; ctx.beginPath(); ctx.roundRect(r.x, r.y, 5, r.h, 3); ctx.fill();
+    text(s.name, r.x + 16, r.y + 21, 15, "#fff", "left");
+    text(s.desc, r.x + 16, r.y + 38, 11, "#9aa6c0", "left");
+    if (rec) { ctx.fillStyle = "#1d3a24"; ctx.beginPath(); ctx.roundRect(r.x + r.w - 96, r.y + 12, 88, 26, 8); ctx.fill(); ctx.strokeStyle = "#62e074"; ctx.lineWidth = 1; ctx.stroke(); text("SUGERIDO", r.x + r.w - 52, r.y + 29, 11, "#9be7c0", "center"); }
+    else text("EMPEZAR", r.x + r.w - 16, r.y + r.h / 2 + 5, 12, s.col, "right");
+  }
+  const c = acaCloseRect(); ctx.fillStyle = "#2a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); text(academia.back === "play" ? "SALIR A LA CIUDAD" : "VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 5, 13, "#ff9bb0", "center");
+}
 function menuRows() {
   return [
     { label: "CONTINUAR", col: "#5eead4", act: () => { state = "play"; } },
+    { label: "ACADEMIA (tutor: mates + idiomas)", col: "#7fb0ff", act: () => { openAcademia("menu"); } },
     { label: "BODEGA (items + accesorios)", col: "#ffd84a", act: () => { openBodega("play"); } },
     { label: "KPIS + LOGROS (" + achCount() + "/" + ACHS.length + ")", col: "#7fd6ff", act: () => { openKpis("menu"); } },
     { label: maxWorld >= MIR_PANO_LV ? "MIRADOR (panorama" + (maxWorld >= MIR_IR_LV ? " + infrarrojo)" : ")") : "MIRADOR (mundo " + MIR_PANO_LV + ")", col: "#7fe6ff", act: () => { openMirador("menu"); } },
@@ -1421,6 +1485,7 @@ function update(dt) {
   if (state === "kpis") { return; }
   if (state === "logros") { return; }
   if (state === "mirador") { updateMirador(dt); return; }
+  if (state === "academia") { updateAcademia(dt); return; }
   if (state === "interior") { if (!paused) updateInterior(dt); return; }
   if (state === "store") { if (!paused) updateStore(dt); return; }
   if (state === "build") { updateBuild(dt); return; }
@@ -1500,6 +1565,7 @@ function update(dt) {
   if (missionDone() && !portal) portal = farFree(player.x, player.y);
   if (portal && len(portal.x - player.x, portal.y - player.y) < player.r + 22) { openQuiz(); return; }
   if (isoPortal) { if (len(isoPortal.x - player.x, isoPortal.y - player.y) < player.r + 24) { isoPortalDwell += dt; if (isoPortalDwell > 0.4) { gotoIso(); return; } } else if (isoPortalDwell > 0) isoPortalDwell = 0; }
+  if (academiaSpot) { if (len(academiaSpot.x - player.x, academiaSpot.y - player.y) < player.r + 26) { academiaDwell += dt; if (academiaDwell > 0.4) { openAcademia("play"); return; } } else if (academiaDwell > 0) academiaDwell = 0; }
 
   for (let i = heals.length - 1; i >= 0; i--) if (len(heals[i].x - player.x, heals[i].y - player.y) < player.r + 14) { player.hp = Math.min(MAXHP, player.hp + 25); addParts(heals[i].x, heals[i].y, 10, "#60d050", 150); floatText(heals[i].x, heals[i].y, "+VIDA", "#60d050"); heals.splice(i, 1); sGem(); }
   for (let i = powerDrops.length - 1; i >= 0; i--) { const pd = powerDrops[i]; if (len(pd.x - player.x, pd.y - player.y) < player.r + 16) { applyPower(pd.kind); addParts(pd.x, pd.y, 18, powerCol(pd.kind), 240); floatText(pd.x, pd.y, powerName(pd.kind) + "!", powerCol(pd.kind)); flash("94,234,212", 0.18); shake = Math.min(shake + 4, 14); powerDrops.splice(i, 1); } }
@@ -1574,6 +1640,7 @@ function drawMinimap() {
   if (shop) dot(shop.x, shop.y, "#ffd84a", 2.5);
   if (portal) dot(portal.x, portal.y, "#b480ff", 2.6);
   if (isoPortal) dot(isoPortal.x, isoPortal.y, "#36e0c8", 2.6);
+  if (academiaSpot) dot(academiaSpot.x, academiaSpot.y, "#7fb0ff", 2.6);
   for (const e of enemies) dot(e.x, e.y, e.boss ? "#ce82ff" : e.shoot !== undefined ? "#78d2eb" : "#e24a3c", 1.8);
   dot(player.x, player.y, "#fff", 2.6);
 }
@@ -2197,7 +2264,7 @@ function updateMemory(dt) {
   if (memory.lockT > 0) { memory.lockT -= dt; if (memory.lockT <= 0) { for (const c of memory.cards) if (!c.matched) c.flipped = false; memory.first = -1; } }
 }
 function memoryTapAt(px, py) {
-  const cc = memCloseRect(); if (px >= cc.x && px <= cc.x + cc.w && py >= cc.y && py <= cc.y + cc.h) { state = interior ? "interior" : "play"; return; }
+  const cc = memCloseRect(); if (px >= cc.x && px <= cc.x + cc.w && py >= cc.y && py <= cc.y + cc.h) { eduExit(); return; }
   if (memory.lockT > 0 || memory.done) return;
   for (let i = 0; i < memory.cards.length; i++) { const card = memory.cards[i]; if (card.matched || card.flipped) continue; const r = memCardRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
     card.flipped = true; sRight();
@@ -2343,7 +2410,7 @@ function triviaAnswer(i) {
   else { s.streak = 0; saveL(); sWrong(); trivia.requeue = it; neuralHelp(it[0] + "  =  " + dispOf(L, it), ["En " + L.name + " se dice:", "“" + it[1] + "”" + (L.code === "zh-CN" ? "   (" + it[2] + ")" : ""), "Escuchá 🔊 y repetilo. Te la vuelvo a preguntar."], it[1], L.code, triviaNext); }
 }
 function updateTrivia(dt) { eduTickTip(dt); if (nhelp || !trivia || trivia.done) return; if (trivia.locked) { if (trivia.lastOk) { trivia.fbT -= dt; if (trivia.fbT <= 0) triviaNext(); } return; } trivia.time -= dt; if (trivia.time <= 0) triviaAnswer(-1); }
-function triviaTapAt(px, py) { if (nhelp) { nhelpTapAt(px, py); return; } if (trivia.done) { if (inRect(px, py, eduReplayRect())) openTrivia(); else state = interior ? "interior" : "play"; return; } if (inRect(px, py, eduCloseRect())) { state = interior ? "interior" : "play"; return; } if (trivia.locked) return; for (let i = 0; i < trivia.opts.length; i++) if (inRect(px, py, eduOptRect(i, trivia.opts.length))) { triviaAnswer(i); return; } }
+function triviaTapAt(px, py) { if (nhelp) { nhelpTapAt(px, py); return; } if (trivia.done) { if (inRect(px, py, eduReplayRect())) openTrivia(); else eduExit(); return; } if (inRect(px, py, eduCloseRect())) { eduExit(); return; } if (trivia.locked) return; for (let i = 0; i < trivia.opts.length; i++) if (inRect(px, py, eduOptRect(i, trivia.opts.length))) { triviaAnswer(i); return; } }
 function drawTrivia() {
   eduHeader("TRIVIA NEURAL · " + trivia.L.name, "Elegí la traducción correcta", "#7fd6ff");
   text("✓ " + trivia.correct + " / " + trivia.total, W / 2, 92 + safeT, 14, "#9be7c0", "center");
@@ -2373,8 +2440,8 @@ function anagAudioRect() { return { x: W / 2 - 26, y: H * 0.26, w: 52, h: 40 }; 
 function anagDelRect() { return { x: W / 2 - 70, y: H * 0.70, w: 140, h: 42 }; }
 function anagTapAt(px, py) {
   if (nhelp) { nhelpTapAt(px, py); return; }
-  if (anag.done) { if (inRect(px, py, eduReplayRect())) openAnagram(); else state = interior ? "interior" : "play"; return; }
-  if (inRect(px, py, eduCloseRect())) { state = interior ? "interior" : "play"; return; }
+  if (anag.done) { if (inRect(px, py, eduReplayRect())) openAnagram(); else eduExit(); return; }
+  if (inRect(px, py, eduCloseRect())) { eduExit(); return; }
   if (inRect(px, py, anagAudioRect())) { speak(anag.it[1], anag.L.code); return; }
   if (anag.locked) return;
   if (inRect(px, py, anagDelRect())) { anag.built.pop(); return; }
@@ -2422,7 +2489,7 @@ function mathAnswer(i) {
   else { mathq.streak = 0; sWrong(); neuralHelp("La respuesta es  " + c.ans, c.help, null, null, mathNext); }
 }
 function updateMath(dt) { eduTickTip(dt); if (nhelp || !mathq || mathq.done) return; if (mathq.locked) { if (mathq.lastOk) { mathq.fbT -= dt; if (mathq.fbT <= 0) mathNext(); } return; } mathq.time -= dt; if (mathq.time <= 0) mathAnswer(-1); }
-function mathTapAt(px, py) { if (nhelp) { nhelpTapAt(px, py); return; } if (mathq.done) { if (inRect(px, py, eduReplayRect())) openMath(); else state = interior ? "interior" : "play"; return; } if (inRect(px, py, eduCloseRect())) { state = interior ? "interior" : "play"; return; } if (mathq.locked) return; for (let i = 0; i < mathq.cur.opts.length; i++) if (inRect(px, py, eduOptRect(i, 4))) { mathAnswer(i); return; } }
+function mathTapAt(px, py) { if (nhelp) { nhelpTapAt(px, py); return; } if (mathq.done) { if (inRect(px, py, eduReplayRect())) openMath(); else eduExit(); return; } if (inRect(px, py, eduCloseRect())) { eduExit(); return; } if (mathq.locked) return; for (let i = 0; i < mathq.cur.opts.length; i++) if (inRect(px, py, eduOptRect(i, 4))) { mathAnswer(i); return; } }
 function drawMath() {
   eduHeader("MATEMÁTICAS NEURAL", "Resolvé la operación · nivel " + mathLvl(), "#5eead4");
   text("✓ " + mathq.correct + " / " + mathq.total + "    ·    racha " + mathq.streak, W / 2, 92 + safeT, 14, "#9be7c0", "center");
@@ -2454,7 +2521,7 @@ function seqAnswer(i) {
   else { seqg.streak = 0; sWrong(); neuralHelp("Sigue el  " + c.ans, [c.rule, c.arr.join(",  ") + ",  " + c.ans], null, null, seqNext); }
 }
 function updateSeq(dt) { eduTickTip(dt); if (nhelp || !seqg || seqg.done) return; if (seqg.locked) { if (seqg.lastOk) { seqg.fbT -= dt; if (seqg.fbT <= 0) seqNext(); } } }
-function seqTapAt(px, py) { if (nhelp) { nhelpTapAt(px, py); return; } if (seqg.done) { if (inRect(px, py, eduReplayRect())) openSeq(); else state = interior ? "interior" : "play"; return; } if (inRect(px, py, eduCloseRect())) { state = interior ? "interior" : "play"; return; } if (seqg.locked) return; for (let i = 0; i < seqg.cur.opts.length; i++) if (inRect(px, py, eduOptRect(i, 4))) { seqAnswer(i); return; } }
+function seqTapAt(px, py) { if (nhelp) { nhelpTapAt(px, py); return; } if (seqg.done) { if (inRect(px, py, eduReplayRect())) openSeq(); else eduExit(); return; } if (inRect(px, py, eduCloseRect())) { eduExit(); return; } if (seqg.locked) return; for (let i = 0; i < seqg.cur.opts.length; i++) if (inRect(px, py, eduOptRect(i, 4))) { seqAnswer(i); return; } }
 function drawSeq() {
   eduHeader("SECUENCIAS NEURAL", "¿Qué número sigue el patrón?", "#ff9b3c");
   text("✓ " + seqg.correct + " / " + seqg.total, W / 2, 92 + safeT, 14, "#9be7c0", "center");
@@ -2788,6 +2855,29 @@ function drawIsoPortal(x, y) {
   text("3D", x, y + 5, 15, "#eafff9", "center");
   // aro de carga mientras te parás en el portal
   if (isoPortalDwell > 0) { const pr = Math.min(1, isoPortalDwell / 0.4); ctx.strokeStyle = "#eafff9"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, y, r + 7, -Math.PI / 2, -Math.PI / 2 + pr * 6.283); ctx.stroke(); }
+  ctx.restore();
+}
+// ACADEMIA: edificio-escuela (techo + birrete + cartel) al que entras a estudiar con el tutor
+function drawAcademiaSpot(x, y) {
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(x, y + 22, 30, 10, 0, 0, 7); ctx.fill();
+  // cuerpo del edificio
+  const bw = 56, bh = 40;
+  ctx.fillStyle = "#3a4690"; ctx.fillRect(x - bw / 2, y - 6, bw, bh);
+  ctx.fillStyle = "#4a58b0"; ctx.fillRect(x - bw / 2, y - 6, bw, 6);
+  // techo a dos aguas
+  ctx.fillStyle = "#2a3470"; ctx.beginPath(); ctx.moveTo(x - bw / 2 - 5, y - 6); ctx.lineTo(x, y - 26); ctx.lineTo(x + bw / 2 + 5, y - 6); ctx.closePath(); ctx.fill();
+  // puerta + ventanas iluminadas
+  ctx.fillStyle = "#1a1f3a"; ctx.fillRect(x - 7, y + 14, 14, 20);
+  ctx.fillStyle = academiaDwell > 0 ? "#ffe7a0" : "#9fd0ff"; ctx.fillRect(x - 22, y + 4, 9, 9); ctx.fillRect(x + 13, y + 4, 9, 9);
+  // birrete (gorro de graduacion) sobre el techo
+  const cy = y - 34 + Math.sin(t * 2) * 1.5;
+  ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.moveTo(x, cy - 5); ctx.lineTo(x + 13, cy); ctx.lineTo(x, cy + 5); ctx.lineTo(x - 13, cy); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#ffd84a"; ctx.fillRect(x - 1, cy, 2, 7); ctx.beginPath(); ctx.arc(x, cy + 8, 2.2, 0, 7); ctx.fill();
+  // cartel
+  ctx.fillStyle = "rgba(10,14,26,0.92)"; ctx.beginPath(); ctx.roundRect(x - 40, y + 36, 80, 18, 6); ctx.fill(); ctx.strokeStyle = "#7fb0ff"; ctx.lineWidth = 1.5; ctx.stroke();
+  text("ACADEMIA", x, y + 49, 11, "#bcd6ff", "center");
+  if (academiaDwell > 0) { const pr = Math.min(1, academiaDwell / 0.4); ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, y + 14, 34, -Math.PI / 2, -Math.PI / 2 + pr * 6.283); ctx.stroke(); }
   ctx.restore();
 }
 
@@ -3252,6 +3342,7 @@ function render() {
   if (shop) { const yb = Math.sin(t * 4) * 2; ctx.fillStyle = "#caa23a"; ctx.fillRect(shop.x - 14, shop.y - 14 + yb, 28, 26); ctx.fillStyle = "#3a2a08"; ctx.fillRect(shop.x - 14, shop.y - 14 + yb, 28, 7); text("$", shop.x, shop.y + 6 + yb, 18, "#3a2408", "center"); }
   if (portal) drawPortal(portal.x, portal.y);
   if (isoPortal) drawIsoPortal(isoPortal.x, isoPortal.y);
+  if (academiaSpot) drawAcademiaSpot(academiaSpot.x, academiaSpot.y);
   for (const b of bullets) {
     if (b.explosive) { // COHETE de bazuca
       const ang = Math.atan2(b.vy, b.vx); ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(ang);
@@ -3312,6 +3403,7 @@ function render() {
   if (state === "bodega") drawBodega();
   if (state === "kpis") drawKpis();
   if (state === "logros") drawLogros();
+  if (state === "academia") drawAcademia();
   if (state === "mirador") drawMirador();
   if (state === "ia") drawIA();
   if (state === "interior") drawInterior();

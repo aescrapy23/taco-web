@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v34 - TRAJES tematicos: ASTRONAUTA, SUPERHEROE (con capa), NINJA, ROBOT, MAGO, PIRATA, BUZO (en el vestuario, render especial)";
+const VERSION = "v35 - MINIJUEGO MEMORIA de vocabulario (parea espanol con el idioma, pronuncia al acertar) en el ARCADE del centro comercial";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -486,6 +486,7 @@ addEventListener("keydown", e => {
   if (state === "menu") { if (k === "escape") state = "play"; return; }
   if (state === "interior") { if (k === "escape") { if (interior.popup) interior.popup = null; else exitInterior(); } return; }
   if (state === "roulette") { if (k === "escape") state = interior ? "interior" : "play"; else if (k === " ") spinRoulette(); return; }
+  if (state === "memory") { if (k === "escape") state = interior ? "interior" : "play"; return; }
   if (state === "players") { if (k === "escape" && profile) state = "title"; return; }
   if (state === "wardrobe") { if (k === "escape") state = uiBack; return; }
   if (state === "challenge") { if (k === "escape") state = "wardrobe"; else if (k >= "1" && k <= "3") answerChallenge(+k - 1); return; }
@@ -505,6 +506,7 @@ canvas.addEventListener("mousedown", e => {
   if (state === "menu") { menuTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "interior") { interiorTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "roulette") { rouletteTapAt(e.clientX, e.clientY); mouse.down = false; return; }
+  if (state === "memory") { memoryTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "players") { playersTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "wardrobe") { wbTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "shop") { shopTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -526,6 +528,7 @@ function onTouchStart(e) {
   if (state === "menu") { for (const tch of e.changedTouches) menuTapAt(tch.clientX, tch.clientY); return; }
   if (state === "interior") { for (const tch of e.changedTouches) { if (interiorTapAt(tch.clientX, tch.clientY)) return; if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
   if (state === "roulette") { for (const tch of e.changedTouches) rouletteTapAt(tch.clientX, tch.clientY); return; }
+  if (state === "memory") { for (const tch of e.changedTouches) memoryTapAt(tch.clientX, tch.clientY); return; }
   if (state === "players") { for (const tch of e.changedTouches) playersTapAt(tch.clientX, tch.clientY); return; }
   if (state === "wardrobe") { const tch = e.changedTouches[0]; if (tch) wbDrag = { id: tch.identifier, y0: tch.clientY, x0: tch.clientX, s0: wbScroll, moved: 0 }; return; }
   if (state === "challenge") { for (const tch of e.changedTouches) { const o = challengeOptAt(tch.clientX, tch.clientY); if (o >= 0) answerChallenge(o); } return; }
@@ -1008,6 +1011,7 @@ function update(dt) {
 
   if (state === "interior") { if (!paused) updateInterior(dt); return; }
   if (state === "roulette") { updateRoulette(dt); return; }
+  if (state === "memory") { updateMemory(dt); return; }
   if (state === "challenge") { if (challenge && challenge.sel >= 0) { challenge.fb -= dt; if (challenge.fb <= 0) { if (challenge.sel === challenge.correct) state = "wardrobe"; else challenge.sel = -1; } } return; }
   if (state === "quiz") {
     if (quiz && quiz.phase === "pronounce") { if (quiz.micState === "ok") { quiz.okT -= dt; if (quiz.okT <= 0) nextLevel(); } return; }
@@ -1177,6 +1181,7 @@ const MALL_STATIONS = [
   ] },
   { kind: "arcade", name: "ARCADE", icon: "dice", col: "#ff6b8a", opts: [
     { label: "Ruleta de premios (2 mon)", cost: 0, act: () => { interior.popup = null; openRoulette(); } },
+    { label: "Memoria de palabras", cost: 0, act: () => { interior.popup = null; openMemory(); } },
   ] },
 ];
 function intRoom() { return { x: 18, y: 60 + safeT, w: W - 36, h: H - 116 - safeB }; }
@@ -1312,6 +1317,48 @@ function drawRoulette() {
   if (roulette.result >= 0 && !roulette.spinning) text("GANASTE: " + ROUL_PRIZES[roulette.result].label, W / 2, roulSpinRect().y - 12, 16, ROUL_PRIZES[roulette.result].col, "center");
   const sp = roulSpinRect(); ctx.fillStyle = roulette.spinning ? "#2a2a30" : "#3a3320"; ctx.beginPath(); ctx.roundRect(sp.x, sp.y, sp.w, sp.h, 12); ctx.fill(); ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 2; ctx.stroke(); text(roulette.spinning ? "GIRANDO..." : "GIRAR  (2 mon)", sp.x + sp.w / 2, sp.y + sp.h / 2 + 6, 17, "#ffd84a", "center");
   const cc = roulCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(cc.x, cc.y, cc.w, cc.h, 9); ctx.fill(); text("SALIR", cc.x + cc.w / 2, cc.y + cc.h / 2 + 5, 14, "#ff9bb0", "center");
+}
+
+// ---- MINIJUEGO: MEMORIA DE PALABRAS (parea espanol con el idioma) ----
+let memory = null;
+function openMemory() {
+  const L = LESSONS[lang], top = langTierIdx(L), pool = [];
+  for (let i = 0; i <= top; i++) for (const it of L.levels[i].items) pool.push(it);
+  shuffle(pool); const pairs = pool.slice(0, Math.min(6, pool.length)), cards = [];
+  pairs.forEach((it, pi) => { cards.push({ txt: it[0], pair: pi, side: "es", flipped: false, matched: false }); cards.push({ txt: dispOf(L, it), say: it[1], code: L.code, pair: pi, side: "t", flipped: false, matched: false }); });
+  shuffle(cards);
+  memory = { L, cards, first: -1, lockT: 0, matches: 0, total: pairs.length, done: false };
+  state = "memory";
+}
+function memGrid() { const n = memory.cards.length, cols = 4, rows = Math.ceil(n / cols), cw = Math.min(128, (W - 44) / cols), ch = Math.min(88, (H - 200 - safeB - safeT) / rows), gw = cols * cw + (cols - 1) * 8; return { cols, rows, cw, ch, x0: (W - gw) / 2, y0: 92 + safeT }; }
+function memCardRect(i) { const g = memGrid(), r = Math.floor(i / g.cols), c = i % g.cols; return { x: g.x0 + c * (g.cw + 8), y: g.y0 + r * (g.ch + 8), w: g.cw, h: g.ch }; }
+function memCloseRect() { return { x: W / 2 - 70, y: H - 52 - safeB, w: 140, h: 38 }; }
+function updateMemory(dt) {
+  if (memory.lockT > 0) { memory.lockT -= dt; if (memory.lockT <= 0) { for (const c of memory.cards) if (!c.matched) c.flipped = false; memory.first = -1; } }
+}
+function memoryTapAt(px, py) {
+  const cc = memCloseRect(); if (px >= cc.x && px <= cc.x + cc.w && py >= cc.y && py <= cc.y + cc.h) { state = interior ? "interior" : "play"; return; }
+  if (memory.lockT > 0 || memory.done) return;
+  for (let i = 0; i < memory.cards.length; i++) { const card = memory.cards[i]; if (card.matched || card.flipped) continue; const r = memCardRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
+    card.flipped = true; sRight();
+    if (memory.first < 0) { memory.first = i; if (card.say) speak(card.say, card.code); }
+    else { const a = memory.cards[memory.first]; if (a.pair === card.pair) { a.matched = card.matched = true; memory.matches++; const tgt = a.side === "t" ? a : card; if (tgt.say) speak(tgt.say, tgt.code); sPower(); memory.first = -1; if (memory.matches >= memory.total) { memory.done = true; coins += 10; words += memory.total; floatText(W / 2, H / 2, "GANASTE +10 mon!", "#60d050"); flash("96,208,80", 0.25); } } else { memory.lockT = 0.85; sWrong(); } }
+    return;
+  } }
+}
+function drawMemory() {
+  ctx.fillStyle = "rgba(6,6,14,0.9)"; ctx.fillRect(0, 0, W, H);
+  text("MEMORIA DE PALABRAS", W / 2, 48 + safeT, 22, "#7fd6ff", "center");
+  text("Parea ESPANOL con " + (memory.L.code === "zh-CN" ? "CHINO" : "INGLES") + "  ·  pares " + memory.matches + "/" + memory.total, W / 2, 72 + safeT, 13, "#9be7c0", "center");
+  for (let i = 0; i < memory.cards.length; i++) {
+    const card = memory.cards[i], r = memCardRect(i), show = card.flipped || card.matched;
+    ctx.fillStyle = card.matched ? "#1d3a24" : show ? "#2a3050" : "#23273a"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill();
+    ctx.strokeStyle = card.matched ? "#62e074" : show ? "#7fd6ff" : "#3a3f55"; ctx.lineWidth = 2; ctx.stroke();
+    if (show) fitText(card.txt, r.x + r.w / 2, r.y + r.h / 2 + 6, r.w - 12, card.side === "t" && memory.L.code === "zh-CN" ? 22 : 16, card.side === "es" ? "#ffe896" : "#fff");
+    else text("?", r.x + r.w / 2, r.y + r.h / 2 + 9, 28, "#5a6078", "center");
+  }
+  if (memory.done) text("COMPLETADO!  +10 monedas", W / 2, H - 74 - safeB, 17, "#60d050", "center");
+  const cc = memCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(cc.x, cc.y, cc.w, cc.h, 9); ctx.fill(); text("SALIR", cc.x + cc.w / 2, cc.y + cc.h / 2 + 5, 14, "#ff9bb0", "center");
 }
 
 // ---------- Render ----------
@@ -1943,6 +1990,7 @@ function render() {
   if (state === "menu") drawMenu();
   if (state === "interior") drawInterior();
   if (state === "roulette") drawRoulette();
+  if (state === "memory") drawMemory();
   if (state === "challenge") drawChallenge();
   if (state === "players") drawPlayers();
   if (paused && state === "play") { ctx.fillStyle = "rgba(6,6,12,0.6)"; ctx.fillRect(0, 0, W, H); text("PAUSA", W / 2, H / 2, 48, "#f5cd46", "center"); text("toca II para seguir", W / 2, H / 2 + 40, 16, "#9a9ab0", "center"); drawButtons(); }

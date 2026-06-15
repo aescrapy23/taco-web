@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v61 - aprendizaje NEURAL (sin nombrar materias) + ¡NUEVO MUNDO! + reconocimientos: las actividades ahora son juegos con nombres ludicos (RETO MENTAL, PALABRAS DEL MUNDO, ARMA LA PALABRA, PAREJAS, DESCUBRE EL PATRON) en vez de 'matematicas/idiomas'; el tutor y los stats hablan de 'mente' y 'palabras'. Al subir de mundo aparece un aviso ¡NUEVO MUNDO N! con lo desbloqueado. Al terminar una actividad, el tutor da un RECONOCIMIENTO hablado al esfuerzo. Sobre v60: progresion candado-por-nivel en todo";
+const VERSION = "v62 - tutor adaptativo: al volver de una actividad el tutor da un mini-consejo personalizado segun tu desempeno (subiste de nivel / vas muy bien / vamos despacio), hablado y escrito, sin nombrar materias; el saludo del hub se refresca con tu progreso. Sobre v61: nombres ludicos (sin etiquetar materias), aviso ¡NUEVO MUNDO!, reconocimientos por esfuerzo";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -231,7 +231,7 @@ const WORLD_UNLOCKS = {
 };
 // reconocimiento por esfuerzo/progreso (neurolinguistico: elogia el intento, sin nombrar materias)
 function recognize(correct, total) {
-  const ratio = total ? correct / total : 0;
+  const ratio = total ? correct / total : 0; lastEduRatio = ratio;
   const msg = ratio >= 0.9 ? "Increible! Tu mente esta brillando." : ratio >= 0.6 ? "Muy bien! Cada intento te hace mas fuerte." : "Buen esfuerzo! Equivocarse tambien es aprender.";
   recogToast = { msg: msg, t: 3.6 };
   try { speak(msg, "es-ES"); } catch (e) {}
@@ -420,8 +420,21 @@ const player = { x: 0, y: 0, r: 18, vx: 0, vy: 0, hp: MAXHP, inv: 0, aimx: 1, ai
 let gems = [], enemies = [], bullets = [], parts = [], heals = [], powerDrops = [], eshots = [], portal = null;
 let isoPortal = null, isoPortalDwell = 0; // PORTAL fisico a la DIMENSION 3D (game-iso.html)
 let academiaSpot = null, academiaDwell = 0; // edificio ACADEMIA en la ciudad (tutor + materias)
-let academia = null, eduReturn = null; // estado del hub de la ACADEMIA / a donde vuelve una actividad
-function eduExit() { try { saveKpi(); } catch (e) {} state = eduReturn || (interior ? "interior" : "play"); eduReturn = null; }
+let academia = null, eduReturn = null, lastEduRatio = -1; // hub ACADEMIA / a donde vuelve una actividad / desempeno reciente
+// consejo adaptativo del tutor (segun el ultimo desempeno), sin nombrar materias
+function adaptiveTip() {
+  const r = lastEduRatio;
+  if (r < 0) return "Elegi un juego y arrancamos cuando quieras.";
+  if (r >= 0.9) return "Subiste de nivel! La proxima proba un reto mas dificil.";
+  if (r >= 0.6) return "Vas muy bien. Un paso a la vez y seguis creciendo.";
+  return "Tranqui, vamos despacio. Volve a intentarlo, vos podes.";
+}
+function eduExit() {
+  try { saveKpi(); } catch (e) {}
+  const back = eduReturn; eduReturn = null;
+  if (back === "academia" && academia) { academia.greet = academiaGreeting(); academia.msg = adaptiveTip(); academia.msgT = 4; try { speak(academia.msg, "es-ES"); } catch (e) {} }
+  state = back || (interior ? "interior" : "play");
+}
 let peds = [], cars = [], props = [], mission = null; // mundo vivo (gente, autos, casas) + mision
 let cityBlocks = []; // manzanas (rectangulos) para dibujar edificios 3D
 let pShield = 0, pTriple = 0, pRapid = 0, weapon = 0;

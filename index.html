@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v52 - STOCK por TIENDA: cada local vende cosas distintas y tematicas (farmacia/gym/super/panaderia/libreria educativa/banco/comida/moda/arcade...) con productos de colores variados";
+const VERSION = "v53 - BODEGA (inventario personal): los consumibles que compras NO se usan al instante, se guardan en tu BODEGA por jugador y los USAS cuando los necesitas (menu casa -> BODEGA); el Asistente IA te avisa si tenes curacion guardada y vas con poca vida";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -213,6 +213,7 @@ const MOUNTS = [
 ];
 let face = 0, acc = 1, mount = 0, uFace = { 0: true }, uAcc = { 0: true, 1: true }, uMount = { 0: true };
 let myBuilds = [], builtMarkers = []; // edificios que el jugador construyo (plantados en la ciudad)
+let inv = {}; // BODEGA: items que compraste y podes usar cuando los necesites (por jugador)
 function saveCosmetics() { lset("face", face); lset("acc", acc); lset("mount", mount); lset("uface", JSON.stringify(uFace)); lset("uacc", JSON.stringify(uAcc)); lset("umount", JSON.stringify(uMount)); }
 let wbScroll = 0, wbDrag = null;
 let uiBack = "title"; // a donde vuelve "VOLVER" (title o menu del juego)
@@ -268,9 +269,11 @@ function loadPlayerData() {
   try { uAcc = JSON.parse(lget("uacc") || "{}"); } catch (e) { uAcc = {}; } uAcc[0] = true; uAcc[1] = true;
   try { uMount = JSON.parse(lget("umount") || "{}"); } catch (e) { uMount = {}; } uMount[0] = true;
   try { myBuilds = JSON.parse(lget("mybuilds") || "[]"); } catch (e) { myBuilds = []; }
+  try { inv = JSON.parse(lget("inv") || "{}"); } catch (e) { inv = {}; }
   face = clamp(face, 0, FACES.length - 1); acc = clamp(acc, 0, ACCS.length - 1); mount = clamp(mount, 0, MOUNTS.length - 1);
 }
 function saveBuilds() { lset("mybuilds", JSON.stringify(myBuilds)); }
+function saveInv() { lset("inv", JSON.stringify(inv)); }
 function switchPlayer(name) { curPlayer = name; savePlayers(); loadPlayerData(); }
 function createPlayer() {
   let nm = null; try { nm = prompt("Nombre del jugador:", ""); } catch (e) {}
@@ -280,7 +283,7 @@ function createPlayer() {
   if (players.indexOf(nm) < 0) players.push(nm);
   curPlayer = nm; savePlayers();
   best = 0; bank = 0; outfit = 0; maxWorld = 1; unlocked = { 0: true }; lstats = {}; lang = "EN";
-  face = 0; acc = 1; mount = 0; uFace = { 0: true }; uAcc = { 0: true, 1: true }; uMount = { 0: true }; myBuilds = [];
+  face = 0; acc = 1; mount = 0; uFace = { 0: true }; uAcc = { 0: true, 1: true }; uMount = { 0: true }; myBuilds = []; inv = {};
   profile = { name: nm, age: age, eng: ageToTier(age, LESSONS.EN.levels.length - 1), zh: ageToTier(Math.max(6, age - 3), LESSONS.ZH.levels.length - 1) };
   lset("best", 0); lset("bank", 0); lset("outfit", 0); lset("maxworld", 1); lset("unlocked", JSON.stringify(unlocked)); lset("lstats", "{}"); lset("lang", "EN"); lset("profile", JSON.stringify(profile));
   saveCosmetics();
@@ -289,7 +292,7 @@ function createPlayer() {
 function deletePlayer(name) {
   const i = players.indexOf(name); if (i < 0) return;
   players.splice(i, 1);
-  try { ["best", "bank", "outfit", "maxworld", "lang", "unlocked", "lstats", "profile", "face", "acc", "mount", "uface", "uacc", "umount", "mybuilds", "run"].forEach(k => localStorage.removeItem("pl_" + name + "_" + k)); } catch (e) {}
+  try { ["best", "bank", "outfit", "maxworld", "lang", "unlocked", "lstats", "profile", "face", "acc", "mount", "uface", "uacc", "umount", "mybuilds", "inv", "run"].forEach(k => localStorage.removeItem("pl_" + name + "_" + k)); } catch (e) {}
   if (curPlayer === name) { curPlayer = players[0] || ""; if (curPlayer) loadPlayerData(); else profile = null; }
   savePlayers();
 }
@@ -505,6 +508,7 @@ addEventListener("keydown", e => {
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { if (k === "escape") state = uiBack; return; }
   if (state === "menu") { if (k === "escape") state = "play"; return; }
+  if (state === "bodega") { if (k === "escape") state = bodega.back; return; }
   if (state === "ia") { if (k === "escape") state = iaHub.back; return; }
   if (state === "interior") { if (k === "escape") { if (interior.popup) interior.popup = null; else exitInterior(); } return; }
   if (state === "store") { if (k === "escape") exitStore(); return; }
@@ -531,6 +535,7 @@ canvas.addEventListener("mousedown", e => {
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { optTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "menu") { menuTapAt(e.clientX, e.clientY); mouse.down = false; return; }
+  if (state === "bodega") { bodegaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "ia") { iaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "interior") { interiorTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "store") { storeTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -563,6 +568,7 @@ function onTouchStart(e) {
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { for (const tch of e.changedTouches) optTapAt(tch.clientX, tch.clientY); return; }
   if (state === "menu") { for (const tch of e.changedTouches) menuTapAt(tch.clientX, tch.clientY); return; }
+  if (state === "bodega") { for (const tch of e.changedTouches) bodegaTapAt(tch.clientX, tch.clientY); return; }
   if (state === "ia") { for (const tch of e.changedTouches) iaTapAt(tch.clientX, tch.clientY); return; }
   if (state === "interior") { for (const tch of e.changedTouches) { if (interiorTapAt(tch.clientX, tch.clientY)) return; if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
   if (state === "store") { for (const tch of e.changedTouches) { if (storeTapAt(tch.clientX, tch.clientY)) return; if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
@@ -968,9 +974,38 @@ function drawOptions() {
 // ---- MENU del juego (boton casa) : continuar / opciones / vestuario / jugador / titulo ----
 function openMenu() { saveRun(); state = "menu"; }
 function gotoIso() { try { saveRun(); } catch (e) {} try { location.href = "game-iso.html"; } catch (e) {} }
+// ---- BODEGA (inventario personal): usa los items que compraste cuando los necesites ----
+let bodega = null;
+function openBodega(back) { bodega = { back: back || "play", msg: "", col: "#62e074", msgT: 0 }; state = "bodega"; }
+function bodRect() { const n = INV_KINDS.length, w = Math.min(440, W - 32), h = 86 + n * 54; return { x: (W - w) / 2, y: Math.max(18 + safeT, (H - h) / 2), w, h }; }
+function bodRowRect(i) { const p = bodRect(); return { x: p.x + 20, y: p.y + 66 + i * 54, w: p.w - 40, h: 48 }; }
+function bodCloseRect() { const p = bodRect(); return { x: p.x + p.w / 2 - 90, y: p.y + p.h - 42, w: 180, h: 34 }; }
+function updateBodega(dt) { if (bodega.msgT > 0) bodega.msgT -= dt; }
+function bodegaTapAt(px, py) {
+  for (let i = 0; i < INV_KINDS.length; i++) { const r = bodRowRect(i), ik = INV_KINDS[i]; if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { if ((inv[ik.k] || 0) > 0) { inv[ik.k]--; saveInv(); ik.use(); sPower(); bodega.msg = "Usaste " + ik.name + "!"; bodega.col = "#62e074"; bodega.msgT = 1.5; flash("96,208,80", 0.15); } else { sWrong(); bodega.msg = "No tenes " + ik.name + " · compralo en una tienda"; bodega.col = "#eb6050"; bodega.msgT = 1.8; } return; } }
+  const c = bodCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) state = bodega.back;
+}
+function drawBodega() {
+  ctx.fillStyle = "rgba(0,0,0,0.62)"; ctx.fillRect(0, 0, W, H);
+  const p = bodRect();
+  ctx.shadowColor = "#ffd84a"; ctx.shadowBlur = 16; ctx.fillStyle = "#161826"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 14); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 3; ctx.stroke();
+  text("BODEGA  ·  tus items", W / 2, p.y + 32, 20, "#ffd84a", "center");
+  text("compralos en las tiendas del mall y USALOS cuando los necesites", W / 2, p.y + 52, 11, "#9aa0b4", "center");
+  for (let i = 0; i < INV_KINDS.length; i++) {
+    const r = bodRowRect(i), ik = INV_KINDS[i], cnt = inv[ik.k] || 0, has = cnt > 0;
+    ctx.fillStyle = has ? "#23273a" : "#1c1f29"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.strokeStyle = has ? ik.col : "#33384a"; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.globalAlpha = has ? 1 : 0.45; ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(r.x + 8, r.y + 8, 32, 32, 8); ctx.fill(); mallIcon(ik.icon, r.x + 24, r.y + r.h / 2, 10); ctx.globalAlpha = 1;
+    text(ik.name, r.x + 50, r.y + r.h / 2 - 2, 15, has ? "#fff" : "#777", "left");
+    text("tenes " + cnt, r.x + 50, r.y + r.h / 2 + 15, 11, has ? ik.col : "#666", "left");
+    const bw = 96, bx = r.x + r.w - bw - 8; ctx.fillStyle = has ? "#1d3a24" : "#241f28"; ctx.beginPath(); ctx.roundRect(bx, r.y + 9, bw, r.h - 18, 9); ctx.fill(); ctx.strokeStyle = has ? "#62e074" : "#3a3340"; ctx.lineWidth = 1.5; ctx.stroke(); text(has ? "USAR" : "vacio", bx + bw / 2, r.y + r.h / 2 + 5, 14, has ? "#9be7c0" : "#666", "center");
+  }
+  if (bodega.msgT > 0) { ctx.globalAlpha = Math.min(1, bodega.msgT); text(bodega.msg, W / 2, p.y - 10, 14, bodega.col, "center"); ctx.globalAlpha = 1; }
+  const c = bodCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); text(bodega.back === "play" ? "VOLVER AL JUEGO" : "VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 5, 14, "#ff9bb0", "center");
+}
 function menuRows() {
   return [
     { label: "CONTINUAR", col: "#5eead4", act: () => { state = "play"; } },
+    { label: "BODEGA (mis items: " + invCount() + ")", col: "#ffd84a", act: () => { openBodega("play"); } },
     { label: "DIMENSION 3D (ISO)", col: "#b480ff", act: () => { gotoIso(); } },
     { label: "OPCIONES", col: "#7fd6ff", act: () => { openOptions("menu"); } },
     { label: "VESTUARIO", col: "#f5cd46", act: () => { openWb("menu"); } },
@@ -1062,6 +1097,7 @@ function update(dt) {
   if (bannerT > 0) bannerT -= dt;
   for (let i = rings.length - 1; i >= 0; i--) { const rg = rings[i]; rg.r += (rg.max - rg.r) * dt * 6; rg.life -= dt * 1.6; if (rg.life <= 0) rings.splice(i, 1); }
 
+  if (state === "bodega") { updateBodega(dt); return; }
   if (state === "interior") { if (!paused) updateInterior(dt); return; }
   if (state === "store") { if (!paused) updateStore(dt); return; }
   if (state === "build") { updateBuild(dt); return; }
@@ -1494,12 +1530,23 @@ function drawInterior() {
 
 // ---- TIENDA del mall: entras a un local y lo recorres caminando ----
 let store = null, stP = { x: 0, y: 0, r: 16 };
-// fabricas de productos (efecto + icono + color)
-const _hf = (n, c) => ({ name: n, icon: "heal", cost: c, col: "#60d050", act: () => { player.hp = MAXHP; } });
-const _h3 = (n, c) => ({ name: n, icon: "heal", cost: c, col: "#8ee07a", act: () => { player.hp = Math.min(MAXHP, player.hp + 35); } });
-const _sh = (n, c) => ({ name: n, icon: "shield", cost: c, col: "#5eead4", act: () => { pShield = 9; } });
-const _rp = (n, c) => ({ name: n, icon: "rapid", cost: c, col: "#f5cd46", act: () => { pRapid = 10; } });
-const _tr = (n, c) => ({ name: n, icon: "triple", cost: c, col: "#ff963c", act: () => { pTriple = 10; } });
+// BODEGA: tipos de item que se guardan y se usan cuando los necesites
+const INV_KINDS = [
+  { k: "heal", name: "CURACION", icon: "heal", col: "#60d050", use: () => { player.hp = MAXHP; } },
+  { k: "heal3", name: "CURA +35", icon: "heal", col: "#8ee07a", use: () => { player.hp = Math.min(MAXHP, player.hp + 35); } },
+  { k: "shield", name: "ESCUDO 9s", icon: "shield", col: "#5eead4", use: () => { pShield = 9; } },
+  { k: "rapid", name: "RAPIDO 10s", icon: "rapid", col: "#f5cd46", use: () => { pRapid = 10; } },
+  { k: "triple", name: "TRIPLE 10s", icon: "triple", col: "#ff963c", use: () => { pTriple = 10; } },
+];
+function invAdd(k, n) { inv[k] = (inv[k] || 0) + (n || 1); saveInv(); }
+function invCount() { let s = 0; for (const ik of INV_KINDS) s += inv[ik.k] || 0; return s; }
+function invDef(k) { for (const ik of INV_KINDS) if (ik.k === k) return ik; return null; }
+// fabricas de productos: consumibles -> kind (van a la bodega); accion -> act (abren pantalla / ensenan)
+const _hf = (n, c) => ({ name: n, icon: "heal", cost: c, col: "#60d050", kind: "heal" });
+const _h3 = (n, c) => ({ name: n, icon: "heal", cost: c, col: "#8ee07a", kind: "heal3" });
+const _sh = (n, c) => ({ name: n, icon: "shield", cost: c, col: "#5eead4", kind: "shield" });
+const _rp = (n, c) => ({ name: n, icon: "rapid", cost: c, col: "#f5cd46", kind: "rapid" });
+const _tr = (n, c) => ({ name: n, icon: "triple", cost: c, col: "#ff963c", kind: "triple" });
 const _wb = (n, tab, ic) => ({ name: n, icon: ic || "shirt", cost: 0, col: "#f5cd46", act: () => { closeStore(); wbTab = tab; openWb("interior"); } });
 const _rul = (n) => ({ name: n, icon: "dice", cost: 0, col: "#ffd84a", act: () => { closeStore(); openRoulette(); } });
 const _uno = (n) => ({ name: n, icon: "dice", cost: 0, col: "#ff6b8a", act: () => { closeStore(); openUno(); } });
@@ -1566,7 +1613,21 @@ function updateStore(dt) {
   playerMoving = (Math.abs(inp.mx) + Math.abs(inp.my)) > 0.1; walkPhase += dt * (playerMoving ? 13 : 2.5);
   if (Math.abs(inp.mx) > 0.06) playerFace = inp.mx > 0 ? 1 : -1;
   for (const c of store.coins) if (!c.got && len(c.x - stP.x, c.y - stP.y) < 26) { c.got = true; coins += 1; sGem(); }
-  for (const it of store.items) { if (it.bought) continue; if (len(it.x - stP.x, it.y - stP.y) < 30) { if (it.def.cost === 0) { it.def.act(); return; } if (coins >= it.def.cost) { coins -= it.def.cost; it.def.act(); it.bought = true; sPower(); store.toastMsg = "LISTO!"; store.toastCol = "#62e074"; store.toastT = 1.3; } else { store.toastMsg = "Te faltan monedas"; store.toastCol = "#eb6050"; store.toastT = 1.3; } return; } }
+  for (const it of store.items) {
+    if (it.bought) continue;
+    if (len(it.x - stP.x, it.y - stP.y) < 30) {
+      const d = it.def;
+      if (d.kind) { // CONSUMIBLE -> a la BODEGA (no se usa al instante)
+        if (coins >= d.cost) { coins -= d.cost; invAdd(d.kind, 1); it.bought = true; sPower(); store.toastMsg = "A tu BODEGA! (" + d.name + ")"; store.toastCol = "#62e074"; store.toastT = 1.4; }
+        else { store.toastMsg = "Te faltan monedas"; store.toastCol = "#eb6050"; store.toastT = 1.3; }
+      } else { // accion directa (vestuario / minijuego / aprender)
+        if (d.cost === 0) { d.act(); return; }
+        if (coins >= d.cost) { coins -= d.cost; d.act(); it.bought = true; sPower(); store.toastMsg = "LISTO!"; store.toastCol = "#62e074"; store.toastT = 1.3; }
+        else { store.toastMsg = "Te faltan monedas"; store.toastCol = "#eb6050"; store.toastT = 1.3; }
+      }
+      return;
+    }
+  }
   if (stP.y > R.y + R.h - 30 && Math.abs(stP.x - (R.x + R.w / 2)) < 48 && inp.my > 0.2) exitStore();
 }
 function storeCloseRect() { const R = intRoom(); return { x: R.x + R.w - 112, y: R.y + 8, w: 104, h: 34 }; }
@@ -2688,7 +2749,7 @@ function aiEval() {
   if (settings.ai === 0 || state !== "play") return;
   ai.n = (ai.n || 0) + 1;
   // DINAMICO: urgente segun contexto
-  if (player.hp < MAXHP * 0.3) return aiSay("Poca vida! junta un corazon verde o entra al mall (boton casa) -> SALUD.", "#eb6050", "hp");
+  if (player.hp < MAXHP * 0.3) { if ((inv.heal || 0) > 0 || (inv.heal3 || 0) > 0) return aiSay("Poca vida! Tenes CURACION en tu BODEGA: abri el boton casa -> BODEGA y usala.", "#eb6050", "hpbod"); return aiSay("Poca vida! junta un corazon verde o entra al mall (boton casa) -> SALUD.", "#eb6050", "hp"); }
   if (portal) return aiSay("Portal abierto! anda al remolino: traduci y PRONUNCIA la palabra para evolucionar de dimension.", "#b480ff", "portal");
   // EDUCATIVO NEURAL: 1 de cada 2 veces ensena/repasa la palabra que mas te conviene
   if (ai.n % 2 === 0) return aiTeachWord();
@@ -2882,6 +2943,7 @@ function render() {
   if (state === "wardrobe") drawWardrobe();
   if (state === "options") drawOptions();
   if (state === "menu") drawMenu();
+  if (state === "bodega") drawBodega();
   if (state === "ia") drawIA();
   if (state === "interior") drawInterior();
   if (state === "store") drawStore();

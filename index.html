@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v40 - ENTRAR A CADA TIENDA: tocas una vidriera y la recorres caminando por dentro (productos, cajero, salida) + mockups del mall y tiendas";
+const VERSION = "v42 - MODO CONSTRUCCION (cuadrilla con casco+chaleco, elegis diseno casa/tienda/torre, obra por etapas con EPP/OSHA) + edificios mas altos/3D";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -495,6 +495,7 @@ addEventListener("keydown", e => {
   if (state === "menu") { if (k === "escape") state = "play"; return; }
   if (state === "interior") { if (k === "escape") { if (interior.popup) interior.popup = null; else exitInterior(); } return; }
   if (state === "store") { if (k === "escape") exitStore(); return; }
+  if (state === "build") { if (k === "escape") state = interior ? "interior" : "play"; return; }
   if (state === "roulette") { if (k === "escape") state = interior ? "interior" : "play"; else if (k === " ") spinRoulette(); return; }
   if (state === "memory") { if (k === "escape") state = interior ? "interior" : "play"; return; }
   if (state === "uno") { if (k === "escape") state = interior ? "interior" : "play"; return; }
@@ -519,6 +520,7 @@ canvas.addEventListener("mousedown", e => {
   if (state === "menu") { menuTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "interior") { interiorTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "store") { storeTapAt(e.clientX, e.clientY); mouse.down = false; return; }
+  if (state === "build") { buildTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "roulette") { rouletteTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "memory") { memoryTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "uno") { unoTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -548,6 +550,7 @@ function onTouchStart(e) {
   if (state === "menu") { for (const tch of e.changedTouches) menuTapAt(tch.clientX, tch.clientY); return; }
   if (state === "interior") { for (const tch of e.changedTouches) { if (interiorTapAt(tch.clientX, tch.clientY)) return; if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
   if (state === "store") { for (const tch of e.changedTouches) { if (storeTapAt(tch.clientX, tch.clientY)) return; if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
+  if (state === "build") { for (const tch of e.changedTouches) buildTapAt(tch.clientX, tch.clientY); return; }
   if (state === "roulette") { for (const tch of e.changedTouches) rouletteTapAt(tch.clientX, tch.clientY); return; }
   if (state === "memory") { for (const tch of e.changedTouches) memoryTapAt(tch.clientX, tch.clientY); return; }
   if (state === "uno") { for (const tch of e.changedTouches) unoTapAt(tch.clientX, tch.clientY); return; }
@@ -1038,6 +1041,7 @@ function update(dt) {
 
   if (state === "interior") { if (!paused) updateInterior(dt); return; }
   if (state === "store") { if (!paused) updateStore(dt); return; }
+  if (state === "build") { updateBuild(dt); return; }
   if (state === "roulette") { updateRoulette(dt); return; }
   if (state === "memory") { updateMemory(dt); return; }
   if (state === "uno") { updateUno(dt); return; }
@@ -1222,6 +1226,9 @@ const MALL_FLOORS = [
       { label: "Taco combo (cura toda la vida)", cost: 2, act: () => { player.hp = MAXHP; } },
       { label: "Postre (disparo rapido 10s)", cost: 3, act: () => { pRapid = 10; } },
     ] },
+    { kind: "obra", name: "OBRA", icon: "hardhat", col: "#f2c200", opts: [
+      { label: "Modo construccion (con cuadrilla + OSHA)", cost: 0, act: () => { interior.popup = null; openBuild(); } },
+    ] },
   ] },
   { name: "PISO 2 · MODA", stations: [
     { kind: "ropa", name: "VESTUARIO", icon: "shirt", col: "#f5cd46", opts: [
@@ -1319,6 +1326,7 @@ function mallIcon(kind, cx, cy, r) {
   if (kind === "shirt") { ctx.fillStyle = "#f5cd46"; ctx.beginPath(); ctx.moveTo(cx - r, cy - r * 0.4); ctx.lineTo(cx - r * 0.4, cy - r); ctx.lineTo(cx + r * 0.4, cy - r); ctx.lineTo(cx + r, cy - r * 0.4); ctx.lineTo(cx + r * 0.5, cy - r * 0.1); ctx.lineTo(cx + r * 0.5, cy + r); ctx.lineTo(cx - r * 0.5, cy + r); ctx.lineTo(cx - r * 0.5, cy - r * 0.1); ctx.closePath(); ctx.fill(); }
   else if (kind === "wheel") { ctx.fillStyle = "#1a1a1f"; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill(); ctx.fillStyle = "#7fd6ff"; ctx.beginPath(); ctx.arc(cx, cy, r * 0.45, 0, 7); ctx.fill(); ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = 2; for (let k = 0; k < 4; k++) { const a = k / 4 * 6.28; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); ctx.stroke(); } }
   else if (kind === "food") { ctx.fillStyle = "#caa050"; ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0, false); ctx.fill(); ctx.fillStyle = "#7a4a2a"; ctx.fillRect(cx - r, cy, r * 2, r * 0.5); ctx.fillStyle = "#60d050"; ctx.fillRect(cx - r, cy + r * 0.3, r * 2, r * 0.18); ctx.fillStyle = "#e0479a"; ctx.fillRect(cx - r, cy + r * 0.48, r * 2, r * 0.16); ctx.fillStyle = "#caa050"; ctx.beginPath(); ctx.arc(cx, cy + r * 0.7, r, 0, Math.PI, false); ctx.fill(); }
+  else if (kind === "hardhat") { ctx.fillStyle = "#f2c200"; ctx.beginPath(); ctx.arc(cx, cy + r * 0.3, r, Math.PI, 0, false); ctx.fill(); ctx.fillRect(cx - r * 1.1, cy + r * 0.3, r * 2.2, r * 0.35); ctx.fillStyle = "#d9a800"; ctx.fillRect(cx - r * 0.15, cy - r * 0.7, r * 0.3, r * 0.7); }
   else if (kind === "film") { ctx.fillStyle = "#1a1a22"; ctx.fillRect(cx - r, cy - r * 0.5, r * 2, r * 1.5); ctx.fillStyle = "#c060e0"; for (let i = -1; i <= 1; i++) { ctx.fillStyle = i % 2 ? "#fff" : "#c060e0"; ctx.save(); ctx.translate(cx + i * r * 0.66, cy - r * 0.7); ctx.rotate(0.2); ctx.fillRect(-r * 0.3, -r * 0.2, r * 0.6, r * 0.4); ctx.restore(); } ctx.fillStyle = "#5a5a66"; for (let i = 0; i < 4; i++) { ctx.fillRect(cx - r + 1, cy - r * 0.3 + i * r * 0.42, r * 0.18, r * 0.2); ctx.fillRect(cx + r - r * 0.18 - 1, cy - r * 0.3 + i * r * 0.42, r * 0.18, r * 0.2); } }
   else { ctx.fillStyle = "#ff6b8a"; ctx.beginPath(); ctx.roundRect(cx - r, cy - r, r * 2, r * 2, 4); ctx.fill(); ctx.fillStyle = "#fff"; for (const d of [[-0.45, -0.45], [0.45, -0.45], [0, 0], [-0.45, 0.45], [0.45, 0.45]]) { ctx.beginPath(); ctx.arc(cx + d[0] * r, cy + d[1] * r, r * 0.16, 0, 7); ctx.fill(); } }
 }
@@ -1528,6 +1536,64 @@ function drawStore() {
   const c = storeCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); ctx.strokeStyle = "#ff9bb0"; ctx.lineWidth = 1.5; ctx.stroke(); text("AL MALL", c.x + c.w / 2, c.y + c.h / 2 + 5, 13, "#ff9bb0", "center");
   if (store.toastT > 0) { ctx.globalAlpha = Math.min(1, store.toastT); text(store.toastMsg, W / 2, R.y + 66, 16, store.toastCol, "center"); ctx.globalAlpha = 1; }
   drawStick(stickL, "rgba(94,234,212,0.5)");
+}
+
+// ---- MODO CONSTRUCCION: contrata cuadrilla, elegi diseno, levanta el edificio con EPP/OSHA ----
+let build = null;
+const BUILD_DESIGNS = [
+  { name: "CASA", floors: 2, col: "#c08a5a", reward: 30 },
+  { name: "TIENDA", floors: 3, col: "#3a8adf", reward: 45 },
+  { name: "TORRE", floors: 6, col: "#7a86a0", reward: 80 },
+];
+const BUILD_STAGES = ["CIMIENTOS", "ESTRUCTURA", "FACHADA", "TECHO"];
+const OSHA_ITEMS = [
+  { key: "casco", name: "CASCO", col: "#f2c200" }, { key: "chaleco", name: "CHALECO", col: "#ff7a1a" },
+  { key: "conos", name: "CONOS", col: "#ff5c3c" }, { key: "cinta", name: "CINTA", col: "#ffd84a" },
+];
+function openBuild() { build = { design: -1, stage: 0, osha: { casco: false, chaleco: false, conos: false, cinta: false }, done: false, workT: 0, msg: "Elegi que construir" }; state = "build"; }
+function buildSafety() { let s = 0; for (const it of OSHA_ITEMS) if (build.osha[it.key]) s += 25; return s; }
+function buildStep() {
+  if (build.design < 0) { build.msg = "Primero elegi un diseno"; sWrong(); return; }
+  if (buildSafety() < 75) { build.msg = "FALTA EPP! ponete el equipo de seguridad (OSHA)"; sWrong(); return; }
+  if (build.done) return;
+  build.stage++; build.workT = 0.6; sShoot(); shake = Math.min(shake + 3, 10);
+  if (build.stage >= BUILD_STAGES.length) { build.done = true; const d = BUILD_DESIGNS[build.design]; coins += d.reward; build.msg = "OBRA TERMINADA! seguridad " + buildSafety() + "% · +" + d.reward + " mon"; flash("96,208,80", 0.25); sPower(); }
+  else build.msg = "Etapa: " + BUILD_STAGES[build.stage] + "  (" + build.stage + "/4)";
+}
+function updateBuild(dt) { if (build.workT > 0) build.workT -= dt; }
+function buildDesignRect(i) { const w = Math.min(150, (W - 70) / 3), x0 = W / 2 - (3 * w + 20) / 2; return { x: x0 + i * (w + 10), y: H * 0.38, w, h: 132 }; }
+function oshaRect(i) { const w = Math.min(120, (W - 60) / 4), x0 = W / 2 - (4 * w + 30) / 2; return { x: x0 + i * (w + 10), y: H - 150 - safeB, w, h: 54 }; }
+function buildGoRect() { return { x: W / 2 - 95, y: H - 86 - safeB, w: 190, h: 48 }; }
+function buildExitRect() { return { x: W - 96, y: 14 + safeT, w: 82, h: 34 }; }
+function buildTapAt(px, py) {
+  const ex = buildExitRect(); if (px >= ex.x && px <= ex.x + ex.w && py >= ex.y && py <= ex.y + ex.h) { state = interior ? "interior" : "play"; sRight(); return; }
+  if (build.design < 0) { for (let i = 0; i < BUILD_DESIGNS.length; i++) { const r = buildDesignRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { build.design = i; build.msg = "Ponete el EPP (OSHA) y toca CONSTRUIR ETAPA"; sRight(); return; } } return; }
+  for (let i = 0; i < OSHA_ITEMS.length; i++) { const r = oshaRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { build.osha[OSHA_ITEMS[i].key] = !build.osha[OSHA_ITEMS[i].key]; sRight(); return; } }
+  const g = buildGoRect(); if (px >= g.x && px <= g.x + g.w && py >= g.y && py <= g.y + g.h) { buildStep(); }
+}
+function drawBuild() {
+  ctx.fillStyle = "#0c0f14"; ctx.fillRect(0, 0, W, H);
+  text("MODO CONSTRUCCION", W / 2, 40 + safeT, 22, "#f2c200", "center");
+  const ex = buildExitRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(ex.x, ex.y, ex.w, ex.h, 9); ctx.fill(); text("SALIR", ex.x + ex.w / 2, ex.y + ex.h / 2 + 5, 13, "#ff9bb0", "center");
+  if (build.design < 0) {
+    text("Elegi que construir (premia monedas al terminar):", W / 2, 76 + safeT, 14, "#9aa0b4", "center");
+    for (let i = 0; i < BUILD_DESIGNS.length; i++) { const r = buildDesignRect(i), d = BUILD_DESIGNS[i]; ctx.fillStyle = "#1b1f2c"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 12); ctx.fill(); ctx.strokeStyle = d.col; ctx.lineWidth = 2; ctx.stroke(); const cx = r.x + r.w / 2, by = r.y + r.h - 34; for (let f = 0; f < d.floors; f++) { ctx.fillStyle = shadeHex(d.col, 1 - f * 0.05); ctx.fillRect(cx - 22, by - f * 13, 44, 12); ctx.fillStyle = "#ffe7a0"; ctx.fillRect(cx - 15, by - f * 13 + 3, 8, 6); ctx.fillRect(cx + 7, by - f * 13 + 3, 8, 6); } text(d.name, cx, r.y + 24, 17, d.col, "center"); text("+" + d.reward + " mon", cx, r.y + r.h - 8, 12, "#ffd84a", "center"); }
+    return;
+  }
+  const d = BUILD_DESIGNS[build.design], plotX = W / 2, plotY = H * 0.46, prog = build.stage / BUILD_STAGES.length, fw = 92, fh = 18;
+  ctx.fillStyle = "#1a1d24"; ctx.fillRect(plotX - 135, plotY + 40, 270, 16);
+  if (build.osha.cinta) for (let i = 0; i < 14; i++) { ctx.fillStyle = i % 2 ? "#ffd84a" : "#1a1a1a"; ctx.fillRect(plotX - 135 + i * 19, plotY + 40, 19, 6); }
+  if (build.osha.conos) for (const sx of [-125, 125]) { ctx.fillStyle = "#ff5c3c"; ctx.beginPath(); ctx.moveTo(plotX + sx, plotY + 36); ctx.lineTo(plotX + sx - 8, plotY + 58); ctx.lineTo(plotX + sx + 8, plotY + 58); ctx.closePath(); ctx.fill(); ctx.fillStyle = "#fff"; ctx.fillRect(plotX + sx - 6, plotY + 47, 12, 3); }
+  const visFloors = Math.max(build.stage > 0 ? 1 : 0, Math.round(d.floors * prog));
+  for (let f = 0; f < visFloors; f++) { const fy2 = plotY + 38 - (f + 1) * fh; ctx.fillStyle = shadeHex(d.col, 0.6); ctx.fillRect(plotX - fw / 2 - 8, fy2 + 3, 8, fh); ctx.fillStyle = d.col; ctx.fillRect(plotX - fw / 2, fy2, fw, fh); ctx.fillStyle = shadeHex(d.col, 1.2); ctx.fillRect(plotX - fw / 2, fy2, fw, 2); ctx.fillStyle = "#ffe7a0"; for (let c = 0; c < 3; c++) ctx.fillRect(plotX - fw / 2 + 12 + c * 28, fy2 + 5, 13, 9); }
+  if (build.done) { const ty = plotY + 38 - visFloors * fh - 7; ctx.fillStyle = shadeHex(d.col, 1.25); ctx.fillRect(plotX - fw / 2 - 6, ty, fw + 12, 7); }
+  if (!build.done) { const top = plotY + 40 - d.floors * fh - 44; ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(plotX + fw / 2 + 34, plotY + 40); ctx.lineTo(plotX + fw / 2 + 34, top); ctx.lineTo(plotX - 6, top); ctx.stroke(); const hookX = plotX - 6 + Math.sin(t * 2) * 18, drop = build.workT > 0 ? 14 : 0; ctx.beginPath(); ctx.moveTo(hookX, top); ctx.lineTo(hookX, top + 26 + drop); ctx.stroke(); ctx.fillStyle = "#9aa6c0"; ctx.fillRect(hookX - 8, top + 26 + drop, 16, 10); }
+  for (let i = 0; i < 3; i++) { const wx = plotX - 92 + i * 92, wy = plotY + 46 + Math.sin(t * 6 + i) * 2; ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(wx, wy + 10, 9, 3, 0, 0, 7); ctx.fill(); ctx.fillStyle = "#ff7a1a"; ctx.fillRect(wx - 6, wy - 4, 12, 12); ctx.fillStyle = "#d9d9d9"; ctx.fillRect(wx - 6, wy - 1, 12, 3); ctx.fillStyle = "#f0c39a"; ctx.beginPath(); ctx.arc(wx, wy - 8, 5, 0, 7); ctx.fill(); ctx.fillStyle = "#f2c200"; ctx.beginPath(); ctx.arc(wx, wy - 9, 5.5, Math.PI, 0, false); ctx.fill(); ctx.fillRect(wx - 7, wy - 9, 14, 3); }
+  const bx = W / 2 - 130, byy = H * 0.62; ctx.fillStyle = "#222630"; ctx.fillRect(bx, byy, 260, 12); ctx.fillStyle = "#62e074"; ctx.fillRect(bx, byy, 260 * prog, 12); text("PROGRESO " + build.stage + "/4" + (build.done ? " · LISTO" : " · " + BUILD_STAGES[Math.min(build.stage, 3)]), W / 2, byy + 30, 13, "#cfd3e0", "center");
+  text("SEGURIDAD OSHA: " + buildSafety() + "%   (toca el equipo para ponertelo)", W / 2, H - 176 - safeB, 13, buildSafety() >= 75 ? "#62e074" : "#ffb060", "center");
+  for (let i = 0; i < OSHA_ITEMS.length; i++) { const r = oshaRect(i), it = OSHA_ITEMS[i], on = build.osha[it.key]; ctx.fillStyle = on ? "#1d3a24" : "#23273a"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 9); ctx.fill(); ctx.strokeStyle = on ? "#62e074" : it.col; ctx.lineWidth = 2; ctx.stroke(); text((on ? "✓ " : "") + it.name, r.x + r.w / 2, r.y + r.h / 2 + 5, fitFont((on ? "✓ " : "") + it.name, r.w - 12, 13), on ? "#9be7c0" : it.col, "center"); }
+  const g = buildGoRect(), can = buildSafety() >= 75 && !build.done; ctx.fillStyle = can ? "#3a3320" : "#2a2530"; ctx.beginPath(); ctx.roundRect(g.x, g.y, g.w, g.h, 12); ctx.fill(); ctx.strokeStyle = build.done ? "#62e074" : "#ffd84a"; ctx.lineWidth = 2; ctx.stroke(); text(build.done ? "OBRA LISTA ✓" : "CONSTRUIR ETAPA", g.x + g.w / 2, g.y + g.h / 2 + 6, 16, build.done ? "#62e074" : "#ffd84a", "center");
+  text(build.msg, W / 2, 66 + safeT, 13, build.done ? "#62e074" : "#9be7c0", "center");
 }
 
 // ---- MINIJUEGO: RULETA DE PREMIOS ----
@@ -1900,7 +1966,7 @@ function drawBlock(g, px, py, s, col) {
 // Edificio 3D extruido: sombra + paredes (sur/este) con ventanas + azotea con parapeto y detalles.
 function draw3DBuilding(g, b) {
   const px = b.x * TS, py = b.y * TS, pw = b.w * TS, ph = b.h * TS;
-  const EH = b.landmark ? 64 + (b.seed % 4) * 13 : 22 + (b.seed % 5) * 11;  // landmark = torre alta; resto skyline variable
+  const EH = b.landmark ? 72 + (b.seed % 4) * 15 : 28 + (b.seed % 5) * 13;  // mas altura = mas 3D (estilo iso); landmark = torre alta
   const roof = b.tint;
   // sombra proyectada en el piso (mas larga = mas alto)
   g.fillStyle = "rgba(0,0,0,0.36)"; g.beginPath(); g.roundRect(px + 10, py + 12, pw, ph, 8); g.fill();
@@ -2586,6 +2652,7 @@ function render() {
   if (state === "menu") drawMenu();
   if (state === "interior") drawInterior();
   if (state === "store") drawStore();
+  if (state === "build") drawBuild();
   if (state === "roulette") drawRoulette();
   if (state === "memory") drawMemory();
   if (state === "uno") drawUno();

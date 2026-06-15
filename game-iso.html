@@ -390,7 +390,7 @@
       games: kpi.games || 0, kills: kpi.kills || 0, words: kpi.wordsLearned || 0,
       bought: kpi.bought || 0, used: kpi.used || 0, playSec: kpi.playSec || 0, deaths: kpi.deaths || 0,
       best: rdNumIso("best", 0), maxWorld: rdNumIso("maxworld", 1),
-      cosmetics: rdCountIso("unlocked") + rdCountIso("uface") + rdCountIso("uacc") + rdCountIso("umount"),
+      cosmetics: Math.max(0, rdCountIso("unlocked") + rdCountIso("uface") + rdCountIso("uacc") + rdCountIso("umount") - 5),
       builds: rdLenIso("mybuilds"), mastered: kpi.mastered || 0, masteredTotal: kpi.masteredTotal || 0, isoWave: loadWaveRecord()
     };
   }

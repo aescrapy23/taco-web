@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v68 - MULTIJUGADOR ONLINE (beta): menu casa -> JUGAR ONLINE; crea una sala con un codigo y compartilo (o uni-te), y veras a otros jugadores caminando en tu ciudad (presencia P2P via WebRTC/PeerJS, aislado: si no entras no carga nada). Sobre v67: 7 premios ORO, mundo 5/6, fanfarria/mini-tutorial/confeti 3D";
+const VERSION = "v69 - FIXES de la verificacion (47 agentes): (1) CRITICO - ya no se pierden KPIs (tiempo jugado, bono, kills, palabras) al cerrar o mandar a segundo plano: se guardan en visibilitychange/pagehide + flush periodico; (2) fuga de acaTut entre jugadores resuelta (deletePlayer+createPlayer); (3) cosmeticos GRATIS por defecto ya no cuentan como adquiridos (logros FASHIONISTA/COLECCIONISTA, coach y KPI usan conteo de COMPRADOS, web+3D). Sobre v68: multijugador online beta";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -323,7 +323,7 @@ function saveInv() { lset("inv", JSON.stringify(inv)); }
 const KPI_KEYS = ["games", "kills", "wordsLearned", "coinsSpent", "bought", "used", "deaths", "playSec"];
 function kpiReset() { kpi = {}; for (const k of KPI_KEYS) kpi[k] = 0; }
 function loadKpi() { try { kpi = JSON.parse(lget("kpi") || "{}"); } catch (e) { kpi = {}; } for (const k of KPI_KEYS) if (typeof kpi[k] !== "number") kpi[k] = 0; }
-let kpiDirty = false;
+let kpiDirty = false, kpiFlushT = 8;
 function kpiBump(k, n) { kpi[k] = (kpi[k] || 0) + (n == null ? 1 : n); kpiDirty = true; }
 function saveKpi() { if (curPlayer) { try { const _m = aiMastery(); kpi.mastered = _m.m; kpi.masteredTotal = _m.tt; } catch (e) {} lset("kpi", JSON.stringify(kpi)); kpiDirty = false; } }
 function fmtTime(s) { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60; return h > 0 ? h + "h " + m + "m" : m + "m " + ss + "s"; }
@@ -337,6 +337,9 @@ const COSMO = {
 const COSMO_ORDER = ["outfit", "acc", "face", "mount"];
 function cosmOwnedList() { const out = []; for (const ty of COSMO_ORDER) { const c = COSMO[ty], L = c.list(), own = c.owned(); for (let i = 0; i < L.length; i++) if (own[i]) out.push({ type: ty, i: i, name: L[i].name, label: c.label, col: c.col, equipped: c.cur() === i }); } return out; }
 function cosmOwnedCount() { let n = 0; for (const ty of COSMO_ORDER) { const own = COSMO[ty].owned(); for (const k in own) if (own[k]) n++; } return n; }
+// cosmeticos REALMENTE adquiridos (excluye los gratis por defecto: outfit0, acc0 "NADA"+acc1, face0, mount0)
+const COSMO_FREE = { outfit: [0], acc: [0, 1], face: [0], mount: [0] };
+function cosmPurchasedCount() { let n = 0; for (const ty of COSMO_ORDER) { const own = COSMO[ty].owned(), free = COSMO_FREE[ty] || []; for (const k in own) if (own[k] && free.indexOf(+k) < 0) n++; } return n; }
 function cosmEquip(ty, i) { const c = COSMO[ty]; if (!c || !c.owned()[i]) return false; c.equip(i); return true; }
 // ===== API interna del juego: capa UNICA de funciones que usan las pantallas y el asistente IA.
 //       (NO es una API de red: el juego es un solo HTML estatico sin servidor; son funciones locales.) =====
@@ -396,7 +399,7 @@ function loadAch() { try { ach = JSON.parse(lget("ach") || "{}"); } catch (e) { 
 function saveAch() { lset("ach", JSON.stringify(ach)); }
 function statsSnapshot() {
   const ms = aiMastery(); let isoWave = 0; try { isoWave = parseInt(lget("isowave")) || 0; } catch (e) {}
-  return { games: kpi.games || 0, kills: kpi.kills || 0, words: kpi.wordsLearned || 0, bought: kpi.bought || 0, used: kpi.used || 0, playSec: kpi.playSec || 0, deaths: kpi.deaths || 0, best: best, maxWorld: maxWorld, cosmetics: cosmOwnedCount(), builds: (myBuilds ? myBuilds.length : 0), mastered: ms.m, masteredTotal: ms.tt, isoWave: isoWave };
+  return { games: kpi.games || 0, kills: kpi.kills || 0, words: kpi.wordsLearned || 0, bought: kpi.bought || 0, used: kpi.used || 0, playSec: kpi.playSec || 0, deaths: kpi.deaths || 0, best: best, maxWorld: maxWorld, cosmetics: cosmPurchasedCount(), builds: (myBuilds ? myBuilds.length : 0), mastered: ms.m, masteredTotal: ms.tt, isoWave: isoWave };
 }
 function achCount() { let n = 0; for (const a of ACHS) if (ach[a.id]) n++; return n; }
 function achCheck() {
@@ -415,7 +418,7 @@ function createPlayer() {
   if (players.indexOf(nm) < 0) players.push(nm);
   curPlayer = nm; savePlayers();
   best = 0; bank = 0; outfit = 0; maxWorld = 1; unlocked = { 0: true }; lstats = {}; lang = "EN";
-  face = 0; acc = 1; mount = 0; uFace = { 0: true }; uAcc = { 0: true, 1: true }; uMount = { 0: true }; myBuilds = []; inv = {}; kpiReset(); lset("kpi", JSON.stringify(kpi)); ach = {}; hist = []; lset("ach", "{}"); lset("hist", "[]");
+  face = 0; acc = 1; mount = 0; uFace = { 0: true }; uAcc = { 0: true, 1: true }; uMount = { 0: true }; myBuilds = []; inv = {}; kpiReset(); lset("kpi", JSON.stringify(kpi)); ach = {}; hist = []; lset("ach", "{}"); lset("hist", "[]"); lset("acaTut", "");
   profile = { name: nm, age: age, eng: ageToTier(age, LESSONS.EN.levels.length - 1), zh: ageToTier(Math.max(6, age - 3), LESSONS.ZH.levels.length - 1) };
   lset("best", 0); lset("bank", 0); lset("outfit", 0); lset("maxworld", 1); lset("unlocked", JSON.stringify(unlocked)); lset("lstats", "{}"); lset("lang", "EN"); lset("profile", JSON.stringify(profile));
   saveCosmetics();
@@ -424,7 +427,7 @@ function createPlayer() {
 function deletePlayer(name) {
   const i = players.indexOf(name); if (i < 0) return;
   players.splice(i, 1);
-  try { ["best", "bank", "outfit", "maxworld", "lang", "unlocked", "lstats", "profile", "face", "acc", "mount", "uface", "uacc", "umount", "mybuilds", "inv", "kpi", "ach", "hist", "isowave", "run"].forEach(k => localStorage.removeItem("pl_" + name + "_" + k)); } catch (e) {}
+  try { ["best", "bank", "outfit", "maxworld", "lang", "unlocked", "lstats", "profile", "face", "acc", "mount", "uface", "uacc", "umount", "mybuilds", "inv", "kpi", "ach", "hist", "isowave", "acaTut", "run"].forEach(k => localStorage.removeItem("pl_" + name + "_" + k)); } catch (e) {}
   if (curPlayer === name) { curPlayer = players[0] || ""; if (curPlayer) loadPlayerData(); else profile = null; }
   savePlayers();
 }
@@ -1220,7 +1223,7 @@ function buildKpis() {
     { l: "Palabras DOMINADAS", v: ms.m + "/" + ms.tt, c: "#5eead4" },
     { l: "Items comprados", v: kpi.bought || 0, c: "#f5cd46" },
     { l: "Items usados", v: kpi.used || 0, c: "#8ee07a" },
-    { l: "Accesorios", v: cosmOwnedCount(), c: "#ff9bb0" },
+    { l: "Accesorios", v: cosmPurchasedCount(), c: "#ff9bb0" },
     { l: "Construcciones", v: (myBuilds ? myBuilds.length : 0), c: "#ffb060" },
     { l: "Monedas gastadas", v: kpi.coinsSpent || 0, c: "#ffd84a" },
     { l: "Banco", v: bank, c: "#9be7c0" },
@@ -1232,7 +1235,7 @@ function kpiCoach() {
   if ((k.games || 0) === 0) return "Juga tu primera partida y volve: vas a ver TODO tu progreso aca.";
   if (ms.tt > 0 && ms.m / ms.tt < 0.25) return "Vas " + ms.m + "/" + ms.tt + " palabras dominadas. Entra a los PORTALES y repeti en voz alta para subir.";
   if (invCount() > 0 && (k.used || 0) === 0) return "Tenes items en la BODEGA sin usar. Usalos cuando te falte vida o poder!";
-  if (cosmOwnedCount() < 4) return "Compra ropa y accesorios en el MALL (piso MODA) para personalizar tu taco.";
+  if (cosmPurchasedCount() < 4) return "Compra ropa y accesorios en el MALL (piso MODA) para personalizar tu taco.";
   if ((k.kills || 0) >= 60) return "Gran cazador: " + k.kills + " enemigos. Proba un arma nueva en el vestuario.";
   return "Vas muy bien: " + ms.m + " palabras dominadas en " + (k.games || 0) + " partidas. Segui asi!";
 }
@@ -1670,6 +1673,7 @@ function update(dt) {
   if (recogToast) { recogToast.t -= dt; if (recogToast.t <= 0) recogToast = null; }
   for (let i = confetti.length - 1; i >= 0; i--) { const c = confetti[i]; c.life -= dt; c.vy += c.g * dt; c.x += c.vx * dt; c.y += c.vy * dt; c.r += c.vr * dt; if (c.life <= 0) confetti.splice(i, 1); }
   netUpdate(dt);
+  if (kpiDirty && curPlayer) { kpiFlushT -= dt; if (kpiFlushT <= 0) { kpiFlushT = 8; saveKpi(); } }
   tod = (daySec % dayLen) / dayLen;
   nightAmt = 0.5 - 0.5 * Math.cos(tod * 2 * Math.PI); // 0 = mediodia, 1 = medianoche
   const tbase = weather.kind === "sol" ? 27 : weather.kind === "nubes" ? 20 : 16;
@@ -3703,8 +3707,8 @@ requestAnimationFrame(frame);
 // PWA: instalable + offline + actualiza solo (network-first)
 if ("serviceWorker" in navigator) { try { navigator.serviceWorker.register("sw.js"); } catch (e) {} }
 // guardar la partida en curso al ocultar/cerrar (para CONTINUAR donde se quedo)
-document.addEventListener("visibilitychange", () => { if (document.hidden && state === "play") saveRun(); });
-window.addEventListener("pagehide", () => { if (state === "play") saveRun(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden) { if (state === "play") saveRun(); try { saveKpi(); } catch (e) {} } });
+window.addEventListener("pagehide", () => { if (state === "play") saveRun(); try { saveKpi(); } catch (e) {} });
 </script>
 </body>
 </html>

@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v67 - 7 PREMIOS ORO legendarios (casi imposibles: domina TODO, 1000 enemigos, oleada 50 3D, 10h, 2000 palabras, 10000 pts, 70 accesorios) con estilo dorado; MUNDO 5 y 6 (premios e items DOBLES, tope en 6 -> MEGA BONO); pulidos: FANFARRIA al subir de mundo, mini-tutorial 1ra vez en ACADEMIA, y el 3D ahora tira CONFETI + cartel al lograr medalla o batir record de oleada. Sobre v66: confeti + bono ajustado";
+const VERSION = "v68 - MULTIJUGADOR ONLINE (beta): menu casa -> JUGAR ONLINE; crea una sala con un codigo y compartilo (o uni-te), y veras a otros jugadores caminando en tu ciudad (presencia P2P via WebRTC/PeerJS, aislado: si no entras no carga nada). Sobre v67: 7 premios ORO, mundo 5/6, fanfarria/mini-tutorial/confeti 3D";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -666,6 +666,7 @@ addEventListener("keydown", e => {
   if (state === "logros") { if (k === "escape") state = lpanel.back; return; }
   if (state === "mirador") { if (k === "escape") state = mirador.back; else if (k === "i" && maxWorld >= MIR_IR_LV) mirador.mode = mirador.mode === 1 ? 0 : 1; return; }
   if (state === "academia") { if (k === "escape") state = academia.back; return; }
+  if (state === "online") { if (k === "escape") state = onlinePanel.back; return; }
   if (state === "play" && k === "m") { openMirador("play"); return; }
   if (state === "ia") { if (k === "escape") state = iaHub.back; return; }
   if (state === "interior") { if (k === "escape") { if (interior.popup) interior.popup = null; else exitInterior(); } return; }
@@ -697,6 +698,7 @@ canvas.addEventListener("mousedown", e => {
   if (state === "kpis") { kpisTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "logros") { logrosTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "academia") { academiaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
+  if (state === "online") { onlineTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "mirador") { if (!miradorTapAt(e.clientX, e.clientY)) mirador.drag = { mouse: true, x0: e.clientX, y0: e.clientY, px: mirador.panX, py: mirador.panY }; mouse.down = false; return; }
   if (state === "ia") { iaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "interior") { interiorTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -734,6 +736,7 @@ function onTouchStart(e) {
   if (state === "kpis") { for (const tch of e.changedTouches) kpisTapAt(tch.clientX, tch.clientY); return; }
   if (state === "logros") { for (const tch of e.changedTouches) logrosTapAt(tch.clientX, tch.clientY); return; }
   if (state === "academia") { for (const tch of e.changedTouches) academiaTapAt(tch.clientX, tch.clientY); return; }
+  if (state === "online") { for (const tch of e.changedTouches) onlineTapAt(tch.clientX, tch.clientY); return; }
   if (state === "mirador") {
     if (e.touches.length >= 2) { mirador.pinch = { d0: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), z0: mirador.zoom }; mirador.drag = null; return; }
     const tch = e.changedTouches[0]; if (!tch) return;
@@ -1500,9 +1503,72 @@ function drawAcademia() {
   const c = acaCloseRect(); ctx.fillStyle = "#2a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); text(academia.back === "play" ? "SALIR A LA CIUDAD" : "VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 5, 13, "#ff9bb0", "center");
 }
 // Menu: lo esencial queda libre (lv 1); lo demas se DESBLOQUEA POR NIVELES (se ve, pero con candado hasta su mundo).
+// ===== MULTIJUGADOR ONLINE (presencia): ves a otros jugadores caminando en la ciudad, via WebRTC (PeerJS).
+//       Aislado: si no entras a ONLINE, no carga nada ni afecta el juego. =====
+const net = { peer: null, host: false, room: "", conns: [], peers: {}, status: "desconectado", sendT: 0 };
+function netLoadLib(cb) {
+  if (window.Peer) return cb();
+  net.status = "cargando red...";
+  const s = document.createElement("script"); s.src = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
+  s.onload = () => cb(); s.onerror = () => { net.status = "sin internet / libreria"; };
+  document.head.appendChild(s);
+}
+function netRoomId(room) { return "tacocity_" + (room || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 16); }
+function netStart(room, asHost) {
+  netClose();
+  netLoadLib(() => {
+    net.room = room; net.host = asHost; net.status = asHost ? "creando sala..." : "uniendo...";
+    try { net.peer = asHost ? new Peer(netRoomId(room)) : new Peer(); } catch (e) { net.status = "error de red"; return; }
+    net.peer.on("open", () => {
+      if (asHost) net.status = "SALA " + room + " lista";
+      else { const c = net.peer.connect(netRoomId(room)); if (c) netAddConn(c); net.status = "en SALA " + room; }
+    });
+    net.peer.on("connection", c => netAddConn(c));
+    net.peer.on("error", e => { net.status = "error: " + ((e && e.type) || "red"); });
+  });
+}
+function netAddConn(c) { if (!c) return; net.conns.push(c); c.on("data", d => netOnData(c, d)); c.on("close", () => { net.conns = net.conns.filter(x => x !== c); if (c.peer) delete net.peers[c.peer]; }); }
+function netOnData(c, d) { if (d && d.k === "pos") { net.peers[d.id] = { x: d.x, y: d.y, name: d.name, t: 0 }; if (net.host) for (const cc of net.conns) if (cc !== c && cc.open) try { cc.send(d); } catch (e) {} } }
+function netSendPos() { if (!net.peer || !net.peer.id) return; const d = { k: "pos", id: net.peer.id, x: Math.round(player.x), y: Math.round(player.y), name: (curPlayer || "TACO").slice(0, 10) }; for (const c of net.conns) if (c.open) try { c.send(d); } catch (e) {} }
+function netCount() { let n = 0; for (const k in net.peers) n++; return n; }
+function netClose() { try { if (net.peer) net.peer.destroy(); } catch (e) {} net.peer = null; net.conns = []; net.peers = {}; net.host = false; net.room = ""; net.status = "desconectado"; }
+function netUpdate(dt) { if (!net.peer) return; net.sendT -= dt; if (net.sendT <= 0) { net.sendT = 0.1; netSendPos(); } for (const k in net.peers) { net.peers[k].t += dt; if (net.peers[k].t > 6) delete net.peers[k]; } }
+function drawGhosts() {
+  if (state !== "play") return;
+  for (const k in net.peers) { const g = net.peers[k]; ctx.save(); ctx.globalAlpha = 0.6;
+    ctx.fillStyle = "#f5cd46"; ctx.beginPath(); ctx.moveTo(g.x, g.y - 16); ctx.lineTo(g.x + 14, g.y + 8); ctx.lineTo(g.x - 14, g.y + 8); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#7ad06a"; ctx.fillRect(g.x - 9, g.y - 2, 18, 4);
+    ctx.fillStyle = "#2a1808"; ctx.beginPath(); ctx.arc(g.x - 4, g.y - 2, 2, 0, 7); ctx.arc(g.x + 4, g.y - 2, 2, 0, 7); ctx.fill();
+    ctx.globalAlpha = 0.95; text(g.name, g.x, g.y - 22, 11, "#cfe6ff", "center"); ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+let onlinePanel = null;
+function openOnline(back) { onlinePanel = { back: back || "menu" }; state = "online"; }
+function onRect() { const w = Math.min(420, W - 28), h = 296; return { x: (W - w) / 2, y: Math.max(20 + safeT, (H - h) / 2), w: w, h: h }; }
+function onBtns() { const p = onRect(), bw = p.w - 40, x = p.x + 20; return [{ x: x, y: p.y + 96, w: bw, h: 40, id: "host", label: "CREAR SALA" }, { x: x, y: p.y + 142, w: bw, h: 40, id: "join", label: "UNIRSE A SALA" }, { x: x, y: p.y + 190, w: bw, h: 36, id: "leave", label: "DESCONECTAR" }, { x: x, y: p.y + 236, w: bw, h: 36, id: "back", label: "VOLVER" }]; }
+function onlineTapAt(px, py) {
+  for (const b of onBtns()) if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) {
+    if (b.id === "host") { let c = null; try { c = prompt("Codigo de sala (inventalo y compartilo):", "taco1"); } catch (e) {} if (c && c.trim()) { netStart(c.trim(), true); sPower(); } }
+    else if (b.id === "join") { let c = null; try { c = prompt("Codigo de la sala a la que unirte:", ""); } catch (e) {} if (c && c.trim()) { netStart(c.trim(), false); sPower(); } }
+    else if (b.id === "leave") { netClose(); sRight(); }
+    else state = onlinePanel.back;
+    return;
+  }
+}
+function drawOnline() {
+  ctx.fillStyle = "rgba(0,0,0,0.66)"; ctx.fillRect(0, 0, W, H);
+  const p = onRect();
+  ctx.shadowColor = "#7fd6ff"; ctx.shadowBlur = 16; ctx.fillStyle = "#13161f"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 14); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = 3; ctx.stroke();
+  text("JUGAR ONLINE (beta)", W / 2, p.y + 30, 19, "#7fd6ff", "center");
+  text("Crea una sala y comparti el codigo, o uni-te a una.", W / 2, p.y + 52, 11, "#9aa0b4", "center");
+  text("Estado: " + net.status + (net.room ? "  ·  " + netCount() + " online" : ""), W / 2, p.y + 76, 11, net.peer ? "#62e074" : "#9aa0b4", "center");
+  for (const b of onBtns()) { ctx.fillStyle = b.id === "back" ? "#23303a" : "#1b2436"; ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 9); ctx.fill(); ctx.strokeStyle = b.id === "leave" ? "#ff9bb0" : "#7fd6ff"; ctx.lineWidth = 1.5; ctx.stroke(); text(b.label, b.x + b.w / 2, b.y + b.h / 2 + 5, 14, b.id === "leave" ? "#ff9bb0" : "#dfe7fa", "center"); }
+}
 function menuRows() {
   return [
     { label: "CONTINUAR", col: "#5eead4", lv: 1, act: () => { state = "play"; } },
+    { label: "JUGAR ONLINE (beta)", col: "#7fd6ff", lv: 1, act: () => { openOnline("menu"); } },
     { label: "ACADEMIA (tu tutor neural)", col: "#7fb0ff", lv: 1, act: () => { openAcademia("menu"); } },
     { label: "BODEGA (items + accesorios)", col: "#ffd84a", lv: 1, act: () => { openBodega("play"); } },
     { label: "VESTUARIO", col: "#f5cd46", lv: 1, act: () => { openWb("menu"); } },
@@ -1603,6 +1669,7 @@ function update(dt) {
   if (worldToast) { worldToast.t -= dt; if (worldToast.t <= 0) worldToast = null; }
   if (recogToast) { recogToast.t -= dt; if (recogToast.t <= 0) recogToast = null; }
   for (let i = confetti.length - 1; i >= 0; i--) { const c = confetti[i]; c.life -= dt; c.vy += c.g * dt; c.x += c.vx * dt; c.y += c.vy * dt; c.r += c.vr * dt; if (c.life <= 0) confetti.splice(i, 1); }
+  netUpdate(dt);
   tod = (daySec % dayLen) / dayLen;
   nightAmt = 0.5 - 0.5 * Math.cos(tod * 2 * Math.PI); // 0 = mediodia, 1 = medianoche
   const tbase = weather.kind === "sol" ? 27 : weather.kind === "nubes" ? 20 : 16;
@@ -1623,6 +1690,7 @@ function update(dt) {
   if (state === "logros") { return; }
   if (state === "mirador") { updateMirador(dt); return; }
   if (state === "academia") { updateAcademia(dt); return; }
+  if (state === "online") { return; }
   if (state === "interior") { if (!paused) updateInterior(dt); return; }
   if (state === "store") { if (!paused) updateStore(dt); return; }
   if (state === "build") { updateBuild(dt); return; }
@@ -3485,6 +3553,7 @@ function render() {
   if (portal) drawPortal(portal.x, portal.y);
   if (isoPortal) drawIsoPortal(isoPortal.x, isoPortal.y);
   if (academiaSpot) drawAcademiaSpot(academiaSpot.x, academiaSpot.y);
+  drawGhosts();
   for (const b of bullets) {
     if (b.explosive) { // COHETE de bazuca
       const ang = Math.atan2(b.vy, b.vx); ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(ang);
@@ -3549,6 +3618,7 @@ function render() {
   if (state === "kpis") drawKpis();
   if (state === "logros") drawLogros();
   if (state === "academia") drawAcademia();
+  if (state === "online") drawOnline();
   if (state === "mirador") drawMirador();
   if (state === "ia") drawIA();
   if (state === "interior") drawInterior();

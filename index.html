@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v58 - ACADEMIA (tutor + materias): nuevo edificio ACADEMIA en la ciudad (al sur del spawn) al que entras y un TUTOR te saluda, lee tu progreso (palabras dominadas + rango) y te SUGIERE que practicar. Reune las materias que ya existian en un solo hub: MATEMATICAS, IDIOMAS (ingles/chino), ORTOGRAFIA, LOGICA/SECUENCIAS y MEMORIA; al terminar una actividad volves al tutor. Tambien en menu casa. (No duplica: reusa openMath/openTrivia/openAnagram/openSeq/openMemory). Sobre v57: mirador zoom+arrastre, radar termico";
+const VERSION = "v59 - MENU desbloqueable por niveles + tutor por materia: el menu casa ya no esta congestionado: lo esencial queda libre y lo demas se DESBLOQUEA POR MUNDOS (se VE con candado y 'Mundo N' hasta que llegas): KPIS+LOGROS (mundo 2), MIRADOR (mundo 2), DIMENSION 3D (mundo 3, tambien el portal en la ciudad). En la ACADEMIA: el tutor da un mini saludo HABLADO por materia y el hub muestra tu nivel de mates + racha + palabras dominadas. Sobre v58: edificio ACADEMIA con tutor y materias reusadas";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -220,6 +220,8 @@ let ach = {}; // LOGROS desbloqueados { id: 1 } (compartido con el juego 3D)
 let hist = []; // historial de partidas para las sparklines [{ s, w, lvl }]
 let achToast = null, achT = 0, lpanel = null; // aviso de logro + timer de chequeo + pantalla de logros
 let mirador = null; // MIRADOR: vista panoramica (normal + infrarroja), se desbloquea por nivel
+let menuMsg = "", menuMsgT = 0; // aviso "se desbloquea en el mundo N" al tocar algo bloqueado
+const ISO_LV = 3; // mundo necesario para la DIMENSION 3D (portal + menu)
 function saveCosmetics() { lset("face", face); lset("acc", acc); lset("mount", mount); lset("uface", JSON.stringify(uFace)); lset("uacc", JSON.stringify(uAcc)); lset("umount", JSON.stringify(uMount)); }
 let wbScroll = 0, wbDrag = null;
 let uiBack = "title"; // a donde vuelve "VOLVER" (title o menu del juego)
@@ -405,7 +407,7 @@ let gems = [], enemies = [], bullets = [], parts = [], heals = [], powerDrops = 
 let isoPortal = null, isoPortalDwell = 0; // PORTAL fisico a la DIMENSION 3D (game-iso.html)
 let academiaSpot = null, academiaDwell = 0; // edificio ACADEMIA en la ciudad (tutor + materias)
 let academia = null, eduReturn = null; // estado del hub de la ACADEMIA / a donde vuelve una actividad
-function eduExit() { state = eduReturn || (interior ? "interior" : "play"); eduReturn = null; }
+function eduExit() { try { saveKpi(); } catch (e) {} state = eduReturn || (interior ? "interior" : "play"); eduReturn = null; }
 let peds = [], cars = [], props = [], mission = null; // mundo vivo (gente, autos, casas) + mision
 let cityBlocks = []; // manzanas (rectangulos) para dibujar edificios 3D
 let pShield = 0, pTriple = 0, pRapid = 0, weapon = 0;
@@ -1328,19 +1330,21 @@ function drawThermalRadar() {
 }
 // ---- ACADEMIA: hub del TUTOR. Reusa las actividades educativas existentes (mates/idiomas/ortografia/logica/memoria). ----
 const ACADEMIA_SUBJECTS = [
-  { key: "math", name: "MATEMATICAS", desc: "sumas, restas, tablas, logica", col: "#ffd84a", launch: () => { eduReturn = "academia"; openMath(); } },
-  { key: "lang", name: "IDIOMAS (INGLES/CHINO)", desc: "vocabulario y traduccion", col: "#62e074", launch: () => { eduReturn = "academia"; openTrivia(); } },
-  { key: "spell", name: "ORTOGRAFIA", desc: "arma la palabra (anagrama)", col: "#7fd6ff", launch: () => { eduReturn = "academia"; openAnagram(); } },
-  { key: "logic", name: "LOGICA / SECUENCIAS", desc: "encuentra el patron", col: "#b480ff", launch: () => { eduReturn = "academia"; openSeq(); } },
-  { key: "memory", name: "MEMORIA", desc: "parea palabras", col: "#ff9bb0", launch: () => { eduReturn = "academia"; openMemory(); } },
+  { key: "math", name: "MATEMATICAS", desc: "sumas, restas, tablas, logica", col: "#ffd84a", say: "Vamos con matematicas. Pensa cada paso con calma, vos podes.", open: openMath },
+  { key: "lang", name: "IDIOMAS (INGLES/CHINO)", desc: "vocabulario y traduccion", col: "#62e074", say: "Practiquemos idiomas. Escucha y repeti en voz alta.", open: openTrivia },
+  { key: "spell", name: "ORTOGRAFIA", desc: "arma la palabra (anagrama)", col: "#7fd6ff", say: "Ordena las letras para formar la palabra. Tomate tu tiempo.", open: openAnagram },
+  { key: "logic", name: "LOGICA / SECUENCIAS", desc: "encuentra el patron", col: "#b480ff", say: "Observa la secuencia y descubri el patron.", open: openSeq },
+  { key: "memory", name: "MEMORIA", desc: "parea palabras", col: "#ff9bb0", say: "Encuentra las parejas. Concentrate y memoriza!", open: openMemory },
 ];
+// lanza una materia: el tutor da un mini saludo hablado y abre la actividad (vuelve al tutor al terminar)
+function academiaStart(s) { eduReturn = "academia"; try { speak(s.say, "es-ES"); } catch (e) {} s.open(); }
 function academiaRec() { const ms = aiMastery(); const ratio = ms.tt ? ms.m / ms.tt : 0; return ratio < 0.35 ? "lang" : "math"; }
 function academiaGreeting() {
   const ms = aiMastery(), rk = curRank(), nm = (profile && profile.name) || curPlayer || "amigo";
   const rec = academiaRec(), recName = (ACADEMIA_SUBJECTS.find(s => s.key === rec) || ACADEMIA_SUBJECTS[0]).name;
   return "Hola " + nm + "! Soy tu tutor. Llevas " + ms.m + "/" + ms.tt + " palabras dominadas y rango " + rk.name + ". Hoy te sugiero: " + recName + ". Que practicamos?";
 }
-function openAcademia(back) { academia = { back: back || "play", rec: academiaRec(), greet: academiaGreeting() }; state = "academia"; sPower(); try { speak(academia.greet, "es-ES"); } catch (e) {} }
+function openAcademia(back) { academia = { back: back || "play", rec: academiaRec(), greet: academiaGreeting() }; state = "academia"; sPower(); try { saveKpi(); } catch (e) {} try { speak(academia.greet, "es-ES"); } catch (e) {} }
 function updateAcademia(dt) { }
 function acaRect() { const n = ACADEMIA_SUBJECTS.length, w = Math.min(460, W - 24), h = Math.min(H - 14, 130 + n * 56 + 50); return { x: (W - w) / 2, y: Math.max(12 + safeT, (H - h) / 2), w, h }; }
 function acaRowRect(i) { const p = acaRect(); return { x: p.x + 18, y: p.y + 128 + i * 56, w: p.w - 36, h: 50 }; }
@@ -1353,7 +1357,7 @@ function acaWrap(txt, x, y, maxW, size, col, lineH, maxLines) {
 }
 function academiaTapAt(px, py) {
   const inR = (r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
-  for (let i = 0; i < ACADEMIA_SUBJECTS.length; i++) if (inR(acaRowRect(i))) { ACADEMIA_SUBJECTS[i].launch(); return; }
+  for (let i = 0; i < ACADEMIA_SUBJECTS.length; i++) if (inR(acaRowRect(i))) { academiaStart(ACADEMIA_SUBJECTS[i]); return; }
   if (inR(acaCloseRect())) state = academia.back;
 }
 function drawAcademia() {
@@ -1369,6 +1373,10 @@ function drawAcademia() {
   ctx.fillStyle = "#ffd84a"; ctx.fillRect(ax - 1, ay - 14, 2, 5);
   ctx.fillStyle = "rgba(20,28,52,0.92)"; ctx.beginPath(); ctx.roundRect(p.x + 56, p.y + 48, p.w - 74, 56, 10); ctx.fill(); ctx.strokeStyle = "#33406a"; ctx.lineWidth = 1; ctx.stroke();
   acaWrap(academia.greet, p.x + 66, p.y + 66, p.w - 96, 12, "#dfe7fa", 15, 3);
+  // franja de stats: nivel de mates + mejor racha + palabras dominadas (feedback visible / neuro-adaptativo)
+  { const ms = aiMastery(), ml = kpi.mathLvl || 0, mst = kpi.mathStreak || 0; const sy = p.y + 118;
+    text("Mates: nivel " + ml + "/5 · racha " + mst, p.x + 18, sy, 11, "#ffd84a", "left");
+    text("Idiomas: " + ms.m + "/" + ms.tt + " dominadas", p.x + p.w - 18, sy, 11, "#62e074", "right"); }
   // materias (reusan actividades existentes); la sugerida queda resaltada
   for (let i = 0; i < ACADEMIA_SUBJECTS.length; i++) {
     const r = acaRowRect(i), s = ACADEMIA_SUBJECTS[i], rec = s.key === academia.rec;
@@ -1381,31 +1389,45 @@ function drawAcademia() {
   }
   const c = acaCloseRect(); ctx.fillStyle = "#2a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); text(academia.back === "play" ? "SALIR A LA CIUDAD" : "VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 5, 13, "#ff9bb0", "center");
 }
+// Menu: lo esencial queda libre (lv 1); lo demas se DESBLOQUEA POR NIVELES (se ve, pero con candado hasta su mundo).
 function menuRows() {
   return [
-    { label: "CONTINUAR", col: "#5eead4", act: () => { state = "play"; } },
-    { label: "ACADEMIA (tutor: mates + idiomas)", col: "#7fb0ff", act: () => { openAcademia("menu"); } },
-    { label: "BODEGA (items + accesorios)", col: "#ffd84a", act: () => { openBodega("play"); } },
-    { label: "KPIS + LOGROS (" + achCount() + "/" + ACHS.length + ")", col: "#7fd6ff", act: () => { openKpis("menu"); } },
-    { label: maxWorld >= MIR_PANO_LV ? "MIRADOR (panorama" + (maxWorld >= MIR_IR_LV ? " + infrarrojo)" : ")") : "MIRADOR (mundo " + MIR_PANO_LV + ")", col: "#7fe6ff", act: () => { openMirador("menu"); } },
-    { label: "DIMENSION 3D (ISO)", col: "#b480ff", act: () => { gotoIso(); } },
-    { label: "OPCIONES", col: "#7fd6ff", act: () => { openOptions("menu"); } },
-    { label: "VESTUARIO", col: "#f5cd46", act: () => { openWb("menu"); } },
-    { label: "CAMBIAR JUGADOR", col: "#9be7c0", act: () => { openPlayers(); } },
-    { label: "SALIR AL TITULO", col: "#ff9bb0", act: () => { state = "title"; } },
+    { label: "CONTINUAR", col: "#5eead4", lv: 1, act: () => { state = "play"; } },
+    { label: "ACADEMIA (tutor: mates + idiomas)", col: "#7fb0ff", lv: 1, act: () => { openAcademia("menu"); } },
+    { label: "BODEGA (items + accesorios)", col: "#ffd84a", lv: 1, act: () => { openBodega("play"); } },
+    { label: "VESTUARIO", col: "#f5cd46", lv: 1, act: () => { openWb("menu"); } },
+    { label: "KPIS + LOGROS (" + achCount() + "/" + ACHS.length + ")", col: "#7fd6ff", lv: 2, act: () => { openKpis("menu"); } },
+    { label: "MIRADOR (panorama + infrarrojo)", col: "#7fe6ff", lv: MIR_PANO_LV, act: () => { openMirador("menu"); } },
+    { label: "DIMENSION 3D (ISO)", col: "#b480ff", lv: ISO_LV, act: () => { gotoIso(); } },
+    { label: "OPCIONES", col: "#7fd6ff", lv: 1, act: () => { openOptions("menu"); } },
+    { label: "CAMBIAR JUGADOR", col: "#9be7c0", lv: 1, act: () => { openPlayers(); } },
+    { label: "SALIR AL TITULO", col: "#ff9bb0", lv: 1, act: () => { state = "title"; } },
   ];
 }
+function drawLock(x, y, col) { ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y - 3, 4, Math.PI, 0); ctx.stroke(); ctx.fillStyle = col; ctx.beginPath(); ctx.roundRect(x - 6, y, 12, 9, 2); ctx.fill(); }
 function menuRowH() { const n = menuRows().length; return Math.max(38, Math.min(58, (H - 116 - safeT) / n)); }
 function menuRect() { const n = menuRows().length, w = Math.min(420, W - 36), rh = menuRowH(), h = 64 + n * rh; return { x: (W - w) / 2, y: Math.max(16 + safeT, (H - h) / 2), w, h }; }
 function menuRowRect(i) { const p = menuRect(), rh = menuRowH(); return { x: p.x + 22, y: p.y + 56 + i * rh, w: p.w - 44, h: rh - 9 }; }
-function menuTapAt(px, py) { const rows = menuRows(); for (let i = 0; i < rows.length; i++) { const r = menuRowRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { rows[i].act(); sRight(); return; } } }
+function menuTapAt(px, py) { const rows = menuRows(); for (let i = 0; i < rows.length; i++) { const r = menuRowRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { const lv = rows[i].lv || 1; if (maxWorld < lv) { sWrong(); menuMsg = "Se desbloquea en el MUNDO " + lv; menuMsgT = 1.8; } else { rows[i].act(); sRight(); } return; } } }
 function drawMenu() {
   ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, W, H);
   const p = menuRect();
   ctx.shadowColor = "#5eead4"; ctx.shadowBlur = 18; ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#5eead4"; ctx.lineWidth = 3; ctx.stroke();
   drawHouse(W / 2 - 52, p.y + 36, 11); text("MENU", W / 2 + 6, p.y + 44, 24, "#fff", "center");
   const rows = menuRows();
-  for (let i = 0; i < rows.length; i++) { const r = menuRowRect(i); ctx.fillStyle = "#23273a"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.strokeStyle = "#3a3f55"; ctx.lineWidth = 1.5; ctx.stroke(); text(rows[i].label, W / 2, r.y + r.h / 2 + 6, 17, rows[i].col, "center"); }
+  for (let i = 0; i < rows.length; i++) {
+    const r = menuRowRect(i), row = rows[i], locked = maxWorld < (row.lv || 1);
+    ctx.globalAlpha = locked ? 0.55 : 1;
+    ctx.fillStyle = "#23273a"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.strokeStyle = locked ? "#343a4e" : "#3a3f55"; ctx.lineWidth = 1.5; ctx.stroke();
+    if (locked) {
+      text(row.label, r.x + 16, r.y + r.h / 2 + 6, 15, "#8088a0", "left");
+      const lx = r.x + r.w - 70, ly = r.y + r.h / 2; drawLock(lx, ly, "#aab0c4"); text("Mundo " + (row.lv || 1), lx + 13, ly + 5, 11, "#aab0c4", "left");
+    } else {
+      text(row.label, W / 2, r.y + r.h / 2 + 6, 17, row.col, "center");
+    }
+    ctx.globalAlpha = 1;
+  }
+  if (menuMsgT > 0) { ctx.globalAlpha = Math.min(1, menuMsgT / 0.4); text(menuMsg, W / 2, p.y + p.h - 10, 13, "#ffba6b", "center"); ctx.globalAlpha = 1; }
 }
 function drawHouse(cx, cy, r) {
   ctx.fillStyle = "#f5cd46";
@@ -1466,6 +1488,7 @@ function update(dt) {
   // ciclo dia/noche + clima
   if (state === "play" && !paused) { daySec += dt; kpi.playSec = (kpi.playSec || 0) + dt; kpiDirty = true; achT -= dt; if (achT <= 0) { achT = 1.2; achCheck(); } }
   if (achToast) { achToast.t -= dt; if (achToast.t <= 0) achToast = null; }
+  if (menuMsgT > 0) menuMsgT -= dt;
   tod = (daySec % dayLen) / dayLen;
   nightAmt = 0.5 - 0.5 * Math.cos(tod * 2 * Math.PI); // 0 = mediodia, 1 = medianoche
   const tbase = weather.kind === "sol" ? 27 : weather.kind === "nubes" ? 20 : 16;
@@ -1564,7 +1587,7 @@ function update(dt) {
   }
   if (missionDone() && !portal) portal = farFree(player.x, player.y);
   if (portal && len(portal.x - player.x, portal.y - player.y) < player.r + 22) { openQuiz(); return; }
-  if (isoPortal) { if (len(isoPortal.x - player.x, isoPortal.y - player.y) < player.r + 24) { isoPortalDwell += dt; if (isoPortalDwell > 0.4) { gotoIso(); return; } } else if (isoPortalDwell > 0) isoPortalDwell = 0; }
+  if (isoPortal) { if (maxWorld >= ISO_LV && len(isoPortal.x - player.x, isoPortal.y - player.y) < player.r + 24) { isoPortalDwell += dt; if (isoPortalDwell > 0.4) { gotoIso(); return; } } else if (isoPortalDwell > 0) isoPortalDwell = 0; }
   if (academiaSpot) { if (len(academiaSpot.x - player.x, academiaSpot.y - player.y) < player.r + 26) { academiaDwell += dt; if (academiaDwell > 0.4) { openAcademia("play"); return; } } else if (academiaDwell > 0) academiaDwell = 0; }
 
   for (let i = heals.length - 1; i >= 0; i--) if (len(heals[i].x - player.x, heals[i].y - player.y) < player.r + 14) { player.hp = Math.min(MAXHP, player.hp + 25); addParts(heals[i].x, heals[i].y, 10, "#60d050", 150); floatText(heals[i].x, heals[i].y, "+VIDA", "#60d050"); heals.splice(i, 1); sGem(); }
@@ -2485,7 +2508,7 @@ function mathNext() { if (mathq.qi >= mathq.total) { mathq.done = true; const bo
 function mathAnswer(i) {
   if (mathq.locked || mathq.done) return; mathq.locked = true; mathq.lastPick = i;
   const c = mathq.cur, ok = i >= 0 && c.opts[i] === c.ans; mathq.lastOk = ok; mathq.qi++;
-  if (ok) { mathq.correct++; mathq.streak++; sRight(); if (mathq.streak === 3) neuralTip("¡3 seguidas! Tu mente calcula más rápido."); mathq.fbT = 0.7; }
+  if (ok) { mathq.correct++; mathq.streak++; sRight(); kpi.mathStreak = Math.max(kpi.mathStreak || 0, mathq.streak); kpi.mathLvl = Math.max(kpi.mathLvl || 0, mathLvl()); kpiDirty = true; if (mathq.streak === 3) neuralTip("¡3 seguidas! Tu mente calcula más rápido."); mathq.fbT = 0.7; }
   else { mathq.streak = 0; sWrong(); neuralHelp("La respuesta es  " + c.ans, c.help, null, null, mathNext); }
 }
 function updateMath(dt) { eduTickTip(dt); if (nhelp || !mathq || mathq.done) return; if (mathq.locked) { if (mathq.lastOk) { mathq.fbT -= dt; if (mathq.fbT <= 0) mathNext(); } return; } mathq.time -= dt; if (mathq.time <= 0) mathAnswer(-1); }
@@ -2838,8 +2861,9 @@ function drawPortal(x, y) {
 }
 // PORTAL a la DIMENSION 3D (cyan/verde, con cartel "3D" y aro de carga al entrar)
 function drawIsoPortal(x, y) {
-  const r = 26 + Math.sin(t * 3.5) * 3;
+  const r = 26 + Math.sin(t * 3.5) * 3, locked = maxWorld < ISO_LV;
   ctx.save();
+  if (locked) ctx.globalAlpha = 0.5;
   // base / pedestal
   ctx.fillStyle = "rgba(8,20,24,0.55)"; ctx.beginPath(); ctx.ellipse(x, y + 14, r * 1.1, r * 0.5, 0, 0, 7); ctx.fill();
   ctx.shadowColor = "#36e0c8"; ctx.shadowBlur = glowOn() ? 24 : 10;
@@ -2850,11 +2874,12 @@ function drawIsoPortal(x, y) {
   ctx.fillStyle = "#06121a"; ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.fill();
   // cartel flotante
   const sy2 = y - r - 18 + Math.sin(t * 2) * 2;
-  ctx.fillStyle = "rgba(10,18,26,0.92)"; ctx.beginPath(); ctx.roundRect(x - 44, sy2 - 12, 88, 22, 7); ctx.fill(); ctx.strokeStyle = "#36e0c8"; ctx.lineWidth = 1.5; ctx.stroke();
-  text("DIMENSION 3D", x, sy2 + 4, 11, "#7ff0dd", "center");
+  ctx.fillStyle = "rgba(10,18,26,0.92)"; ctx.beginPath(); ctx.roundRect(x - 50, sy2 - 12, 100, 22, 7); ctx.fill(); ctx.strokeStyle = locked ? "#5a6072" : "#36e0c8"; ctx.lineWidth = 1.5; ctx.stroke();
+  text(locked ? "DIMENSION 3D · MUNDO " + ISO_LV : "DIMENSION 3D", x, sy2 + 4, locked ? 10 : 11, locked ? "#aab0c4" : "#7ff0dd", "center");
   text("3D", x, y + 5, 15, "#eafff9", "center");
-  // aro de carga mientras te parás en el portal
-  if (isoPortalDwell > 0) { const pr = Math.min(1, isoPortalDwell / 0.4); ctx.strokeStyle = "#eafff9"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, y, r + 7, -Math.PI / 2, -Math.PI / 2 + pr * 6.283); ctx.stroke(); }
+  // aro de carga mientras te parás en el portal (solo si esta desbloqueado)
+  if (!locked && isoPortalDwell > 0) { const pr = Math.min(1, isoPortalDwell / 0.4); ctx.strokeStyle = "#eafff9"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, y, r + 7, -Math.PI / 2, -Math.PI / 2 + pr * 6.283); ctx.stroke(); }
+  if (locked) { ctx.globalAlpha = 1; drawLock(x, y - 2, "#dfe7fa"); }
   ctx.restore();
 }
 // ACADEMIA: edificio-escuela (techo + birrete + cartel) al que entras a estudiar con el tutor

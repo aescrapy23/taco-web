@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#1a1030">
+<title>TACO CITY · MALL ISO 3D (experimento)</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#0e0a1c;overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:none;}
+  #c{display:block;width:100vw;height:100vh;}
+  #ui{position:fixed;left:0;top:0;right:0;pointer-events:none;z-index:5;
+    padding:max(10px,env(safe-area-inset-top)) 12px 0;}
+  .title{display:inline-block;background:linear-gradient(135deg,rgba(40,18,60,.82),rgba(20,30,60,.82));
+    border:1px solid rgba(255,150,210,.35);border-radius:12px;padding:7px 13px;color:#ffd6ee;
+    font-weight:800;font-size:15px;letter-spacing:.4px;backdrop-filter:blur(6px);
+    box-shadow:0 4px 18px rgba(0,0,0,.4);}
+  .title small{display:block;font-weight:600;font-size:11px;color:#9fd6ff;letter-spacing:.2px;margin-top:2px;}
+  /* D-pad */
+  #pad{position:fixed;z-index:6;left:max(14px,env(safe-area-inset-left));bottom:max(20px,env(safe-area-inset-bottom));
+    width:170px;height:170px;display:none;touch-action:none;}
+  .dbtn{position:absolute;width:56px;height:56px;border-radius:14px;
+    background:rgba(50,30,70,.55);border:1px solid rgba(255,160,220,.4);
+    display:flex;align-items:center;justify-content:center;color:#ffd6ee;font-size:24px;font-weight:800;
+    backdrop-filter:blur(4px);box-shadow:0 3px 10px rgba(0,0,0,.35);}
+  .dbtn:active,.dbtn.on{background:rgba(255,120,190,.55);}
+  #dU{left:57px;top:0}#dD{left:57px;top:114px}#dL{left:0;top:57px}#dR{left:114px;top:57px}
+  @media (pointer:coarse){#pad{display:block}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div class="title">MALL · ISO 3D <span style="opacity:.6">(experimento)</span>
+    <small>WASD / flechas para caminar · arrastrá el D-PAD en celular</small>
+  </div>
+</div>
+<div id="pad">
+  <div class="dbtn" id="dU">▲</div>
+  <div class="dbtn" id="dL">◀</div>
+  <div class="dbtn" id="dR">▶</div>
+  <div class="dbtn" id="dD">▼</div>
+</div>
+<script>
+"use strict";
+(function(){
+// ===================== Canvas / DPR / resize =====================
+var canvas = document.getElementById("c");
+var ctx = canvas.getContext("2d");
+var W = 0, H = 0, DPR = 1;
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = Math.floor(window.innerWidth);
+  H = Math.floor(window.innerHeight);
+  canvas.width = Math.floor(W * DPR);
+  canvas.height = Math.floor(H * DPR);
+  canvas.style.width = W + "px";
+  canvas.style.height = H + "px";
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener("resize", resize);
+window.addEventListener("orientationchange", function(){ setTimeout(resize, 120); });
+resize();
+
+// ===================== Iso projection =====================
+var TILE_W = 64, TILE_H = 32;       // diamante 2:1
+var GW = 14, GH = 11;               // grilla acotada (cols x filas de piso)
+// origen de pantalla (centro del atrio) — se recalcula en cada frame con la cámara
+var camX = 0, camY = 0;             // offset de cámara (px)
+
+function worldToScreen(tx, ty, tz){
+  var sx = (tx - ty) * (TILE_W/2);
+  var sy = (tx + ty) * (TILE_H/2) - tz;
+  return { x: sx, y: sy };
+}
+
+// ===================== Palette (shopping) =====================
+var COL = {
+  taco:   "#f5cd46",
+  tacoSh: "#d9a52e",
+  gold:   "#ffd84a",
+  pink:   "#ff6b8a",
+  cyan:   "#7fd6ff",
+  floorA: "#f0e6f2",
+  floorB: "#dfd0ea",
+  floorEd:"#bda6cf",
+  wall:   "#3a2d52",
+  wallTop:"#52406f"
+};
+var SHOP_COLS = ["#ff6b8a","#7fd6ff","#ffd84a","#c060e0","#3fb98a","#ff9b3c"];
+
+// Locales de la pared del fondo (cartel + color)
+var SHOPS = [
+  { name:"MODA",     col:"#ff6b8a" },
+  { name:"ARCADE",   col:"#7fd6ff" },
+  { name:"CAFE",     col:"#e0a020" },
+  { name:"JUGUETES", col:"#c060e0" },
+  { name:"MUSICA",   col:"#3fb98a" },
+  { name:"TACOS",    col:"#ff9b3c" }
+];
+
+// Kioscos / estaciones (caja iso con ícono): tile pos + label + color + icon
+var STATIONS = [
+  { tx:2.0, ty:6.0, label:"SALUD",   col:"#60d050", icon:"plus"  },
+  { tx:7.0, ty:8.0, label:"PODERES", col:"#7c5cff", icon:"bolt"  },
+  { tx:11.0,ty:6.0, label:"ARCADE",  col:"#ff6b8a", icon:"pad"   }
+];
+// Plantas (macetas) y bancos: posiciones en tiles
+var PLANTS = [ {tx:1,ty:1.5},{tx:12.5,ty:1.5},{tx:1.2,ty:9.3},{tx:12.6,ty:9.3},{tx:4.6,ty:5.2},{tx:9.2,ty:3.2} ];
+var BENCHES = [ {tx:3,ty:9,r:0},{tx:10,ty:9,r:0},{tx:1.6,ty:5,r:1} ];
+
+// Escalera mecánica isométrica (de tile A hasta tile B, sube tz)
+var ESCAL = { tx:6.2, ty:1.3, len:3.4, rise:46, w:1.6 };
+
+// ===================== Player (taco) =====================
+var player = { tx: 7, ty: 6, vx:0, vy:0, face:1, phase:0, moving:false };
+var SPEED = 3.1; // tiles/seg
+
+// ===================== Input =====================
+var keys = {};
+window.addEventListener("keydown", function(e){
+  var k = e.key.toLowerCase();
+  if (["arrowup","arrowdown","arrowleft","arrowright"," "].indexOf(k) >= 0) e.preventDefault();
+  keys[k] = true;
+});
+window.addEventListener("keyup", function(e){ keys[e.key.toLowerCase()] = false; });
+
+// D-pad táctil
+var padDir = { u:false, d:false, l:false, r:false };
+function bindPad(id, prop){
+  var el = document.getElementById(id);
+  var set = function(v){ return function(ev){ ev.preventDefault(); padDir[prop] = v; el.classList.toggle("on", v); }; };
+  el.addEventListener("touchstart", set(true), {passive:false});
+  el.addEventListener("touchend",   set(false), {passive:false});
+  el.addEventListener("touchcancel",set(false), {passive:false});
+  el.addEventListener("mousedown",  set(true));
+  window.addEventListener("mouseup", set(false));
+}
+bindPad("dU","u"); bindPad("dD","d"); bindPad("dL","l"); bindPad("dR","r");
+
+function readInput(){
+  var ax = 0, ay = 0;
+  if (keys["w"]||keys["arrowup"]||padDir.u){ ax -= 1; ay -= 1; }
+  if (keys["s"]||keys["arrowdown"]||padDir.d){ ax += 1; ay += 1; }
+  if (keys["a"]||keys["arrowleft"]||padDir.l){ ax -= 1; ay += 1; }
+  if (keys["d"]||keys["arrowright"]||padDir.r){ ax += 1; ay -= 1; }
+  // normalizar diagonal en espacio de tiles
+  var m = Math.hypot(ax, ay);
+  if (m > 0){ ax /= m; ay /= m; }
+  return { x: ax, y: ay };
+}
+
+// ===================== Collision (mall bounds + objetos) =====================
+function blocked(tx, ty){
+  // bordes del piso (deja un margen; la pared del fondo está en ty<0.3)
+  if (tx < 0.35 || tx > GW-0.35) return true;
+  if (ty < 0.45 || ty > GH-0.35) return true;
+  // estaciones (kioscos) — radio aprox
+  for (var i=0;i<STATIONS.length;i++){
+    var s = STATIONS[i];
+    if (Math.abs(tx - s.tx) < 0.95 && Math.abs(ty - s.ty) < 0.95) return true;
+  }
+  // base de la escalera (no atravesar)
+  if (tx > ESCAL.tx-0.9 && tx < ESCAL.tx+ESCAL.w+0.4 && ty < ESCAL.ty+0.6) return true;
+  // bancos
+  for (var b=0;b<BENCHES.length;b++){
+    var bn = BENCHES[b];
+    if (Math.abs(tx - bn.tx) < 0.7 && Math.abs(ty - bn.ty) < 0.5) return true;
+  }
+  return false;
+}
+
+// ===================== NPCs =====================
+var NPC_COLS = ["#ff8fb0","#8fd0ff","#ffd66a","#b48cff","#7ee0a8","#ff9b6a"];
+var npcs = [];
+(function initNpcs(){
+  for (var i=0;i<6;i++){
+    npcs.push({
+      tx: 2 + Math.random()*(GW-4),
+      ty: 3 + Math.random()*(GH-4),
+      col: NPC_COLS[i % NPC_COLS.length],
+      tgtx: 2 + Math.random()*(GW-4),
+      tgty: 3 + Math.random()*(GH-4),
+      phase: Math.random()*7,
+      spd: 0.7 + Math.random()*0.6
+    });
+  }
+})();
+function updateNpcs(dt){
+  for (var i=0;i<npcs.length;i++){
+    var n = npcs[i];
+    var dx = n.tgtx - n.tx, dy = n.tgty - n.ty;
+    var d = Math.hypot(dx, dy);
+    if (d < 0.25){
+      n.tgtx = 1.5 + Math.random()*(GW-3);
+      n.tgty = 3 + Math.random()*(GH-4);
+    } else {
+      var ux = dx/d, uy = dy/d;
+      var ntx = n.tx + ux * n.spd * dt;
+      var nty = n.ty + uy * n.spd * dt;
+      if (!blocked(ntx, n.ty)) n.tx = ntx; else n.tgtx = n.tx;
+      if (!blocked(n.tx, nty)) n.ty = nty; else n.tgty = n.ty;
+      n.phase += dt * 9;
+    }
+  }
+}
+
+// ===================== Time / loop =====================
+var last = performance.now();
+var T = 0; // tiempo global (para anim de escalera, luces)
+
+function update(dt){
+  T += dt;
+  // jugador
+  var inp = readInput();
+  player.moving = (inp.x !== 0 || inp.y !== 0);
+  if (player.moving){
+    if (inp.x > 0.01) player.face = 1; else if (inp.x < -0.01) player.face = -1;
+    var ntx = player.tx + inp.x * SPEED * dt;
+    var nty = player.ty + inp.y * SPEED * dt;
+    if (!blocked(ntx, player.ty)) player.tx = ntx;
+    if (!blocked(player.tx, nty)) player.ty = nty;
+    player.phase += dt * 10;
+  } else {
+    player.phase *= 0.9;
+  }
+  updateNpcs(dt);
+  // cámara: leve seguimiento del taco, centrada en pantalla
+  var ps = worldToScreen(player.tx, player.ty, 0);
+  var tcx = W/2 - ps.x;
+  var tcy = H*0.56 - ps.y;
+  camX += (tcx - camX) * Math.min(1, dt * 4);
+  camY += (tcy - camY) * Math.min(1, dt * 4);
+}
+
+// ===================== Iso helpers (relative to camera) =====================
+function S(tx, ty, tz){ var p = worldToScreen(tx, ty, tz); return { x: p.x + camX, y: p.y + camY }; }
+
+// dibuja una cara (lista de puntos {x,y}) con color
+function face(pts, fill, stroke){
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (var i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  if (stroke){ ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke(); }
+}
+
+// sombrear un color hex multiplicando
+function shade(hex, f){
+  var h = hex.replace("#","");
+  if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  var r = parseInt(h.substr(0,2),16), g = parseInt(h.substr(2,2),16), b = parseInt(h.substr(4,2),16);
+  r = Math.max(0,Math.min(255, Math.round(r*f)));
+  g = Math.max(0,Math.min(255, Math.round(g*f)));
+  b = Math.max(0,Math.min(255, Math.round(b*f)));
+  return "rgb("+r+","+g+","+b+")";
+}
+
+// Caja isométrica extruida: base en (tx,ty) tamaño (wx,wy) en tiles, altura h px, color top.
+// Devuelve nada; dibuja 3 caras sombreadas (top claro, izq media, der oscura).
+function isoBox(tx, ty, wx, wy, base, h, topCol){
+  var x0=tx, x1=tx+wx, y0=ty, y1=ty+wy;
+  // 4 esquinas de la cara superior (en z = base+h) y de la base (z = base)
+  var Tn = S(x0,y0, base+h), Te = S(x1,y0, base+h), Ts = S(x1,y1, base+h), Tw = S(x0,y1, base+h);
+  var Be = S(x1,y0, base),   Bs = S(x1,y1, base),   Bw = S(x0,y1, base);
+  // cara izquierda (oeste-sur)  -> mira al frente-izq (más clara que la derecha)
+  face([Tw, Ts, Bs, Bw], shade(topCol, 0.74), shade(topCol,0.62));
+  // cara derecha (este-sur) -> frente-derecho (la más oscura)
+  face([Ts, Te, Be, Bs], shade(topCol, 0.55), shade(topCol,0.45));
+  // cara superior
+  face([Tn, Te, Ts, Tw], topCol, shade(topCol,0.85));
+  return { Tn:Tn, Te:Te, Ts:Ts, Tw:Tw };
+}
+
+// ===================== Static draws =====================
+function drawFloor(){
+  // baldosas diamante con brillo + reflejos suaves
+  for (var ty=0; ty<GH; ty++){
+    for (var tx=0; tx<GW; tx++){
+      var a = S(tx, ty, 0), b = S(tx+1, ty, 0), c = S(tx+1, ty+1, 0), d = S(tx, ty+1, 0);
+      var checker = ((tx+ty)&1);
+      ctx.beginPath();
+      ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.lineTo(c.x,c.y); ctx.lineTo(d.x,d.y); ctx.closePath();
+      ctx.fillStyle = checker ? COL.floorA : COL.floorB;
+      ctx.fill();
+      ctx.strokeStyle = COL.floorEd; ctx.lineWidth = 1; ctx.stroke();
+      // brillo diagonal (reflejo del atrio) en algunas baldosas
+      if (checker){
+        ctx.beginPath();
+        ctx.moveTo(a.x,a.y);
+        ctx.lineTo((a.x+b.x)/2,(a.y+b.y)/2);
+        ctx.lineTo((a.x+d.x)/2,(a.y+d.y)/2);
+        ctx.closePath();
+        ctx.fillStyle = "rgba(255,255,255,0.12)";
+        ctx.fill();
+      }
+    }
+  }
+  // banda central de reflejo (claraboya sobre el piso)
+  var g0 = S(GW*0.5-1.2, 0, 0), g1 = S(GW*0.5-1.2, GH, 0);
+  var grd = ctx.createLinearGradient(g0.x, g0.y, g1.x, g1.y);
+  grd.addColorStop(0,"rgba(180,220,255,0.0)");
+  grd.addColorStop(0.5,"rgba(190,230,255,0.10)");
+  grd.addColorStop(1,"rgba(180,220,255,0.0)");
+  ctx.save();
+  ctx.beginPath();
+  var c0=S(GW*0.46,0,0), c1=S(GW*0.46+1.1,0,0), c2=S(GW*0.46+1.1,GH,0), c3=S(GW*0.46,GH,0);
+  ctx.moveTo(c0.x,c0.y); ctx.lineTo(c1.x,c1.y); ctx.lineTo(c2.x,c2.y); ctx.lineTo(c3.x,c3.y); ctx.closePath();
+  ctx.fillStyle = grd; ctx.fill();
+  ctx.restore();
+}
+
+// Pared del fondo (ty = 0 line) con vidrieras de locales
+function drawBackWall(){
+  var wallH = 130;
+  // muro base (entre tx 0..GW en ty=0)
+  var Aw = S(0,0, wallH), Bw = S(GW,0, wallH), Be = S(GW,0,0), Ae = S(0,0,0);
+  // cara frontal del muro
+  face([Aw, Bw, Be, Ae], COL.wall, shade(COL.wall,0.8));
+  // cornisa superior (faja clara)
+  var corn = 14;
+  var Ct1=S(0,0,wallH), Ct2=S(GW,0,wallH), Ct3=S(GW,0,wallH-corn), Ct4=S(0,0,wallH-corn);
+  face([Ct1,Ct2,Ct3,Ct4], COL.wallTop, shade(COL.wallTop,0.85));
+
+  // Vidrieras: cada local ocupa ~2 tiles de ancho sobre la pared
+  var nShops = SHOPS.length;
+  var span = GW / nShops;
+  for (var i=0;i<nShops;i++){
+    var sh = SHOPS[i];
+    var x0 = i*span + 0.18;
+    var x1 = (i+1)*span - 0.18;
+    drawStoreFront(x0, x1, sh);
+  }
+}
+
+// una vidriera (caja iso extruida hacia el frente con vidrio + toldo + cartel)
+function drawStoreFront(x0, x1, sh){
+  var glassTop = 96, glassBot = 6;
+  var depth = 0.55; // sobresale hacia adelante (ty positivo)
+  // marco/extrusión: pequeña caja desde la pared hacia el frente
+  var pTopOut = S(x0, depth, glassTop), pTopOut2 = S(x1, depth, glassTop);
+  var pTopIn  = S(x0, 0, glassTop),     pTopIn2  = S(x1, 0, glassTop);
+  var pBotOut = S(x0, depth, glassBot), pBotOut2 = S(x1, depth, glassBot);
+  // cara superior del marco (techo del local, sombreada)
+  face([pTopIn, pTopIn2, pTopOut2, pTopOut], shade(sh.col,0.5));
+  // pilastra lateral izquierda (cara que da volumen)
+  face([pTopIn, pTopOut, pBotOut, S(x0,0,glassBot)], shade(sh.col,0.42));
+
+  // VIDRIO iluminado (cara frontal del local, en ty=depth)
+  var gA=S(x0,depth,glassTop), gB=S(x1,depth,glassTop), gC=S(x1,depth,glassBot), gD=S(x0,depth,glassBot);
+  var grd = ctx.createLinearGradient(gA.x,gA.y,gD.x,gD.y);
+  grd.addColorStop(0, "rgba(255,255,255,0.85)");
+  grd.addColorStop(0.4, shade(sh.col,1.0));
+  grd.addColorStop(1, shade(sh.col,0.7));
+  ctx.beginPath();
+  ctx.moveTo(gA.x,gA.y); ctx.lineTo(gB.x,gB.y); ctx.lineTo(gC.x,gC.y); ctx.lineTo(gD.x,gD.y); ctx.closePath();
+  ctx.fillStyle = grd; ctx.fill();
+  // reflejo diagonal en el vidrio
+  ctx.save();
+  ctx.clip();
+  ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.moveTo(gA.x+10,gA.y+8); ctx.lineTo(gA.x+40,gA.y+70); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(gA.x+30,gA.y+6); ctx.lineTo(gA.x+60,gA.y+60); ctx.stroke();
+  ctx.restore();
+  // marco del vidrio
+  ctx.strokeStyle = shade(sh.col,0.45); ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(gA.x,gA.y); ctx.lineTo(gB.x,gB.y); ctx.lineTo(gC.x,gC.y); ctx.lineTo(gD.x,gD.y); ctx.closePath(); ctx.stroke();
+
+  // TOLDO (a rayas) sobre el vidrio
+  var awnTop = glassTop+18, awnBot = glassTop+2, awnOut = depth+0.45;
+  var aA=S(x0,awnOut,awnBot), aB=S(x1,awnOut,awnBot), aTi=S(x1,depth,awnTop), aTi2=S(x0,depth,awnTop);
+  ctx.beginPath();
+  ctx.moveTo(aTi2.x,aTi2.y); ctx.lineTo(aTi.x,aTi.y); ctx.lineTo(aB.x,aB.y); ctx.lineTo(aA.x,aA.y); ctx.closePath();
+  ctx.fillStyle = shade(sh.col,0.95); ctx.fill();
+  // rayas del toldo
+  ctx.save(); ctx.clip();
+  var stripes = 7;
+  for (var s=0;s<stripes;s+=2){
+    var t0 = s/stripes, t1 = (s+1)/stripes;
+    function lerp(p,q,t){ return {x:p.x+(q.x-p.x)*t, y:p.y+(q.y-p.y)*t}; }
+    var topL=lerp(aTi2,aTi,t0), topR=lerp(aTi2,aTi,t1);
+    var botL=lerp(aA,aB,t0), botR=lerp(aA,aB,t1);
+    ctx.beginPath();
+    ctx.moveTo(topL.x,topL.y); ctx.lineTo(topR.x,topR.y); ctx.lineTo(botR.x,botR.y); ctx.lineTo(botL.x,botL.y); ctx.closePath();
+    ctx.fillStyle = "rgba(255,255,255,0.9)"; ctx.fill();
+  }
+  ctx.restore();
+  // borde festoneado del toldo
+  ctx.strokeStyle = "rgba(0,0,0,0.18)"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(aA.x,aA.y); ctx.lineTo(aB.x,aB.y); ctx.stroke();
+
+  // CARTEL con nombre (sobre el toldo)
+  var sgn = S((x0+x1)/2, depth, glassTop+34);
+  ctx.font = "800 " + fit(sh.name, (x1-x0)*TILE_W*0.9, 18) + "px sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.fillText(sh.name, sgn.x+1, sgn.y+1);
+  ctx.fillStyle = "#fff";
+  ctx.shadowColor = sh.col; ctx.shadowBlur = 10;
+  ctx.fillText(sh.name, sgn.x, sgn.y);
+  ctx.shadowBlur = 0;
+}
+function fit(txt, maxW, size){
+  ctx.font = "800 " + size + "px sans-serif";
+  while (size > 8 && ctx.measureText(txt).width > maxW){ size--; ctx.font = "800 "+size+"px sans-serif"; }
+  return size;
+}
+
+// ===================== Escalera mecánica iso =====================
+function drawEscalator(){
+  var e = ESCAL;
+  var bx = e.tx, by = e.ty, w = e.w, len = e.len, rise = e.rise;
+  // dirección de subida: hacia -ty (al fondo) + sube tz
+  var topY = by, botY = by + len;
+  // costado izquierdo (rampa lateral - triángulo iso)
+  function P(tx,ty,tz){ return S(tx,ty,tz); }
+  // base de la rampa (en piso) y top (elevado al fondo)
+  var L0 = P(bx, botY, 0), L1 = P(bx, topY, rise);          // borde izq: base->top
+  var R0 = P(bx+w, botY, 0), R1 = P(bx+w, topY, rise);      // borde der
+  // baranda/pasamanos: lados elevados
+  // cara lateral izquierda (panel inclinado)
+  face([ L0, L1, P(bx, topY, rise-8), P(bx, botY, -8) ], shade("#cfd6e6",0.7), "#9aa3bc");
+  // superficie de escalones (rampa principal): la pintamos como franjas que se mueven
+  // construimos el cuadrilátero del piso de la escalera
+  var steps = 9;
+  var move = (T * 1.6) % 1; // desplazamiento de escalones [0..1)
+  for (var i=0;i<steps;i++){
+    var t0 = (i + move)/steps;
+    var t1 = (i + 1 + move)/steps;
+    if (t1 > 1) continue;
+    function lerpT(t){ return { ty: botY + (topY-botY)*t, tz: rise*t }; }
+    var s0 = lerpT(t0), s1 = lerpT(t1);
+    var a = P(bx, s0.ty, s0.tz), b = P(bx+w, s0.ty, s0.tz);
+    var c = P(bx+w, s1.ty, s1.tz), d = P(bx, s1.ty, s1.tz);
+    // huella del escalón
+    ctx.beginPath();
+    ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.lineTo(c.x,c.y); ctx.lineTo(d.x,d.y); ctx.closePath();
+    ctx.fillStyle = (i&1) ? "#c4ccdd" : "#aab3c8";
+    ctx.fill();
+    // contrahuella (frente del escalón, da el efecto 3D de peldaño)
+    var rb0 = P(bx, s1.ty, s1.tz), rb1 = P(bx+w, s1.ty, s1.tz);
+    var rf0 = P(bx, s1.ty, s1.tz-rise/steps*0.6), rf1 = P(bx+w, s1.ty, s1.tz-rise/steps*0.6);
+    ctx.beginPath();
+    ctx.moveTo(rb0.x,rb0.y); ctx.lineTo(rb1.x,rb1.y); ctx.lineTo(rf1.x,rf1.y); ctx.lineTo(rf0.x,rf0.y); ctx.closePath();
+    ctx.fillStyle = "#7f879c"; ctx.fill();
+  }
+  // costado derecho (panel)
+  face([ R0, R1, P(bx+w, topY, rise-8), P(bx+w, botY, -8) ], shade("#cfd6e6",0.55), "#828aa3");
+  // PASAMANOS (handrails) — bandas que también se mueven (flechas)
+  drawHandrail(bx, topY, botY, rise, move, "#2b2f44");
+  drawHandrail(bx+w, topY, botY, rise, move, "#2b2f44");
+  // flecha de subida iluminada al pie
+  var arr = P(bx+w/2, botY+0.1, 12);
+  ctx.fillStyle = "#7fffa8";
+  ctx.font = "800 20px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.save(); ctx.shadowColor="#3fffa0"; ctx.shadowBlur=12;
+  ctx.fillText("▲", arr.x, arr.y - (Math.sin(T*4)*3));
+  ctx.restore();
+}
+function drawHandrail(tx, topY, botY, rise, move, col){
+  var hH = 26; // altura del pasamanos sobre escalones
+  var a = S(tx, botY, hH), b = S(tx, topY, rise+hH);
+  ctx.strokeStyle = col; ctx.lineWidth = 8; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+  // banda superior con marcas que se mueven (sensación de movimiento)
+  ctx.strokeStyle = "rgba(255,255,255,0.55)"; ctx.lineWidth = 2;
+  for (var i=0;i<6;i++){
+    var t = ((i + move)/6);
+    var p = S(tx, botY + (topY-botY)*t, rise*t + hH);
+    ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, 7); ctx.stroke();
+  }
+}
+
+// ===================== Plantas / bancos =====================
+function drawPlant(tx, ty){
+  var base = S(tx, ty, 0);
+  // maceta (caja iso pequeña)
+  isoBox(tx-0.18, ty-0.18, 0.36, 0.36, 0, 16, "#b06a3a");
+  var pot = S(tx, ty, 18);
+  // follaje (varios círculos verdes)
+  var greens = ["#3fae5a","#4fc46a","#2f9a4a"];
+  for (var i=0;i<7;i++){
+    var a = i/7 * 6.28;
+    var rr = 12 + (i%2)*5;
+    ctx.beginPath();
+    ctx.arc(pot.x + Math.cos(a)*10, pot.y - 14 + Math.sin(a)*8, rr*0.6, 0, 7);
+    ctx.fillStyle = greens[i%3]; ctx.fill();
+  }
+  ctx.beginPath(); ctx.arc(pot.x, pot.y-20, 12, 0, 7); ctx.fillStyle="#5ad07a"; ctx.fill();
+}
+function drawBench(tx, ty){
+  // banco: caja baja + respaldo (cyan/madera)
+  isoBox(tx-0.5, ty-0.22, 1.0, 0.44, 0, 12, "#9a6a44"); // asiento
+  // patas/sombra implícita por isoBox; respaldo
+  isoBox(tx-0.5, ty-0.22, 1.0, 0.12, 12, 14, "#7fd6ff");
+}
+
+// ===================== Kioscos / estaciones =====================
+function drawStation(s){
+  var box = isoBox(s.tx-0.6, s.ty-0.6, 1.2, 1.2, 0, 54, s.col);
+  // mostrador superior (tapa clara)
+  // letrero flotante con label
+  var top = S(s.tx, s.ty, 78);
+  // poste del letrero
+  var base = S(s.tx, s.ty, 54);
+  ctx.strokeStyle = shade(s.col,0.5); ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(base.x, base.y); ctx.lineTo(top.x, top.y+10); ctx.stroke();
+  // placa
+  ctx.font = "800 13px sans-serif";
+  var tw = ctx.measureText(s.label).width + 18;
+  ctx.fillStyle = shade(s.col,0.55);
+  rrect(top.x - tw/2, top.y - 4, tw, 22, 6); ctx.fill();
+  ctx.fillStyle = "#fff"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText(s.label, top.x, top.y + 7);
+  // ícono sobre la cara superior
+  var ic = S(s.tx, s.ty, 60);
+  drawIcon(s.icon, ic.x, ic.y, 14, "#fff");
+}
+function rrect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+function drawIcon(kind, x, y, r, col){
+  ctx.fillStyle = col;
+  if (kind === "plus"){
+    ctx.fillRect(x-r*0.3, y-r, r*0.6, r*2);
+    ctx.fillRect(x-r, y-r*0.3, r*2, r*0.6);
+  } else if (kind === "bolt"){
+    ctx.beginPath();
+    ctx.moveTo(x+r*0.2,y-r); ctx.lineTo(x-r*0.5,y+r*0.1); ctx.lineTo(x-r*0.05,y+r*0.1);
+    ctx.lineTo(x-r*0.2,y+r); ctx.lineTo(x+r*0.5,y-r*0.1); ctx.lineTo(x+r*0.05,y-r*0.1);
+    ctx.closePath(); ctx.fill();
+  } else { // gamepad
+    rrect(x-r, y-r*0.5, r*2, r, 4); ctx.fill();
+    ctx.fillStyle = "#222";
+    ctx.fillRect(x-r*0.6, y-r*0.1, r*0.18, r*0.5);
+    ctx.fillRect(x-r*0.78, y+r*0.08, r*0.5, r*0.18);
+    ctx.beginPath(); ctx.arc(x+r*0.55, y, r*0.16, 0, 7); ctx.fill();
+  }
+}
+
+// ===================== Taco (humanoide) =====================
+function drawTaco(tx, ty, phase, face){
+  var ground = S(tx, ty, 0);
+  // SOMBRA en el piso (elipse iso)
+  ctx.save();
+  ctx.globalAlpha = 0.28;
+  ctx.fillStyle = "#000";
+  ctx.beginPath();
+  ctx.ellipse(ground.x, ground.y, 20, 10, 0, 0, 7);
+  ctx.fill();
+  ctx.restore();
+
+  var bob = Math.abs(Math.sin(phase)) * 4;
+  var cx = ground.x, cy = ground.y - 30 - bob;
+  var legSwing = Math.sin(phase) * 5;
+  var s = 1; // scale
+  // PIECITOS
+  ctx.fillStyle = "#e8b33a";
+  ctx.beginPath(); ctx.ellipse(cx - 7 + legSwing, ground.y - 3, 6, 4, 0, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx + 7 - legSwing, ground.y - 3, 6, 4, 0, 0, 7); ctx.fill();
+  // piernitas
+  ctx.strokeStyle = "#caa030"; ctx.lineWidth = 4; ctx.lineCap="round";
+  ctx.beginPath(); ctx.moveTo(cx-5, cy+18); ctx.lineTo(cx-7+legSwing, ground.y-5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx+5, cy+18); ctx.lineTo(cx+7-legSwing, ground.y-5); ctx.stroke();
+
+  // CUERPO = tortilla doblada (taco)
+  // relleno (asoma por arriba)
+  ctx.fillStyle = "#7ec06a";
+  ctx.beginPath(); ctx.ellipse(cx, cy-2, 15, 7, 0, Math.PI, 0); ctx.fill();
+  ctx.fillStyle = "#e05c4a";
+  ctx.beginPath(); ctx.arc(cx-6, cy-3, 3, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+5, cy-4, 3, 0, 7); ctx.fill();
+  ctx.fillStyle = "#f0e2a0";
+  ctx.beginPath(); ctx.arc(cx+1, cy-2, 2.5, 0, 7); ctx.fill();
+  // tortilla (cuerpo amarillo doblado en U)
+  ctx.fillStyle = COL.taco;
+  ctx.beginPath();
+  ctx.moveTo(cx-18, cy-4);
+  ctx.quadraticCurveTo(cx-22, cy+22, cx, cy+24);
+  ctx.quadraticCurveTo(cx+22, cy+22, cx+18, cy-4);
+  ctx.quadraticCurveTo(cx+13, cy+6, cx, cy+7);
+  ctx.quadraticCurveTo(cx-13, cy+6, cx-18, cy-4);
+  ctx.closePath();
+  ctx.fill();
+  // sombreado interno de la tortilla (volumen)
+  ctx.fillStyle = COL.tacoSh;
+  ctx.beginPath();
+  ctx.moveTo(cx+18, cy-4);
+  ctx.quadraticCurveTo(cx+22, cy+22, cx, cy+24);
+  ctx.quadraticCurveTo(cx+10, cy+22, cx+9, cy+2);
+  ctx.closePath();
+  ctx.fill();
+  // bracitos
+  ctx.strokeStyle = COL.tacoSh; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(cx-15, cy+8); ctx.lineTo(cx-21, cy+14 - legSwing); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx+15, cy+8); ctx.lineTo(cx+21, cy+14 + legSwing); ctx.stroke();
+  // OJITOS (miran según face)
+  ctx.fillStyle = "#fff";
+  ctx.beginPath(); ctx.arc(cx-6, cy+10, 4.5, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+6, cy+10, 4.5, 0, 7); ctx.fill();
+  ctx.fillStyle = "#222";
+  ctx.beginPath(); ctx.arc(cx-6 + face*1.5, cy+11, 2.2, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+6 + face*1.5, cy+11, 2.2, 0, 7); ctx.fill();
+  // sonrisa
+  ctx.strokeStyle = "#9a6a20"; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(cx, cy+15, 4, 0.1, Math.PI-0.1); ctx.stroke();
+}
+
+// NPC simple (persona iso)
+function drawNpc(n){
+  var g = S(n.tx, n.ty, 0);
+  var bob = Math.abs(Math.sin(n.phase))*3;
+  var cx = g.x, cy = g.y - 24 - bob;
+  // sombra
+  ctx.save(); ctx.globalAlpha=0.22; ctx.fillStyle="#000";
+  ctx.beginPath(); ctx.ellipse(g.x, g.y, 13, 6, 0,0,7); ctx.fill(); ctx.restore();
+  var sw = Math.sin(n.phase)*3;
+  // piernas
+  ctx.strokeStyle="#444"; ctx.lineWidth=3; ctx.lineCap="round";
+  ctx.beginPath(); ctx.moveTo(cx-3, cy+14); ctx.lineTo(cx-4+sw, g.y-2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx+3, cy+14); ctx.lineTo(cx+4-sw, g.y-2); ctx.stroke();
+  // cuerpo
+  ctx.fillStyle = n.col;
+  rrect(cx-8, cy, 16, 17, 6); ctx.fill();
+  // cabeza
+  ctx.fillStyle = "#f2c9a0";
+  ctx.beginPath(); ctx.arc(cx, cy-6, 6, 0, 7); ctx.fill();
+  ctx.fillStyle = shade(n.col,0.7);
+  ctx.beginPath(); ctx.arc(cx, cy-9, 6.5, Math.PI, 0); ctx.fill(); // pelo
+}
+
+// ===================== Ceiling / atrio / luces =====================
+function drawCeiling(){
+  // claraboya/atrio: banda luminosa sobre el atrio (parte alta de pantalla, fija a cámara)
+  var sk = S(GW*0.5, GH*0.5, 240);
+  var grd = ctx.createRadialGradient(W/2, sk.y, 20, W/2, sk.y, 360);
+  grd.addColorStop(0, "rgba(160,210,255,0.22)");
+  grd.addColorStop(1, "rgba(160,210,255,0)");
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, H*0.5);
+}
+function drawGarland(){
+  // guirnalda de luces colgando a lo largo de la pared del fondo
+  var n = 26;
+  ctx.lineWidth = 1.5; ctx.strokeStyle = "rgba(255,255,255,0.25)";
+  var prev = null;
+  var pts = [];
+  for (var i=0;i<=n;i++){
+    var tx = (i/n)*GW;
+    var sag = Math.sin((i/n)*Math.PI) * 10;
+    var p = S(tx, 0.05, 150 - sag);
+    pts.push(p);
+  }
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (var j=1;j<pts.length;j++) ctx.lineTo(pts[j].x, pts[j].y);
+  ctx.stroke();
+  var bulbCols = ["#ff6b8a","#ffd84a","#7fd6ff","#c060e0","#7ee0a8"];
+  for (var k=0;k<pts.length;k++){
+    var blink = 0.55 + 0.45*Math.sin(T*3 + k*0.7);
+    ctx.fillStyle = bulbCols[k % bulbCols.length];
+    ctx.globalAlpha = blink;
+    ctx.shadowColor = bulbCols[k % bulbCols.length]; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(pts[k].x, pts[k].y+5, 3, 0, 7); ctx.fill();
+    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+  }
+}
+
+// ===================== Render =====================
+function render(){
+  // fondo (degradé de ambiente)
+  var bg = ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0, "#241640");
+  bg.addColorStop(0.5, "#1a1030");
+  bg.addColorStop(1, "#120a22");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0,0,W,H);
+
+  drawCeiling();
+  drawFloor();
+  drawBackWall();
+  drawGarland();
+
+  // ----- DEPTH SORT: recolectar objetos con clave (tx+ty)+altura -----
+  var items = [];
+  // plantas
+  for (var i=0;i<PLANTS.length;i++){ var p=PLANTS[i]; items.push({ key: p.tx+p.ty, kind:"plant", o:p }); }
+  // bancos
+  for (var b=0;b<BENCHES.length;b++){ var bn=BENCHES[b]; items.push({ key: bn.tx+bn.ty, kind:"bench", o:bn }); }
+  // estaciones
+  for (var s=0;s<STATIONS.length;s++){ var st=STATIONS[s]; items.push({ key: st.tx+st.ty+0.3, kind:"station", o:st }); }
+  // escalera (su pie determina su orden)
+  items.push({ key: ESCAL.tx + ESCAL.ty + 0.2, kind:"escalator", o:ESCAL });
+  // npcs
+  for (var nn=0;nn<npcs.length;nn++){ var n=npcs[nn]; items.push({ key: n.tx+n.ty, kind:"npc", o:n }); }
+  // taco
+  items.push({ key: player.tx + player.ty + 0.05, kind:"taco", o:player });
+
+  // painter's algorithm: menor key primero (más al fondo)
+  items.sort(function(a,b){ return a.key - b.key; });
+
+  for (var it=0; it<items.length; it++){
+    var I = items[it];
+    if (I.kind === "plant") drawPlant(I.o.tx, I.o.ty);
+    else if (I.kind === "bench") drawBench(I.o.tx, I.o.ty);
+    else if (I.kind === "station") drawStation(I.o);
+    else if (I.kind === "escalator") drawEscalator();
+    else if (I.kind === "npc") drawNpc(I.o);
+    else if (I.kind === "taco") drawTaco(player.tx, player.ty, player.phase, player.face);
+  }
+}
+
+// ===================== Main loop =====================
+function frame(now){
+  var dt = Math.min(0.05, (now - last)/1000);
+  last = now;
+  update(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

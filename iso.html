@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1b2a4a">
+<title>TACO CITY · ISO 3D (experimento)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #0d1626;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+  }
+  #game { display: block; width: 100%; height: 100%; position: fixed; inset: 0; }
+
+  /* Title overlay */
+  #titleBar {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px 14px;
+    pointer-events: none; z-index: 10; text-align: center;
+    background: linear-gradient(180deg, rgba(8,14,28,0.55), rgba(8,14,28,0));
+  }
+  #titleBar h1 {
+    font-size: clamp(15px, 3.6vw, 24px); font-weight: 800; letter-spacing: 0.5px;
+    color: #ffe14d; text-shadow: 0 2px 0 #b8651e, 0 3px 8px rgba(0,0,0,0.5);
+  }
+  #titleBar h1 span { color: #8fe9ff; }
+  #titleBar p {
+    margin-top: 3px; font-size: clamp(10px, 2.4vw, 13px); font-weight: 600;
+    color: #d7e4ff; opacity: 0.92; text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  }
+
+  /* D-Pad */
+  #dpad {
+    position: fixed; z-index: 10;
+    left: calc(env(safe-area-inset-left, 0px) + 18px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+    width: 168px; height: 168px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 6px;
+    opacity: 0.78;
+  }
+  .dbtn {
+    border: none; border-radius: 14px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06));
+    box-shadow: 0 3px 10px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.25);
+    color: #fff; font-size: 26px; font-weight: 700; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+    touch-action: none; cursor: pointer;
+  }
+  .dbtn:active, .dbtn.held {
+    background: linear-gradient(180deg, rgba(143,233,255,0.7), rgba(143,233,255,0.35));
+    transform: scale(0.94);
+  }
+  #d-up    { grid-column: 2; grid-row: 1; }
+  #d-left  { grid-column: 1; grid-row: 2; }
+  #d-right { grid-column: 3; grid-row: 2; }
+  #d-down  { grid-column: 2; grid-row: 3; }
+  .dpad-spacer { grid-column: 2; grid-row: 2; }
+
+  #hint {
+    position: fixed; z-index: 10;
+    right: calc(env(safe-area-inset-right, 0px) + 14px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+    font-size: 11px; color: #cfe0ff; opacity: 0.6; text-align: right;
+    pointer-events: none; max-width: 45%;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    #dpad { display: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="titleBar">
+  <h1>TACO CITY · <span>ISO 3D</span> (experimento)</h1>
+  <p>WASD / Flechas para caminar · D-Pad táctil en celular · la cámara sigue al taco</p>
+</div>
+
+<div id="dpad">
+  <button class="dbtn" id="d-up" aria-label="arriba">▲</button>
+  <button class="dbtn" id="d-left" aria-label="izquierda">◀</button>
+  <div class="dpad-spacer"></div>
+  <button class="dbtn" id="d-right" aria-label="derecha">▶</button>
+  <button class="dbtn" id="d-down" aria-label="abajo">▼</button>
+</div>
+
+<div id="hint">Taco City · prototipo isométrico</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ============================================================
+  //  Canvas / DPR setup
+  // ============================================================
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var DPR = 1;
+  var VW = 0, VH = 0; // CSS pixel viewport size
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    VW = window.innerWidth;
+    VH = window.innerHeight;
+    canvas.width = Math.floor(VW * DPR);
+    canvas.height = Math.floor(VH * DPR);
+    canvas.style.width = VW + "px";
+    canvas.style.height = VH + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", function () { setTimeout(resize, 200); });
+  resize();
+
+  // ============================================================
+  //  Isometric projection
+  //  sx = (tx - ty) * tileW/2
+  //  sy = (tx + ty) * tileH/2 - tz
+  // ============================================================
+  var tileW = 64;
+  var tileH = 32;
+  var halfW = tileW / 2;
+  var halfH = tileH / 2;
+
+  // camera offset in screen space (set so taco is centered)
+  var cam = { x: 0, y: 0 };
+
+  function worldToScreen(tx, ty, tz) {
+    return {
+      x: (tx - ty) * halfW + cam.x,
+      y: (tx + ty) * halfH - tz + cam.y
+    };
+  }
+
+  // ============================================================
+  //  City grid generation
+  // ============================================================
+  var GRID = 22;               // GRID x GRID tiles
+  var TILE_ROAD = 0;
+  var TILE_SIDEWALK = 1;
+  var TILE_GRASS = 2;
+  var TILE_BLOCK = 3;          // building footprint
+
+  var BLOCK_STEP = 5;          // city block size (road every 5 tiles)
+
+  var grid = [];               // tile type
+  var heightMap = [];          // building height (px) for TILE_BLOCK, else 0
+  var props = [];              // trees, lamps, cars (point props on walkable tiles)
+
+  function isRoadCoord(i) {
+    return (i % BLOCK_STEP) === 0;
+  }
+
+  // deterministic-ish pseudo random for stable layout
+  var seed = 1337;
+  function rnd() {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  }
+
+  function buildCity() {
+    grid = [];
+    heightMap = [];
+    for (var y = 0; y < GRID; y++) {
+      grid[y] = [];
+      heightMap[y] = [];
+      for (var x = 0; x < GRID; x++) {
+        var onRoad = isRoadCoord(x) || isRoadCoord(y);
+        if (onRoad) {
+          grid[y][x] = TILE_ROAD;
+        } else {
+          // sidewalk ring around blocks, grass/building inside
+          var nearRoad = isRoadCoord(x - 1) || isRoadCoord(x + 1) ||
+                         isRoadCoord(y - 1) || isRoadCoord(y + 1);
+          grid[y][x] = nearRoad ? TILE_SIDEWALK : TILE_BLOCK;
+        }
+        heightMap[y][x] = 0;
+      }
+    }
+
+    // assign building heights per block-interior; group a footprint into a
+    // single tall box look by giving each interior tile a height.
+    for (var by = 0; by < GRID; by++) {
+      for (var bx = 0; bx < GRID; bx++) {
+        if (grid[by][bx] === TILE_BLOCK) {
+          // some interior tiles become little parks (grass) instead
+          if (rnd() < 0.12) {
+            grid[by][bx] = TILE_GRASS;
+            heightMap[by][bx] = 0;
+          } else {
+            // height in px; variable. quantized to look like floors
+            var floors = 2 + Math.floor(rnd() * 7); // 2..8 floors
+            heightMap[by][bx] = floors * 16;
+          }
+        }
+      }
+    }
+
+    // place props on sidewalk / grass tiles
+    props = [];
+    for (var py = 0; py < GRID; py++) {
+      for (var px = 0; px < GRID; px++) {
+        var t = grid[py][px];
+        if (t === TILE_SIDEWALK) {
+          var r = rnd();
+          if (r < 0.10) props.push({ tx: px, ty: py, kind: "lamp" });
+          else if (r < 0.18) props.push({ tx: px, ty: py, kind: "tree" });
+        } else if (t === TILE_GRASS) {
+          if (rnd() < 0.5) props.push({ tx: px, ty: py, kind: "tree" });
+        }
+      }
+    }
+
+    // a few parked / idle cars on the roads
+    var carColors = ["#ff5d5d", "#5db4ff", "#ffd24d", "#7ee08a", "#c98bff"];
+    for (var c = 0; c < 10; c++) {
+      var rx = Math.floor(rnd() * GRID);
+      var ry = Math.floor(rnd() * GRID);
+      // snap to a road tile near a block edge
+      if (grid[ry] && grid[ry][rx] === TILE_ROAD) {
+        props.push({
+          tx: rx + (rnd() < 0.5 ? 0.25 : -0.25),
+          ty: ry,
+          kind: "car",
+          color: carColors[c % carColors.length],
+          dir: rnd() < 0.5 ? 0 : 1
+        });
+      }
+    }
+  }
+  buildCity();
+
+  function walkable(tx, ty) {
+    var ix = Math.floor(tx), iy = Math.floor(ty);
+    if (ix < 0 || iy < 0 || ix >= GRID || iy >= GRID) return false;
+    var t = grid[iy][ix];
+    return t === TILE_ROAD || t === TILE_SIDEWALK || t === TILE_GRASS;
+  }
+
+  // ============================================================
+  //  Player (the Taco)
+  // ============================================================
+  var taco = {
+    tx: 0.5, ty: 0.5,    // tile position (float)
+    speed: 3.2,          // tiles per second
+    vx: 0, vy: 0,
+    facing: 1,           // 1 right-ish, -1 left-ish (screen)
+    walkPhase: 0,
+    moving: false
+  };
+  // start on a road tile
+  taco.tx = 0; taco.ty = 0.0;
+  // find first walkable
+  (function () {
+    for (var y = 0; y < GRID; y++) {
+      for (var x = 0; x < GRID; x++) {
+        if (grid[y][x] === TILE_ROAD) { taco.tx = x; taco.ty = y; return; }
+      }
+    }
+  })();
+
+  // ============================================================
+  //  Input: keyboard + d-pad
+  // ============================================================
+  var keys = { up: false, down: false, left: false, right: false };
+
+  function setKey(code, val) {
+    switch (code) {
+      case "ArrowUp": case "KeyW": keys.up = val; return true;
+      case "ArrowDown": case "KeyS": keys.down = val; return true;
+      case "ArrowLeft": case "KeyA": keys.left = val; return true;
+      case "ArrowRight": case "KeyD": keys.right = val; return true;
+    }
+    return false;
+  }
+  window.addEventListener("keydown", function (e) {
+    if (setKey(e.code, true)) e.preventDefault();
+  }, { passive: false });
+  window.addEventListener("keyup", function (e) {
+    if (setKey(e.code, false)) e.preventDefault();
+  }, { passive: false });
+
+  function bindDpad(id, dir) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    function on(e) { keys[dir] = true; el.classList.add("held"); e.preventDefault(); }
+    function off(e) { keys[dir] = false; el.classList.remove("held"); if (e) e.preventDefault(); }
+    el.addEventListener("touchstart", on, { passive: false });
+    el.addEventListener("touchend", off, { passive: false });
+    el.addEventListener("touchcancel", off, { passive: false });
+    el.addEventListener("mousedown", on);
+    window.addEventListener("mouseup", off);
+    el.addEventListener("mouseleave", function () { if (keys[dir]) off(); });
+  }
+  bindDpad("d-up", "up");
+  bindDpad("d-down", "down");
+  bindDpad("d-left", "left");
+  bindDpad("d-right", "right");
+
+  // ============================================================
+  //  Color helpers
+  // ============================================================
+  function shade(hex, amt) {
+    // amt -1..1 ; mix toward black (neg) or white (pos)
+    var c = hex.replace("#", "");
+    var r = parseInt(c.substr(0, 2), 16);
+    var g = parseInt(c.substr(2, 2), 16);
+    var b = parseInt(c.substr(4, 2), 16);
+    if (amt >= 0) {
+      r = r + (255 - r) * amt; g = g + (255 - g) * amt; b = b + (255 - b) * amt;
+    } else {
+      var a = 1 + amt; r *= a; g *= a; b *= a;
+    }
+    return "rgb(" + (r | 0) + "," + (g | 0) + "," + (b | 0) + ")";
+  }
+
+  // building base palette
+  var bldgPalette = ["#e8a36b", "#d98c8c", "#8fb4e0", "#9fd6a8", "#e0c97a", "#c79ed6", "#bfb8ae"];
+  function bldgColorFor(x, y) {
+    return bldgPalette[(x * 7 + y * 13) % bldgPalette.length];
+  }
+
+  // ============================================================
+  //  Drawing primitives
+  // ============================================================
+  function drawTileDiamond(tx, ty, fill, stroke) {
+    var p = worldToScreen(tx, ty, 0);
+    var cx = p.x, cy = p.y;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - halfH);          // top
+    ctx.lineTo(cx + halfW, cy);          // right
+    ctx.lineTo(cx, cy + halfH);          // bottom
+    ctx.lineTo(cx - halfW, cy);          // left
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    if (stroke) {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+
+  function drawGround() {
+    // draw all floor tiles in iso order (back to front). Ground tiles all sit
+    // at z=0 so painter order = tx+ty ascending.
+    for (var s = 0; s <= 2 * (GRID - 1); s++) {
+      for (var y = 0; y < GRID; y++) {
+        var x = s - y;
+        if (x < 0 || x >= GRID) continue;
+        var t = grid[y][x];
+        if (t === TILE_ROAD) {
+          drawRoadTile(x, y);
+        } else if (t === TILE_SIDEWALK) {
+          drawTileDiamond(x, y, "#b9bcc4", "rgba(90,94,104,0.35)");
+        } else if (t === TILE_GRASS) {
+          drawTileDiamond(x, y, "#7ec77f", "rgba(60,120,70,0.3)");
+        } else {
+          // ground under building footprint (dark plot)
+          drawTileDiamond(x, y, "#6a6f7a", null);
+        }
+      }
+    }
+  }
+
+  function drawRoadTile(tx, ty) {
+    drawTileDiamond(tx, ty, "#3c4150", "rgba(20,22,30,0.4)");
+    // dashed center line only along continuous road direction
+    var horiz = isRoadCoord(ty);
+    var vert = isRoadCoord(tx);
+    var p = worldToScreen(tx, ty, 0);
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,221,77,0.55)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 7]);
+    if (horiz && !vert) {
+      ctx.beginPath();
+      ctx.moveTo(p.x - halfW, p.y);
+      ctx.lineTo(p.x + halfW, p.y);
+      ctx.stroke();
+    } else if (vert && !horiz) {
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y - halfH);
+      ctx.lineTo(p.x, p.y + halfH);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Building box: top face + left face + right face, with windows
+  function drawBuilding(tx, ty, h, baseColor) {
+    var topZ = h;
+    // screen anchor of the tile center at z=0
+    var b = worldToScreen(tx, ty, 0);     // base center
+    var tCen = worldToScreen(tx, ty, topZ); // top center
+
+    // diamond corner offsets (relative to center, z=0)
+    var top = { x: 0, y: -halfH };
+    var right = { x: halfW, y: 0 };
+    var bottom = { x: 0, y: halfH };
+    var left = { x: -halfW, y: 0 };
+
+    // --- soft contact shadow on ground (offset) ---
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
+    ctx.beginPath();
+    var so = halfH * 0.5;
+    ctx.moveTo(b.x + top.x + so, b.y + top.y + so * 0.5);
+    ctx.lineTo(b.x + right.x + so, b.y + right.y + so * 0.5);
+    ctx.lineTo(b.x + bottom.x + so, b.y + bottom.y + so * 0.5);
+    ctx.lineTo(b.x + left.x + so, b.y + left.y + so * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    var roof = shade(baseColor, 0.28);   // top face: light
+    var leftC = shade(baseColor, -0.10); // left face: medium
+    var rightC = shade(baseColor, -0.34);// right face: dark
+
+    // --- LEFT face (the face toward screen-bottom-left): quad base.left -> base.bottom -> top.bottom -> top.left
+    ctx.beginPath();
+    ctx.moveTo(b.x + left.x, b.y + left.y);
+    ctx.lineTo(b.x + bottom.x, b.y + bottom.y);
+    ctx.lineTo(tCen.x + bottom.x, tCen.y + bottom.y);
+    ctx.lineTo(tCen.x + left.x, tCen.y + left.y);
+    ctx.closePath();
+    ctx.fillStyle = leftC;
+    ctx.fill();
+    drawWindows(b, tCen, left, bottom, h, "left");
+
+    // --- RIGHT face: base.bottom -> base.right -> top.right -> top.bottom
+    ctx.beginPath();
+    ctx.moveTo(b.x + bottom.x, b.y + bottom.y);
+    ctx.lineTo(b.x + right.x, b.y + right.y);
+    ctx.lineTo(tCen.x + right.x, tCen.y + right.y);
+    ctx.lineTo(tCen.x + bottom.x, tCen.y + bottom.y);
+    ctx.closePath();
+    ctx.fillStyle = rightC;
+    ctx.fill();
+    drawWindows(b, tCen, bottom, right, h, "right");
+
+    // --- TOP face (roof)
+    ctx.beginPath();
+    ctx.moveTo(tCen.x + top.x, tCen.y + top.y);
+    ctx.lineTo(tCen.x + right.x, tCen.y + right.y);
+    ctx.lineTo(tCen.x + bottom.x, tCen.y + bottom.y);
+    ctx.lineTo(tCen.x + left.x, tCen.y + left.y);
+    ctx.closePath();
+    ctx.fillStyle = roof;
+    ctx.fill();
+    // roof rim highlight
+    ctx.strokeStyle = "rgba(255,255,255,0.18)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // little rooftop box for detail
+    ctx.fillStyle = shade(baseColor, 0.12);
+    var rs = halfW * 0.28;
+    ctx.beginPath();
+    ctx.moveTo(tCen.x, tCen.y - rs * 0.5);
+    ctx.lineTo(tCen.x + rs, tCen.y);
+    ctx.lineTo(tCen.x, tCen.y + rs * 0.5);
+    ctx.lineTo(tCen.x - rs, tCen.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Draw a grid of windows on a vertical face.
+  // c1->c2 are the two base corners (going along building width), face height = h.
+  function drawWindows(base, top, cA, cB, h, side) {
+    var floors = Math.max(1, Math.round(h / 16));
+    var cols = 2;
+    ctx.save();
+    var lit = side === "left" ? "rgba(255,240,180,0.85)" : "rgba(180,210,255,0.55)";
+    var dim = side === "left" ? "rgba(40,55,80,0.5)" : "rgba(25,35,55,0.55)";
+    for (var f = 0; f < floors; f++) {
+      var zf0 = (f + 0.28) / floors;
+      var zf1 = (f + 0.78) / floors;
+      for (var col = 0; col < cols; col++) {
+        var u0 = (col + 0.22) / cols;
+        var u1 = (col + 0.78) / cols;
+        // corner interpolation helper between cA and cB along base, and up to top
+        function P(u, zf) {
+          var bx = base.x + cA.x + (cB.x - cA.x) * u;
+          var by = base.y + cA.y + (cB.y - cA.y) * u;
+          var tx = top.x + cA.x + (cB.x - cA.x) * u;
+          var ty = top.y + cA.y + (cB.y - cA.y) * u;
+          return { x: bx + (tx - bx) * zf, y: by + (ty - by) * zf };
+        }
+        var a = P(u0, zf0), b = P(u1, zf0), c = P(u1, zf1), d = P(u0, zf1);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+        ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y);
+        ctx.closePath();
+        ctx.fillStyle = ((f * 7 + col * 3 + (side === "left" ? 1 : 0)) % 3 === 0) ? lit : dim;
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  // ---- props ----
+  function drawTree(tx, ty) {
+    var p = worldToScreen(tx, ty, 0);
+    // shadow
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y + 2, 12, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // trunk
+    ctx.fillStyle = "#7a4a26";
+    ctx.fillRect(p.x - 2.5, p.y - 18, 5, 18);
+    // foliage (layered circles)
+    ctx.fillStyle = "#2f8f47";
+    ctx.beginPath(); ctx.arc(p.x, p.y - 28, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#46b35f";
+    ctx.beginPath(); ctx.arc(p.x - 4, p.y - 32, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#69d17f";
+    ctx.beginPath(); ctx.arc(p.x + 3, p.y - 35, 6, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawLamp(tx, ty) {
+    var p = worldToScreen(tx, ty, 0);
+    ctx.fillStyle = "rgba(0,0,0,0.16)";
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y + 2, 6, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#4a4f5c";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(p.x, p.y - 34);
+    ctx.stroke();
+    // lamp head glow
+    var g = ctx.createRadialGradient(p.x, p.y - 36, 1, p.x, p.y - 36, 12);
+    g.addColorStop(0, "rgba(255,236,150,0.95)");
+    g.addColorStop(1, "rgba(255,236,150,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(p.x, p.y - 36, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#ffe98a";
+    ctx.beginPath(); ctx.arc(p.x, p.y - 36, 4, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawCar(prop) {
+    var p = worldToScreen(prop.tx, prop.ty, 0);
+    var col = prop.color || "#ff5d5d";
+    // shadow
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y + 3, 20, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // body as small iso box
+    var bw = 18, bd = 10, bh = 11;
+    // base diamond corners
+    var top = { x: 0, y: -bd }, right = { x: bw, y: bd * 0.0 + 6 },
+        bottom = { x: 0, y: bd * 2 }, left = { x: -bw, y: 6 };
+    // simplistic: draw left+right+top faces
+    var z = bh;
+    function bp(o) { return { x: p.x + o.x, y: p.y + o.y }; }
+    function tp(o) { return { x: p.x + o.x, y: p.y + o.y - z }; }
+    // left
+    ctx.fillStyle = shade(col, -0.18);
+    ctx.beginPath();
+    ctx.moveTo(bp(left).x, bp(left).y); ctx.lineTo(bp(bottom).x, bp(bottom).y);
+    ctx.lineTo(tp(bottom).x, tp(bottom).y); ctx.lineTo(tp(left).x, tp(left).y);
+    ctx.closePath(); ctx.fill();
+    // right
+    ctx.fillStyle = shade(col, -0.38);
+    ctx.beginPath();
+    ctx.moveTo(bp(bottom).x, bp(bottom).y); ctx.lineTo(bp(right).x, bp(right).y);
+    ctx.lineTo(tp(right).x, tp(right).y); ctx.lineTo(tp(bottom).x, tp(bottom).y);
+    ctx.closePath(); ctx.fill();
+    // top
+    ctx.fillStyle = shade(col, 0.22);
+    ctx.beginPath();
+    ctx.moveTo(tp(top).x, tp(top).y); ctx.lineTo(tp(right).x, tp(right).y);
+    ctx.lineTo(tp(bottom).x, tp(bottom).y); ctx.lineTo(tp(left).x, tp(left).y);
+    ctx.closePath(); ctx.fill();
+    // windshield
+    ctx.fillStyle = "rgba(180,220,255,0.7)";
+    ctx.beginPath();
+    ctx.moveTo(tp(top).x, tp(top).y + 2);
+    ctx.lineTo(tp(right).x - 4, tp(right).y);
+    ctx.lineTo(p.x, p.y - z + 4);
+    ctx.lineTo(tp(left).x + 4, tp(left).y);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // ---- the Taco hero ----
+  function drawTaco(tx, ty) {
+    var p = worldToScreen(tx, ty, 0);
+    var bob = Math.sin(taco.walkPhase) * (taco.moving ? 3 : 0.8);
+    var legSwing = Math.sin(taco.walkPhase) * (taco.moving ? 4 : 0);
+    var cx = p.x;
+    var groundY = p.y;
+    var bodyY = groundY - 20 + bob;
+    var dir = taco.facing;
+
+    // --- soft elliptical shadow ---
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.beginPath();
+    ctx.ellipse(cx, groundY + 2, 15, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- little feet ---
+    ctx.fillStyle = "#5a3a1c";
+    ctx.beginPath();
+    ctx.ellipse(cx - 6 + legSwing, groundY - 1, 5, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx + 6 - legSwing, groundY - 1, 5, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- arms (little stubs) ---
+    ctx.strokeStyle = "#e7b740";
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx - 12, bodyY + 6);
+    ctx.lineTo(cx - 18 - legSwing * 0.5, bodyY + 12 + bob);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 12, bodyY + 6);
+    ctx.lineTo(cx + 18 + legSwing * 0.5, bodyY + 12 - bob);
+    ctx.stroke();
+
+    // --- taco shell body (folded tortilla) ---
+    var bw = 16; // half width
+    var bh = 18; // height
+    // back tortilla (the shell)
+    ctx.fillStyle = "#f2c44d";
+    ctx.beginPath();
+    // a rounded "U" taco shape
+    ctx.moveTo(cx - bw, bodyY - bh * 0.2);
+    ctx.quadraticCurveTo(cx - bw, bodyY + bh, cx, bodyY + bh);
+    ctx.quadraticCurveTo(cx + bw, bodyY + bh, cx + bw, bodyY - bh * 0.2);
+    ctx.quadraticCurveTo(cx + bw * 0.6, bodyY - bh * 0.55, cx, bodyY - bh * 0.55);
+    ctx.quadraticCurveTo(cx - bw * 0.6, bodyY - bh * 0.55, cx - bw, bodyY - bh * 0.2);
+    ctx.closePath();
+    ctx.fill();
+    // shell shading
+    ctx.fillStyle = "rgba(180,120,30,0.25)";
+    ctx.beginPath();
+    ctx.moveTo(cx + bw, bodyY - bh * 0.2);
+    ctx.quadraticCurveTo(cx + bw, bodyY + bh, cx, bodyY + bh);
+    ctx.quadraticCurveTo(cx + bw * 0.5, bodyY + bh * 0.4, cx + bw * 0.4, bodyY - bh * 0.2);
+    ctx.closePath();
+    ctx.fill();
+
+    // --- filling (lettuce + tomato + cheese) peeking from top ---
+    ctx.fillStyle = "#5fd16f"; // lettuce
+    for (var i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.arc(cx + i * 7, bodyY - bh * 0.5, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = "#ff6b5e"; // tomato
+    ctx.beginPath(); ctx.arc(cx - 3, bodyY - bh * 0.55, 3.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 5, bodyY - bh * 0.5, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#ffe07a"; // cheese bits
+    ctx.fillRect(cx - 8, bodyY - bh * 0.42, 3, 3);
+    ctx.fillRect(cx + 2, bodyY - bh * 0.38, 3, 3);
+
+    // --- eyes ---
+    var eyeY = bodyY + 1;
+    var eo = dir * 1.5; // look slightly toward facing
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath(); ctx.arc(cx - 5 + eo, eyeY, 4.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 5 + eo, eyeY, 4.2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#222";
+    ctx.beginPath(); ctx.arc(cx - 5 + eo + dir, eyeY, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 5 + eo + dir, eyeY, 2, 0, Math.PI * 2); ctx.fill();
+    // smile
+    ctx.strokeStyle = "#7a3b1c";
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(cx + eo, eyeY + 5, 4, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.stroke();
+  }
+
+  // ============================================================
+  //  Depth-sorted scene rendering
+  // ============================================================
+  // We collect "tall" drawables (buildings, props, taco) and sort by depth key.
+  // Ground tiles are drawn first in their own iso pass (all at z=0).
+  function renderScene() {
+    var list = [];
+
+    // buildings
+    for (var y = 0; y < GRID; y++) {
+      for (var x = 0; x < GRID; x++) {
+        if (grid[y][x] === TILE_BLOCK && heightMap[y][x] > 0) {
+          list.push({
+            depth: x + y,
+            sub: 1,        // buildings drawn beneath thin props at same depth
+            tx: x, ty: y,
+            draw: (function (xx, yy) {
+              return function () { drawBuilding(xx, yy, heightMap[yy][xx], bldgColorFor(xx, yy)); };
+            })(x, y)
+          });
+        }
+      }
+    }
+
+    // props
+    for (var i = 0; i < props.length; i++) {
+      var pr = props[i];
+      list.push({
+        depth: pr.tx + pr.ty,
+        sub: 2,
+        tx: pr.tx, ty: pr.ty,
+        draw: (function (p) {
+          return function () {
+            if (p.kind === "tree") drawTree(p.tx, p.ty);
+            else if (p.kind === "lamp") drawLamp(p.tx, p.ty);
+            else if (p.kind === "car") drawCar(p);
+          };
+        })(pr)
+      });
+    }
+
+    // taco
+    list.push({
+      depth: taco.tx + taco.ty,
+      sub: 3,
+      tx: taco.tx, ty: taco.ty,
+      draw: function () { drawTaco(taco.tx, taco.ty); }
+    });
+
+    // painter's algorithm: ascending depth (tx+ty). Tie-break by sub so the
+    // taco / props sort above the building they share a tile-edge with.
+    list.sort(function (a, b) {
+      if (a.depth !== b.depth) return a.depth - b.depth;
+      return a.sub - b.sub;
+    });
+
+    // cull off-screen for perf
+    for (var k = 0; k < list.length; k++) {
+      var it = list[k];
+      var sp = worldToScreen(it.tx, it.ty, 0);
+      if (sp.x < -160 || sp.x > VW + 160 || sp.y < -260 || sp.y > VH + 160) continue;
+      it.draw();
+    }
+  }
+
+  // ============================================================
+  //  Background: sky gradient + vignette
+  // ============================================================
+  function drawSky() {
+    var g = ctx.createLinearGradient(0, 0, 0, VH);
+    g.addColorStop(0, "#9fd8ff");
+    g.addColorStop(0.45, "#bfe9ff");
+    g.addColorStop(0.75, "#e8f7e4");
+    g.addColorStop(1, "#d6ead0");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, VW, VH);
+
+    // sun glow top-right
+    var sg = ctx.createRadialGradient(VW * 0.82, VH * 0.12, 10, VW * 0.82, VH * 0.12, Math.max(VW, VH) * 0.55);
+    sg.addColorStop(0, "rgba(255,250,210,0.85)");
+    sg.addColorStop(0.4, "rgba(255,245,190,0.18)");
+    sg.addColorStop(1, "rgba(255,245,190,0)");
+    ctx.fillStyle = sg;
+    ctx.fillRect(0, 0, VW, VH);
+  }
+
+  function drawVignette() {
+    var g = ctx.createRadialGradient(VW / 2, VH / 2, Math.min(VW, VH) * 0.35,
+                                     VW / 2, VH / 2, Math.max(VW, VH) * 0.72);
+    g.addColorStop(0, "rgba(0,0,0,0)");
+    g.addColorStop(1, "rgba(10,15,30,0.34)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, VW, VH);
+  }
+
+  // ============================================================
+  //  Update / movement
+  // ============================================================
+  function update(dt) {
+    // desired movement in TILE space.
+    // Map screen directions to iso tile axes so "up" feels like up on screen.
+    // up    => (-tx, -ty) ... actually screen-up = decrease (tx+ty)
+    // We use intuitive mapping: W/up moves toward screen-top (north),
+    // which in iso is -x and -y combined for "up", but to allow free walking
+    // we map arrows to diagonal-free axes that read naturally:
+    var mx = 0, my = 0; // in tile coords
+    if (keys.up)    { mx -= 1; my -= 1; }
+    if (keys.down)  { mx += 1; my += 1; }
+    if (keys.left)  { mx -= 1; my += 1; }
+    if (keys.right) { mx += 1; my -= 1; }
+
+    var moving = (mx !== 0 || my !== 0);
+    taco.moving = moving;
+
+    if (moving) {
+      var len = Math.hypot(mx, my) || 1;
+      var step = taco.speed * dt;
+      var nx = taco.tx + (mx / len) * step;
+      var ny = taco.ty + (my / len) * step;
+
+      // collision: try full move, then axis-separated slide
+      if (walkable(nx, ny)) {
+        taco.tx = nx; taco.ty = ny;
+      } else {
+        if (walkable(nx, taco.ty)) taco.tx = nx;
+        if (walkable(taco.tx, ny)) taco.ty = ny;
+      }
+
+      // facing based on screen-x delta
+      var sdx = (mx - my);
+      if (sdx > 0.01) taco.facing = 1;
+      else if (sdx < -0.01) taco.facing = -1;
+
+      taco.walkPhase += dt * 11;
+    } else {
+      taco.walkPhase += dt * 2.4; // gentle idle bob
+    }
+
+    // camera lerp to keep taco centered
+    var tp = (taco.tx - taco.ty) * halfW;
+    var tpy = (taco.tx + taco.ty) * halfH;
+    var targetCamX = VW / 2 - tp;
+    var targetCamY = VH / 2 - tpy;
+    var lerp = 1 - Math.pow(0.0015, dt); // smooth, framerate-independent
+    cam.x += (targetCamX - cam.x) * lerp;
+    cam.y += (targetCamY - cam.y) * lerp;
+  }
+
+  // snap camera initially
+  (function () {
+    var tp = (taco.tx - taco.ty) * halfW;
+    var tpy = (taco.tx + taco.ty) * halfH;
+    cam.x = VW / 2 - tp;
+    cam.y = VH / 2 - tpy;
+  })();
+
+  // ============================================================
+  //  Main loop
+  // ============================================================
+  var last = performance.now();
+  function frame(now) {
+    var dt = (now - last) / 1000;
+    if (dt > 0.05) dt = 0.05; // clamp big gaps
+    last = now;
+
+    update(dt);
+
+    drawSky();
+    drawGround();
+    renderScene();
+    drawVignette();
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>

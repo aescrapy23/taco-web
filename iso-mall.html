@@ -1,730 +1,768 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="theme-color" content="#1a1030">
-<title>TACO CITY · MALL ISO 3D (experimento)</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>MALL · ISO 3D v2</title>
 <style>
-  html,body{margin:0;padding:0;height:100%;background:#0e0a1c;overflow:hidden;
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:none;}
-  #c{display:block;width:100vw;height:100vh;}
-  #ui{position:fixed;left:0;top:0;right:0;pointer-events:none;z-index:5;
-    padding:max(10px,env(safe-area-inset-top)) 12px 0;}
-  .title{display:inline-block;background:linear-gradient(135deg,rgba(40,18,60,.82),rgba(20,30,60,.82));
-    border:1px solid rgba(255,150,210,.35);border-radius:12px;padding:7px 13px;color:#ffd6ee;
-    font-weight:800;font-size:15px;letter-spacing:.4px;backdrop-filter:blur(6px);
-    box-shadow:0 4px 18px rgba(0,0,0,.4);}
-  .title small{display:block;font-weight:600;font-size:11px;color:#9fd6ff;letter-spacing:.2px;margin-top:2px;}
-  /* D-pad */
-  #pad{position:fixed;z-index:6;left:max(14px,env(safe-area-inset-left));bottom:max(20px,env(safe-area-inset-bottom));
-    width:170px;height:170px;display:none;touch-action:none;}
-  .dbtn{position:absolute;width:56px;height:56px;border-radius:14px;
-    background:rgba(50,30,70,.55);border:1px solid rgba(255,160,220,.4);
-    display:flex;align-items:center;justify-content:center;color:#ffd6ee;font-size:24px;font-weight:800;
-    backdrop-filter:blur(4px);box-shadow:0 3px 10px rgba(0,0,0,.35);}
-  .dbtn:active,.dbtn.on{background:rgba(255,120,190,.55);}
-  #dU{left:57px;top:0}#dD{left:57px;top:114px}#dL{left:0;top:57px}#dR{left:114px;top:57px}
-  @media (pointer:coarse){#pad{display:block}}
+  :root{
+    --pink:#ff6b8a; --cyan:#7fd6ff; --gold:#ffd84a; --taco:#f5cd46;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{width:100%;height:100%;overflow:hidden;background:#cfe6f2;}
+  body{
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    touch-action:none; -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #cv{display:block;position:fixed;inset:0;}
+  /* ---- Overlay top ---- */
+  #hud{
+    position:fixed; left:0; right:0;
+    top:env(safe-area-inset-top,0);
+    padding:10px 14px;
+    pointer-events:none; z-index:10;
+    display:flex; flex-direction:column; gap:4px;
+  }
+  #title{
+    font-weight:800; font-size:clamp(15px,3.6vw,22px); letter-spacing:.5px;
+    display:inline-block; width:max-content;
+    background:linear-gradient(90deg,#ff6b8a,#ffd84a 55%,#7fd6ff);
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 2px 2px #0003);
+  }
+  #help{
+    font-size:clamp(11px,2.6vw,13px); font-weight:600;
+    color:#234; background:#ffffffb0; backdrop-filter:blur(4px);
+    border-radius:10px; padding:5px 10px; width:max-content; max-width:92vw;
+    box-shadow:0 2px 8px #0002;
+  }
+  /* ---- D-Pad (touch only) ---- */
+  #pad{
+    position:fixed; z-index:20;
+    left:env(safe-area-inset-left,0); bottom:env(safe-area-inset-bottom,0);
+    margin:0 0 22px 18px;
+    width:168px; height:168px; display:none;
+    touch-action:none;
+  }
+  .pad-btn{
+    position:absolute; width:54px; height:54px;
+    background:#ffffffcc; border:2px solid #ffffff;
+    border-radius:14px; box-shadow:0 4px 10px #0003;
+    display:flex; align-items:center; justify-content:center;
+    font-size:24px; color:#33506b; font-weight:900;
+  }
+  .pad-btn:active{background:#ffd84a; transform:scale(.94);}
+  #pUp{left:57px; top:0;} #pDown{left:57px; bottom:0;}
+  #pLeft{left:0; top:57px;} #pRight{right:0; top:57px;}
+  body.touch #pad{display:block;}
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
-<div id="ui">
-  <div class="title">MALL · ISO 3D <span style="opacity:.6">(experimento)</span>
-    <small>WASD / flechas para caminar · arrastrá el D-PAD en celular</small>
-  </div>
+<canvas id="cv"></canvas>
+
+<div id="hud">
+  <span id="title">MALL · ISO 3D v2 (experimento)</span>
+  <span id="help">WASD / Flechas para mover el TACO · D-Pad en táctil</span>
 </div>
+
 <div id="pad">
-  <div class="dbtn" id="dU">▲</div>
-  <div class="dbtn" id="dL">◀</div>
-  <div class="dbtn" id="dR">▶</div>
-  <div class="dbtn" id="dD">▼</div>
+  <div class="pad-btn" id="pUp">▲</div>
+  <div class="pad-btn" id="pDown">▼</div>
+  <div class="pad-btn" id="pLeft">◀</div>
+  <div class="pad-btn" id="pRight">▶</div>
 </div>
+
 <script>
-"use strict";
+'use strict';
 (function(){
-// ===================== Canvas / DPR / resize =====================
-var canvas = document.getElementById("c");
-var ctx = canvas.getContext("2d");
-var W = 0, H = 0, DPR = 1;
-function resize(){
-  DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = Math.floor(window.innerWidth);
-  H = Math.floor(window.innerHeight);
-  canvas.width = Math.floor(W * DPR);
-  canvas.height = Math.floor(H * DPR);
-  canvas.style.width = W + "px";
-  canvas.style.height = H + "px";
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-}
-window.addEventListener("resize", resize);
-window.addEventListener("orientationchange", function(){ setTimeout(resize, 120); });
-resize();
+  /* =========================================================
+     MALL · ISO 3D v2  — Canvas 2D isometrico, un solo archivo
+     ========================================================= */
 
-// ===================== Iso projection =====================
-var TILE_W = 64, TILE_H = 32;       // diamante 2:1
-var GW = 14, GH = 11;               // grilla acotada (cols x filas de piso)
-// origen de pantalla (centro del atrio) — se recalcula en cada frame con la cámara
-var camX = 0, camY = 0;             // offset de cámara (px)
+  const cv  = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
 
-function worldToScreen(tx, ty, tz){
-  var sx = (tx - ty) * (TILE_W/2);
-  var sy = (tx + ty) * (TILE_H/2) - tz;
-  return { x: sx, y: sy };
-}
+  // ---- Iso constants ----
+  const tileW = 64, tileH = 32;          // diamond 2:1
+  const MAP_W = 12, MAP_H = 8;           // floor grid (tiles)
 
-// ===================== Palette (shopping) =====================
-var COL = {
-  taco:   "#f5cd46",
-  tacoSh: "#d9a52e",
-  gold:   "#ffd84a",
-  pink:   "#ff6b8a",
-  cyan:   "#7fd6ff",
-  floorA: "#f0e6f2",
-  floorB: "#dfd0ea",
-  floorEd:"#bda6cf",
-  wall:   "#3a2d52",
-  wallTop:"#52406f"
-};
-var SHOP_COLS = ["#ff6b8a","#7fd6ff","#ffd84a","#c060e0","#3fb98a","#ff9b3c"];
-
-// Locales de la pared del fondo (cartel + color)
-var SHOPS = [
-  { name:"MODA",     col:"#ff6b8a" },
-  { name:"ARCADE",   col:"#7fd6ff" },
-  { name:"CAFE",     col:"#e0a020" },
-  { name:"JUGUETES", col:"#c060e0" },
-  { name:"MUSICA",   col:"#3fb98a" },
-  { name:"TACOS",    col:"#ff9b3c" }
-];
-
-// Kioscos / estaciones (caja iso con ícono): tile pos + label + color + icon
-var STATIONS = [
-  { tx:2.0, ty:6.0, label:"SALUD",   col:"#60d050", icon:"plus"  },
-  { tx:7.0, ty:8.0, label:"PODERES", col:"#7c5cff", icon:"bolt"  },
-  { tx:11.0,ty:6.0, label:"ARCADE",  col:"#ff6b8a", icon:"pad"   }
-];
-// Plantas (macetas) y bancos: posiciones en tiles
-var PLANTS = [ {tx:1,ty:1.5},{tx:12.5,ty:1.5},{tx:1.2,ty:9.3},{tx:12.6,ty:9.3},{tx:4.6,ty:5.2},{tx:9.2,ty:3.2} ];
-var BENCHES = [ {tx:3,ty:9,r:0},{tx:10,ty:9,r:0},{tx:1.6,ty:5,r:1} ];
-
-// Escalera mecánica isométrica (de tile A hasta tile B, sube tz)
-var ESCAL = { tx:6.2, ty:1.3, len:3.4, rise:46, w:1.6 };
-
-// ===================== Player (taco) =====================
-var player = { tx: 7, ty: 6, vx:0, vy:0, face:1, phase:0, moving:false };
-var SPEED = 3.1; // tiles/seg
-
-// ===================== Input =====================
-var keys = {};
-window.addEventListener("keydown", function(e){
-  var k = e.key.toLowerCase();
-  if (["arrowup","arrowdown","arrowleft","arrowright"," "].indexOf(k) >= 0) e.preventDefault();
-  keys[k] = true;
-});
-window.addEventListener("keyup", function(e){ keys[e.key.toLowerCase()] = false; });
-
-// D-pad táctil
-var padDir = { u:false, d:false, l:false, r:false };
-function bindPad(id, prop){
-  var el = document.getElementById(id);
-  var set = function(v){ return function(ev){ ev.preventDefault(); padDir[prop] = v; el.classList.toggle("on", v); }; };
-  el.addEventListener("touchstart", set(true), {passive:false});
-  el.addEventListener("touchend",   set(false), {passive:false});
-  el.addEventListener("touchcancel",set(false), {passive:false});
-  el.addEventListener("mousedown",  set(true));
-  window.addEventListener("mouseup", set(false));
-}
-bindPad("dU","u"); bindPad("dD","d"); bindPad("dL","l"); bindPad("dR","r");
-
-function readInput(){
-  var ax = 0, ay = 0;
-  if (keys["w"]||keys["arrowup"]||padDir.u){ ax -= 1; ay -= 1; }
-  if (keys["s"]||keys["arrowdown"]||padDir.d){ ax += 1; ay += 1; }
-  if (keys["a"]||keys["arrowleft"]||padDir.l){ ax -= 1; ay += 1; }
-  if (keys["d"]||keys["arrowright"]||padDir.r){ ax += 1; ay -= 1; }
-  // normalizar diagonal en espacio de tiles
-  var m = Math.hypot(ax, ay);
-  if (m > 0){ ax /= m; ay /= m; }
-  return { x: ax, y: ay };
-}
-
-// ===================== Collision (mall bounds + objetos) =====================
-function blocked(tx, ty){
-  // bordes del piso (deja un margen; la pared del fondo está en ty<0.3)
-  if (tx < 0.35 || tx > GW-0.35) return true;
-  if (ty < 0.45 || ty > GH-0.35) return true;
-  // estaciones (kioscos) — radio aprox
-  for (var i=0;i<STATIONS.length;i++){
-    var s = STATIONS[i];
-    if (Math.abs(tx - s.tx) < 0.95 && Math.abs(ty - s.ty) < 0.95) return true;
+  // Projection: tx,ty in tile units, tz in pixels of height.
+  function worldToScreen(tx, ty, tz){
+    return {
+      x: (tx - ty) * (tileW / 2),
+      y: (tx + ty) * (tileH / 2) - (tz || 0)
+    };
   }
-  // base de la escalera (no atravesar)
-  if (tx > ESCAL.tx-0.9 && tx < ESCAL.tx+ESCAL.w+0.4 && ty < ESCAL.ty+0.6) return true;
-  // bancos
-  for (var b=0;b<BENCHES.length;b++){
-    var bn = BENCHES[b];
-    if (Math.abs(tx - bn.tx) < 0.7 && Math.abs(ty - bn.ty) < 0.5) return true;
+
+  // ---- Camera / DPR ----
+  let DPR = 1, VW = 0, VH = 0;
+  let camX = 0, camY = 0;                // screen-space camera offset (centre of mall)
+
+  function resize(){
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    VW = window.innerWidth;
+    VH = window.innerHeight;
+    cv.width  = Math.round(VW * DPR);
+    cv.height = Math.round(VH * DPR);
+    cv.style.width  = VW + 'px';
+    cv.style.height = VH + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    // centre of floor in world tiles:
+    const c = worldToScreen(MAP_W / 2, MAP_H / 2, 0);
+    camX = VW / 2 - c.x;
+    camY = VH / 2 - c.y + 30;            // nudge down so mall sits nicely
   }
-  return false;
-}
+  window.addEventListener('resize', resize, {passive:true});
 
-// ===================== NPCs =====================
-var NPC_COLS = ["#ff8fb0","#8fd0ff","#ffd66a","#b48cff","#7ee0a8","#ff9b6a"];
-var npcs = [];
-(function initNpcs(){
-  for (var i=0;i<6;i++){
-    npcs.push({
-      tx: 2 + Math.random()*(GW-4),
-      ty: 3 + Math.random()*(GH-4),
-      col: NPC_COLS[i % NPC_COLS.length],
-      tgtx: 2 + Math.random()*(GW-4),
-      tgty: 3 + Math.random()*(GH-4),
-      phase: Math.random()*7,
-      spd: 0.7 + Math.random()*0.6
-    });
+  // helper: project a world point to final canvas pixels (camera applied)
+  function P(tx, ty, tz){
+    const s = worldToScreen(tx, ty, tz);
+    return { x: s.x + camX, y: s.y + camY };
   }
-})();
-function updateNpcs(dt){
-  for (var i=0;i<npcs.length;i++){
-    var n = npcs[i];
-    var dx = n.tgtx - n.tx, dy = n.tgty - n.ty;
-    var d = Math.hypot(dx, dy);
-    if (d < 0.25){
-      n.tgtx = 1.5 + Math.random()*(GW-3);
-      n.tgty = 3 + Math.random()*(GH-4);
-    } else {
-      var ux = dx/d, uy = dy/d;
-      var ntx = n.tx + ux * n.spd * dt;
-      var nty = n.ty + uy * n.spd * dt;
-      if (!blocked(ntx, n.ty)) n.tx = ntx; else n.tgtx = n.tx;
-      if (!blocked(n.tx, nty)) n.ty = nty; else n.tgty = n.ty;
-      n.phase += dt * 9;
-    }
+
+  // ---- Color utils ----
+  function shade(hex, f){
+    // f>1 lighten, f<1 darken
+    const n = parseInt(hex.slice(1), 16);
+    let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    r = Math.max(0, Math.min(255, Math.round(r * f)));
+    g = Math.max(0, Math.min(255, Math.round(g * f)));
+    b = Math.max(0, Math.min(255, Math.round(b * f)));
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
   }
-}
 
-// ===================== Time / loop =====================
-var last = performance.now();
-var T = 0; // tiempo global (para anim de escalera, luces)
-
-function update(dt){
-  T += dt;
-  // jugador
-  var inp = readInput();
-  player.moving = (inp.x !== 0 || inp.y !== 0);
-  if (player.moving){
-    if (inp.x > 0.01) player.face = 1; else if (inp.x < -0.01) player.face = -1;
-    var ntx = player.tx + inp.x * SPEED * dt;
-    var nty = player.ty + inp.y * SPEED * dt;
-    if (!blocked(ntx, player.ty)) player.tx = ntx;
-    if (!blocked(player.tx, nty)) player.ty = nty;
-    player.phase += dt * 10;
-  } else {
-    player.phase *= 0.9;
+  function roundRect(x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,   x+w,y+h, r);
+    ctx.arcTo(x+w,y+h, x,  y+h, r);
+    ctx.arcTo(x,  y+h, x,  y,   r);
+    ctx.arcTo(x,  y,   x+w,y,   r);
+    ctx.closePath();
   }
-  updateNpcs(dt);
-  // cámara: leve seguimiento del taco, centrada en pantalla
-  var ps = worldToScreen(player.tx, player.ty, 0);
-  var tcx = W/2 - ps.x;
-  var tcy = H*0.56 - ps.y;
-  camX += (tcx - camX) * Math.min(1, dt * 4);
-  camY += (tcy - camY) * Math.min(1, dt * 4);
-}
 
-// ===================== Iso helpers (relative to camera) =====================
-function S(tx, ty, tz){ var p = worldToScreen(tx, ty, tz); return { x: p.x + camX, y: p.y + camY }; }
+  function lerp(a,b,t){ return { x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t }; }
 
-// dibuja una cara (lista de puntos {x,y}) con color
-function face(pts, fill, stroke){
-  ctx.beginPath();
-  ctx.moveTo(pts[0].x, pts[0].y);
-  for (var i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
-  ctx.closePath();
-  ctx.fillStyle = fill;
-  ctx.fill();
-  if (stroke){ ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke(); }
-}
-
-// sombrear un color hex multiplicando
-function shade(hex, f){
-  var h = hex.replace("#","");
-  if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
-  var r = parseInt(h.substr(0,2),16), g = parseInt(h.substr(2,2),16), b = parseInt(h.substr(4,2),16);
-  r = Math.max(0,Math.min(255, Math.round(r*f)));
-  g = Math.max(0,Math.min(255, Math.round(g*f)));
-  b = Math.max(0,Math.min(255, Math.round(b*f)));
-  return "rgb("+r+","+g+","+b+")";
-}
-
-// Caja isométrica extruida: base en (tx,ty) tamaño (wx,wy) en tiles, altura h px, color top.
-// Devuelve nada; dibuja 3 caras sombreadas (top claro, izq media, der oscura).
-function isoBox(tx, ty, wx, wy, base, h, topCol){
-  var x0=tx, x1=tx+wx, y0=ty, y1=ty+wy;
-  // 4 esquinas de la cara superior (en z = base+h) y de la base (z = base)
-  var Tn = S(x0,y0, base+h), Te = S(x1,y0, base+h), Ts = S(x1,y1, base+h), Tw = S(x0,y1, base+h);
-  var Be = S(x1,y0, base),   Bs = S(x1,y1, base),   Bw = S(x0,y1, base);
-  // cara izquierda (oeste-sur)  -> mira al frente-izq (más clara que la derecha)
-  face([Tw, Ts, Bs, Bw], shade(topCol, 0.74), shade(topCol,0.62));
-  // cara derecha (este-sur) -> frente-derecho (la más oscura)
-  face([Ts, Te, Be, Bs], shade(topCol, 0.55), shade(topCol,0.45));
-  // cara superior
-  face([Tn, Te, Ts, Tw], topCol, shade(topCol,0.85));
-  return { Tn:Tn, Te:Te, Ts:Ts, Tw:Tw };
-}
-
-// ===================== Static draws =====================
-function drawFloor(){
-  // baldosas diamante con brillo + reflejos suaves
-  for (var ty=0; ty<GH; ty++){
-    for (var tx=0; tx<GW; tx++){
-      var a = S(tx, ty, 0), b = S(tx+1, ty, 0), c = S(tx+1, ty+1, 0), d = S(tx, ty+1, 0);
-      var checker = ((tx+ty)&1);
-      ctx.beginPath();
-      ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.lineTo(c.x,c.y); ctx.lineTo(d.x,d.y); ctx.closePath();
-      ctx.fillStyle = checker ? COL.floorA : COL.floorB;
-      ctx.fill();
-      ctx.strokeStyle = COL.floorEd; ctx.lineWidth = 1; ctx.stroke();
-      // brillo diagonal (reflejo del atrio) en algunas baldosas
-      if (checker){
+  /* =========================================================
+     FLOOR
+     ========================================================= */
+  function drawFloor(){
+    for (let ty = 0; ty < MAP_H; ty++){
+      for (let tx = 0; tx < MAP_W; tx++){
+        const a = P(tx,   ty,   0);   // top
+        const b = P(tx+1, ty,   0);   // right
+        const c = P(tx+1, ty+1, 0);   // bottom
+        const d = P(tx,   ty+1, 0);   // left
+        const light = ((tx + ty) % 2 === 0);
         ctx.beginPath();
-        ctx.moveTo(a.x,a.y);
-        ctx.lineTo((a.x+b.x)/2,(a.y+b.y)/2);
-        ctx.lineTo((a.x+d.x)/2,(a.y+d.y)/2);
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.lineTo(c.x, c.y);
+        ctx.lineTo(d.x, d.y);
         ctx.closePath();
-        ctx.fillStyle = "rgba(255,255,255,0.12)";
+        // subtle vertical gradient sheen on each tile
+        const g = ctx.createLinearGradient(a.x, a.y, c.x, c.y);
+        if (light){ g.addColorStop(0,'#f3eee4'); g.addColorStop(1,'#e2dccd'); }
+        else       { g.addColorStop(0,'#e7e1d4'); g.addColorStop(1,'#d4ccbb'); }
+        ctx.fillStyle = g;
         ctx.fill();
+        // sutile junta
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(120,110,90,.22)';
+        ctx.stroke();
       }
     }
-  }
-  // banda central de reflejo (claraboya sobre el piso)
-  var g0 = S(GW*0.5-1.2, 0, 0), g1 = S(GW*0.5-1.2, GH, 0);
-  var grd = ctx.createLinearGradient(g0.x, g0.y, g1.x, g1.y);
-  grd.addColorStop(0,"rgba(180,220,255,0.0)");
-  grd.addColorStop(0.5,"rgba(190,230,255,0.10)");
-  grd.addColorStop(1,"rgba(180,220,255,0.0)");
-  ctx.save();
-  ctx.beginPath();
-  var c0=S(GW*0.46,0,0), c1=S(GW*0.46+1.1,0,0), c2=S(GW*0.46+1.1,GH,0), c3=S(GW*0.46,GH,0);
-  ctx.moveTo(c0.x,c0.y); ctx.lineTo(c1.x,c1.y); ctx.lineTo(c2.x,c2.y); ctx.lineTo(c3.x,c3.y); ctx.closePath();
-  ctx.fillStyle = grd; ctx.fill();
-  ctx.restore();
-}
-
-// Pared del fondo (ty = 0 line) con vidrieras de locales
-function drawBackWall(){
-  var wallH = 130;
-  // muro base (entre tx 0..GW en ty=0)
-  var Aw = S(0,0, wallH), Bw = S(GW,0, wallH), Be = S(GW,0,0), Ae = S(0,0,0);
-  // cara frontal del muro
-  face([Aw, Bw, Be, Ae], COL.wall, shade(COL.wall,0.8));
-  // cornisa superior (faja clara)
-  var corn = 14;
-  var Ct1=S(0,0,wallH), Ct2=S(GW,0,wallH), Ct3=S(GW,0,wallH-corn), Ct4=S(0,0,wallH-corn);
-  face([Ct1,Ct2,Ct3,Ct4], COL.wallTop, shade(COL.wallTop,0.85));
-
-  // Vidrieras: cada local ocupa ~2 tiles de ancho sobre la pared
-  var nShops = SHOPS.length;
-  var span = GW / nShops;
-  for (var i=0;i<nShops;i++){
-    var sh = SHOPS[i];
-    var x0 = i*span + 0.18;
-    var x1 = (i+1)*span - 0.18;
-    drawStoreFront(x0, x1, sh);
-  }
-}
-
-// una vidriera (caja iso extruida hacia el frente con vidrio + toldo + cartel)
-function drawStoreFront(x0, x1, sh){
-  var glassTop = 96, glassBot = 6;
-  var depth = 0.55; // sobresale hacia adelante (ty positivo)
-  // marco/extrusión: pequeña caja desde la pared hacia el frente
-  var pTopOut = S(x0, depth, glassTop), pTopOut2 = S(x1, depth, glassTop);
-  var pTopIn  = S(x0, 0, glassTop),     pTopIn2  = S(x1, 0, glassTop);
-  var pBotOut = S(x0, depth, glassBot), pBotOut2 = S(x1, depth, glassBot);
-  // cara superior del marco (techo del local, sombreada)
-  face([pTopIn, pTopIn2, pTopOut2, pTopOut], shade(sh.col,0.5));
-  // pilastra lateral izquierda (cara que da volumen)
-  face([pTopIn, pTopOut, pBotOut, S(x0,0,glassBot)], shade(sh.col,0.42));
-
-  // VIDRIO iluminado (cara frontal del local, en ty=depth)
-  var gA=S(x0,depth,glassTop), gB=S(x1,depth,glassTop), gC=S(x1,depth,glassBot), gD=S(x0,depth,glassBot);
-  var grd = ctx.createLinearGradient(gA.x,gA.y,gD.x,gD.y);
-  grd.addColorStop(0, "rgba(255,255,255,0.85)");
-  grd.addColorStop(0.4, shade(sh.col,1.0));
-  grd.addColorStop(1, shade(sh.col,0.7));
-  ctx.beginPath();
-  ctx.moveTo(gA.x,gA.y); ctx.lineTo(gB.x,gB.y); ctx.lineTo(gC.x,gC.y); ctx.lineTo(gD.x,gD.y); ctx.closePath();
-  ctx.fillStyle = grd; ctx.fill();
-  // reflejo diagonal en el vidrio
-  ctx.save();
-  ctx.clip();
-  ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 6;
-  ctx.beginPath(); ctx.moveTo(gA.x+10,gA.y+8); ctx.lineTo(gA.x+40,gA.y+70); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(gA.x+30,gA.y+6); ctx.lineTo(gA.x+60,gA.y+60); ctx.stroke();
-  ctx.restore();
-  // marco del vidrio
-  ctx.strokeStyle = shade(sh.col,0.45); ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(gA.x,gA.y); ctx.lineTo(gB.x,gB.y); ctx.lineTo(gC.x,gC.y); ctx.lineTo(gD.x,gD.y); ctx.closePath(); ctx.stroke();
-
-  // TOLDO (a rayas) sobre el vidrio
-  var awnTop = glassTop+18, awnBot = glassTop+2, awnOut = depth+0.45;
-  var aA=S(x0,awnOut,awnBot), aB=S(x1,awnOut,awnBot), aTi=S(x1,depth,awnTop), aTi2=S(x0,depth,awnTop);
-  ctx.beginPath();
-  ctx.moveTo(aTi2.x,aTi2.y); ctx.lineTo(aTi.x,aTi.y); ctx.lineTo(aB.x,aB.y); ctx.lineTo(aA.x,aA.y); ctx.closePath();
-  ctx.fillStyle = shade(sh.col,0.95); ctx.fill();
-  // rayas del toldo
-  ctx.save(); ctx.clip();
-  var stripes = 7;
-  for (var s=0;s<stripes;s+=2){
-    var t0 = s/stripes, t1 = (s+1)/stripes;
-    function lerp(p,q,t){ return {x:p.x+(q.x-p.x)*t, y:p.y+(q.y-p.y)*t}; }
-    var topL=lerp(aTi2,aTi,t0), topR=lerp(aTi2,aTi,t1);
-    var botL=lerp(aA,aB,t0), botR=lerp(aA,aB,t1);
+    // glossy highlight band (skylight reflection on floor)
+    const t = P(MAP_W*0.30, MAP_H*0.30, 0);
+    const r = P(MAP_W*0.85, MAP_H*0.85, 0);
+    const gloss = ctx.createLinearGradient(t.x, t.y, r.x, r.y);
+    gloss.addColorStop(0,'rgba(255,255,255,.0)');
+    gloss.addColorStop(.5,'rgba(255,255,255,.22)');
+    gloss.addColorStop(1,'rgba(255,255,255,.0)');
+    ctx.save();
+    const a = P(0,0,0), b = P(MAP_W,0,0), c = P(MAP_W,MAP_H,0), d = P(0,MAP_H,0);
     ctx.beginPath();
-    ctx.moveTo(topL.x,topL.y); ctx.lineTo(topR.x,topR.y); ctx.lineTo(botR.x,botR.y); ctx.lineTo(botL.x,botL.y); ctx.closePath();
-    ctx.fillStyle = "rgba(255,255,255,0.9)"; ctx.fill();
+    ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.lineTo(c.x,c.y); ctx.lineTo(d.x,d.y);
+    ctx.closePath(); ctx.clip();
+    ctx.fillStyle = gloss; ctx.fillRect(0,0,VW,VH);
+    ctx.restore();
   }
-  ctx.restore();
-  // borde festoneado del toldo
-  ctx.strokeStyle = "rgba(0,0,0,0.18)"; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(aA.x,aA.y); ctx.lineTo(aB.x,aB.y); ctx.stroke();
 
-  // CARTEL con nombre (sobre el toldo)
-  var sgn = S((x0+x1)/2, depth, glassTop+34);
-  ctx.font = "800 " + fit(sh.name, (x1-x0)*TILE_W*0.9, 18) + "px sans-serif";
-  ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillStyle = "rgba(0,0,0,0.35)";
-  ctx.fillText(sh.name, sgn.x+1, sgn.y+1);
-  ctx.fillStyle = "#fff";
-  ctx.shadowColor = sh.col; ctx.shadowBlur = 10;
-  ctx.fillText(sh.name, sgn.x, sgn.y);
-  ctx.shadowBlur = 0;
-}
-function fit(txt, maxW, size){
-  ctx.font = "800 " + size + "px sans-serif";
-  while (size > 8 && ctx.measureText(txt).width > maxW){ size--; ctx.font = "800 "+size+"px sans-serif"; }
-  return size;
-}
+  /* =========================================================
+     ISO BOX primitive (3 faces) at tile footprint
+     base at (tx,ty) spanning (w,d) tiles, height h px
+     ========================================================= */
+  function isoBox(tx, ty, w, d, h, topCol, frontCol, sideCol){
+    // 4 base corners
+    const bN = P(tx,     ty,     0);  // back/top corner
+    const bE = P(tx+w,   ty,     0);  // right
+    const bS = P(tx+w,   ty+d,   0);  // front/bottom
+    const bW = P(tx,     ty+d,   0);  // left
+    // top corners (raised)
+    const tN = P(tx,     ty,     h);
+    const tE = P(tx+w,   ty,     h);
+    const tS = P(tx+w,   ty+d,   h);
+    const tW = P(tx,     ty+d,   h);
 
-// ===================== Escalera mecánica iso =====================
-function drawEscalator(){
-  var e = ESCAL;
-  var bx = e.tx, by = e.ty, w = e.w, len = e.len, rise = e.rise;
-  // dirección de subida: hacia -ty (al fondo) + sube tz
-  var topY = by, botY = by + len;
-  // costado izquierdo (rampa lateral - triángulo iso)
-  function P(tx,ty,tz){ return S(tx,ty,tz); }
-  // base de la rampa (en piso) y top (elevado al fondo)
-  var L0 = P(bx, botY, 0), L1 = P(bx, topY, rise);          // borde izq: base->top
-  var R0 = P(bx+w, botY, 0), R1 = P(bx+w, topY, rise);      // borde der
-  // baranda/pasamanos: lados elevados
-  // cara lateral izquierda (panel inclinado)
-  face([ L0, L1, P(bx, topY, rise-8), P(bx, botY, -8) ], shade("#cfd6e6",0.7), "#9aa3bc");
-  // superficie de escalones (rampa principal): la pintamos como franjas que se mueven
-  // construimos el cuadrilátero del piso de la escalera
-  var steps = 9;
-  var move = (T * 1.6) % 1; // desplazamiento de escalones [0..1)
-  for (var i=0;i<steps;i++){
-    var t0 = (i + move)/steps;
-    var t1 = (i + 1 + move)/steps;
-    if (t1 > 1) continue;
-    function lerpT(t){ return { ty: botY + (topY-botY)*t, tz: rise*t }; }
-    var s0 = lerpT(t0), s1 = lerpT(t1);
-    var a = P(bx, s0.ty, s0.tz), b = P(bx+w, s0.ty, s0.tz);
-    var c = P(bx+w, s1.ty, s1.tz), d = P(bx, s1.ty, s1.tz);
-    // huella del escalón
+    // LEFT face (W-S) -> the visible side wall (medium)
     ctx.beginPath();
-    ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.lineTo(c.x,c.y); ctx.lineTo(d.x,d.y); ctx.closePath();
-    ctx.fillStyle = (i&1) ? "#c4ccdd" : "#aab3c8";
-    ctx.fill();
-    // contrahuella (frente del escalón, da el efecto 3D de peldaño)
-    var rb0 = P(bx, s1.ty, s1.tz), rb1 = P(bx+w, s1.ty, s1.tz);
-    var rf0 = P(bx, s1.ty, s1.tz-rise/steps*0.6), rf1 = P(bx+w, s1.ty, s1.tz-rise/steps*0.6);
+    ctx.moveTo(bW.x,bW.y); ctx.lineTo(bS.x,bS.y); ctx.lineTo(tS.x,tS.y); ctx.lineTo(tW.x,tW.y);
+    ctx.closePath(); ctx.fillStyle = sideCol; ctx.fill();
+
+    // RIGHT face (S-E) -> front (light)  [facing camera-ish]
     ctx.beginPath();
-    ctx.moveTo(rb0.x,rb0.y); ctx.lineTo(rb1.x,rb1.y); ctx.lineTo(rf1.x,rf1.y); ctx.lineTo(rf0.x,rf0.y); ctx.closePath();
-    ctx.fillStyle = "#7f879c"; ctx.fill();
+    ctx.moveTo(bS.x,bS.y); ctx.lineTo(bE.x,bE.y); ctx.lineTo(tE.x,tE.y); ctx.lineTo(tS.x,tS.y);
+    ctx.closePath(); ctx.fillStyle = frontCol; ctx.fill();
+
+    // TOP face
+    ctx.beginPath();
+    ctx.moveTo(tN.x,tN.y); ctx.lineTo(tE.x,tE.y); ctx.lineTo(tS.x,tS.y); ctx.lineTo(tW.x,tW.y);
+    ctx.closePath(); ctx.fillStyle = topCol; ctx.fill();
+
+    return { bN,bE,bS,bW, tN,tE,tS,tW };
   }
-  // costado derecho (panel)
-  face([ R0, R1, P(bx+w, topY, rise-8), P(bx+w, botY, -8) ], shade("#cfd6e6",0.55), "#828aa3");
-  // PASAMANOS (handrails) — bandas que también se mueven (flechas)
-  drawHandrail(bx, topY, botY, rise, move, "#2b2f44");
-  drawHandrail(bx+w, topY, botY, rise, move, "#2b2f44");
-  // flecha de subida iluminada al pie
-  var arr = P(bx+w/2, botY+0.1, 12);
-  ctx.fillStyle = "#7fffa8";
-  ctx.font = "800 20px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
-  ctx.save(); ctx.shadowColor="#3fffa0"; ctx.shadowBlur=12;
-  ctx.fillText("▲", arr.x, arr.y - (Math.sin(T*4)*3));
-  ctx.restore();
-}
-function drawHandrail(tx, topY, botY, rise, move, col){
-  var hH = 26; // altura del pasamanos sobre escalones
-  var a = S(tx, botY, hH), b = S(tx, topY, rise+hH);
-  ctx.strokeStyle = col; ctx.lineWidth = 8; ctx.lineCap = "round";
-  ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
-  // banda superior con marcas que se mueven (sensación de movimiento)
-  ctx.strokeStyle = "rgba(255,255,255,0.55)"; ctx.lineWidth = 2;
-  for (var i=0;i<6;i++){
-    var t = ((i + move)/6);
-    var p = S(tx, botY + (topY-botY)*t, rise*t + hH);
-    ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, 7); ctx.stroke();
-  }
-}
 
-// ===================== Plantas / bancos =====================
-function drawPlant(tx, ty){
-  var base = S(tx, ty, 0);
-  // maceta (caja iso pequeña)
-  isoBox(tx-0.18, ty-0.18, 0.36, 0.36, 0, 16, "#b06a3a");
-  var pot = S(tx, ty, 18);
-  // follaje (varios círculos verdes)
-  var greens = ["#3fae5a","#4fc46a","#2f9a4a"];
-  for (var i=0;i<7;i++){
-    var a = i/7 * 6.28;
-    var rr = 12 + (i%2)*5;
-    ctx.beginPath();
-    ctx.arc(pot.x + Math.cos(a)*10, pot.y - 14 + Math.sin(a)*8, rr*0.6, 0, 7);
-    ctx.fillStyle = greens[i%3]; ctx.fill();
-  }
-  ctx.beginPath(); ctx.arc(pot.x, pot.y-20, 12, 0, 7); ctx.fillStyle="#5ad07a"; ctx.fill();
-}
-function drawBench(tx, ty){
-  // banco: caja baja + respaldo (cyan/madera)
-  isoBox(tx-0.5, ty-0.22, 1.0, 0.44, 0, 12, "#9a6a44"); // asiento
-  // patas/sombra implícita por isoBox; respaldo
-  isoBox(tx-0.5, ty-0.22, 1.0, 0.12, 12, 14, "#7fd6ff");
-}
+  /* =========================================================
+     STORES along the north wall (back row)
+     ========================================================= */
+  const STORES = [
+    { name:'MODA',     awn:'#ff6b8a', tx:0.2 },
+    { name:'ARCADE',   awn:'#7fd6ff', tx:2.2 },
+    { name:'CAFE',     awn:'#c98a4b', tx:4.2 },
+    { name:'JUGUETES', awn:'#ffd84a', tx:6.2 },
+    { name:'TECH',     awn:'#9b8cff', tx:8.2 },
+    { name:'HELADOS',  awn:'#7be0b0', tx:10.2 }
+  ];
+  const STORE_W = 1.8, STORE_D = 0.9, STORE_H = 150;
 
-// ===================== Kioscos / estaciones =====================
-function drawStation(s){
-  var box = isoBox(s.tx-0.6, s.ty-0.6, 1.2, 1.2, 0, 54, s.col);
-  // mostrador superior (tapa clara)
-  // letrero flotante con label
-  var top = S(s.tx, s.ty, 78);
-  // poste del letrero
-  var base = S(s.tx, s.ty, 54);
-  ctx.strokeStyle = shade(s.col,0.5); ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.moveTo(base.x, base.y); ctx.lineTo(top.x, top.y+10); ctx.stroke();
-  // placa
-  ctx.font = "800 13px sans-serif";
-  var tw = ctx.measureText(s.label).width + 18;
-  ctx.fillStyle = shade(s.col,0.55);
-  rrect(top.x - tw/2, top.y - 4, tw, 22, 6); ctx.fill();
-  ctx.fillStyle = "#fff"; ctx.textAlign="center"; ctx.textBaseline="middle";
-  ctx.fillText(s.label, top.x, top.y + 7);
-  // ícono sobre la cara superior
-  var ic = S(s.tx, s.ty, 60);
-  drawIcon(s.icon, ic.x, ic.y, 14, "#fff");
-}
-function rrect(x,y,w,h,r){
-  ctx.beginPath();
-  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
-  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
-}
-function drawIcon(kind, x, y, r, col){
-  ctx.fillStyle = col;
-  if (kind === "plus"){
-    ctx.fillRect(x-r*0.3, y-r, r*0.6, r*2);
-    ctx.fillRect(x-r, y-r*0.3, r*2, r*0.6);
-  } else if (kind === "bolt"){
+  function drawStore(s){
+    const tx = s.tx, ty = -STORE_D;   // sit just behind the floor's north edge
+    // store body box
+    isoBox(tx, ty, STORE_W, STORE_D, STORE_H,
+           '#fbf7ef', shade('#e9e2d4',1.02), shade('#cdc4b2',1.0));
+
+    // --- glass storefront (on the front/right face) glowing ---
+    const f0  = P(tx+STORE_W, ty+STORE_D, 0);
+    const f1  = P(tx,         ty+STORE_D, 0);
+    const f0t = P(tx+STORE_W, ty+STORE_D, STORE_H*0.62);
+    const f1t = P(tx,         ty+STORE_D, STORE_H*0.62);
+    const g0  = lerp(f1,f0,0.10),  g1  = lerp(f1,f0,0.90);
+    const g0t = lerp(f1t,f0t,0.10),g1t = lerp(f1t,f0t,0.90);
+    const top0 = lerp(g0,g0t,0.12), top1 = lerp(g1,g1t,0.12);
     ctx.beginPath();
-    ctx.moveTo(x+r*0.2,y-r); ctx.lineTo(x-r*0.5,y+r*0.1); ctx.lineTo(x-r*0.05,y+r*0.1);
-    ctx.lineTo(x-r*0.2,y+r); ctx.lineTo(x+r*0.5,y-r*0.1); ctx.lineTo(x+r*0.05,y-r*0.1);
+    ctx.moveTo(top0.x, top0.y);
+    ctx.lineTo(top1.x, top1.y);
+    ctx.lineTo(g1t.x,  g1t.y);
+    ctx.lineTo(g0t.x,  g0t.y);
+    ctx.closePath();
+    const gg = ctx.createLinearGradient(top0.x, top0.y, g0t.x, g0t.y);
+    gg.addColorStop(0, '#fff7d6');
+    gg.addColorStop(.5,'#ffe9a8');
+    gg.addColorStop(1, '#bfe9ff');
+    ctx.fillStyle = gg; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth=1.5; ctx.stroke();
+
+    // --- striped awning (toldo) over the glass ---
+    const ay = STORE_H*0.66;
+    const at0 = P(tx+STORE_W*0.04, ty+STORE_D,      ay);
+    const at1 = P(tx+STORE_W*0.96, ty+STORE_D,      ay);
+    const af0 = P(tx+STORE_W*0.04, ty+STORE_D+0.55, ay-14);
+    const af1 = P(tx+STORE_W*0.96, ty+STORE_D+0.55, ay-14);
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(at0.x,at0.y); ctx.lineTo(at1.x,at1.y);
+    ctx.lineTo(af1.x,af1.y); ctx.lineTo(af0.x,af0.y); ctx.closePath();
+    ctx.clip();
+    const STRIPES = 8;
+    for (let i=0;i<STRIPES;i++){
+      const t0=i/STRIPES, t1=(i+1)/STRIPES;
+      const p0=lerp(at0,at1,t0), p1=lerp(at0,at1,t1);
+      const q0=lerp(af0,af1,t0), q1=lerp(af0,af1,t1);
+      ctx.beginPath();
+      ctx.moveTo(p0.x,p0.y); ctx.lineTo(p1.x,p1.y);
+      ctx.lineTo(q1.x,q1.y); ctx.lineTo(q0.x,q0.y); ctx.closePath();
+      ctx.fillStyle = (i%2===0)? s.awn : '#fff';
+      ctx.fill();
+    }
+    ctx.restore();
+    // front edge of awning
+    ctx.beginPath();
+    ctx.moveTo(af0.x,af0.y); ctx.lineTo(af1.x,af1.y);
+    ctx.lineWidth=3; ctx.strokeStyle=shade(s.awn,0.8); ctx.stroke();
+
+    // --- sign with store name ---
+    const sg = P(tx+STORE_W/2, ty+STORE_D, STORE_H*0.86);
+    const sw = STORE_W*tileW*0.92, sh = 24;
+    ctx.save();
+    ctx.translate(sg.x, sg.y);
+    roundRect(-sw/2, -sh/2, sw, sh, 6);
+    ctx.fillStyle = '#2a3550'; ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle = s.awn; ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = '700 ' + Math.max(11, Math.min(16, sw/ s.name.length*1.5)) + 'px system-ui';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(s.name, 0, 1);
+    ctx.restore();
+  }
+
+  /* =========================================================
+     KIOSKS — iso boxes with icon + sign
+     ========================================================= */
+  const KIOSKS = [
+    { kind:'health', tx:2.5,  ty:3.0, col:'#7be0b0', label:'SALUD'   },
+    { kind:'power',  tx:5.5,  ty:5.4, col:'#7fd6ff', label:'PODERES' },
+    { kind:'food',   tx:8.6,  ty:2.6, col:'#ff6b8a', label:'COMIDA'  }
+  ];
+  const K_W = 1.0, K_D = 1.0, K_H = 70;
+
+  function drawKiosk(k){
+    isoBox(k.tx, k.ty, K_W, K_D, K_H,
+           shade(k.col,1.18), shade(k.col,0.92), shade(k.col,0.72));
+    // top icon panel
+    const top = P(k.tx+K_W/2, k.ty+K_D/2, K_H);
+    ctx.save();
+    ctx.translate(top.x, top.y);
+    // white roof disc
+    ctx.beginPath(); ctx.ellipse(0,-2,26,14,0,0,Math.PI*2);
+    ctx.fillStyle='#ffffff'; ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle=shade(k.col,0.7); ctx.stroke();
+    // icon
+    ctx.translate(0,-3);
+    if (k.kind==='health'){
+      ctx.fillStyle='#1f9d6b';
+      ctx.fillRect(-4,-11,8,22); ctx.fillRect(-11,-4,22,8);
+    } else if (k.kind==='power'){
+      ctx.fillStyle='#2e9ad6';
+      ctx.beginPath();
+      ctx.moveTo(0,-12); ctx.lineTo(11,-6); ctx.lineTo(9,8);
+      ctx.lineTo(0,13); ctx.lineTo(-9,8); ctx.lineTo(-11,-6); ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle='#fff'; ctx.font='900 13px system-ui';
+      ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('★',0,1);
+    } else {
+      // burger
+      ctx.fillStyle='#d9a441';
+      ctx.beginPath(); ctx.ellipse(0,-6,12,7,0,Math.PI,0); ctx.fill();
+      ctx.fillStyle='#6fbf73'; ctx.fillRect(-12,-1,24,3);
+      ctx.fillStyle='#a8522a'; ctx.fillRect(-11,2,22,4);
+      ctx.fillStyle='#e2b85a';
+      ctx.beginPath(); ctx.ellipse(0,8,12,5,0,0,Math.PI); ctx.fill();
+    }
+    ctx.restore();
+    // sign
+    const sg = P(k.tx+K_W/2, k.ty+K_D/2, K_H+34);
+    ctx.save(); ctx.translate(sg.x,sg.y);
+    const w = k.label.length*9+18;
+    roundRect(-w/2,-11,w,22,6); ctx.fillStyle='#2a3550'; ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle=k.col; ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.font='700 13px system-ui';
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(k.label,0,1);
+    ctx.restore();
+  }
+
+  /* =========================================================
+     ESCALATOR — big diagonal in the centre with moving steps
+     ========================================================= */
+  const ESC = {
+    tx0: 4.2, ty0: 6.6,   // bottom (front, near camera)
+    tx1: 6.2, ty1: 4.6,   // top (back), goes up & away
+    z0: 0,    z1: 96,
+    w: 1.0                 // width in tiles (perpendicular)
+  };
+  let escPhase = 0;
+
+  function escPoint(t, side, z){
+    // t in [0..1] along ramp; side -0.5..0.5 across width
+    const tx = ESC.tx0 + (ESC.tx1-ESC.tx0)*t;
+    const ty = ESC.ty0 + (ESC.ty1-ESC.ty0)*t;
+    const dx = (ESC.tx1-ESC.tx0), dy = (ESC.ty1-ESC.ty0);
+    const len = Math.hypot(dx,dy);
+    const px = -dy/len, py = dx/len;   // perpendicular in tile space
+    return P(tx + px*ESC.w*side, ty + py*ESC.w*side, z);
+  }
+
+  function drawEscalator(){
+    const z0=ESC.z0, z1=ESC.z1;
+    // shadow on floor under ramp
+    const s0=escPoint(0,-0.6,0), s1=escPoint(0,0.6,0),
+          s2=escPoint(1,0.6,0),  s3=escPoint(1,-0.6,0);
+    ctx.beginPath();
+    ctx.moveTo(s0.x,s0.y);ctx.lineTo(s1.x,s1.y);ctx.lineTo(s2.x,s2.y);ctx.lineTo(s3.x,s3.y);
+    ctx.closePath(); ctx.fillStyle='rgba(40,40,60,.16)'; ctx.fill();
+
+    function panel(side, col){
+      const a=escPoint(0,side,z0), b=escPoint(1,side,z1);
+      const aT=escPoint(0,side,z0+34), bT=escPoint(1,side,z1+34);
+      ctx.beginPath();
+      ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.lineTo(bT.x,bT.y);ctx.lineTo(aT.x,aT.y);
+      ctx.closePath(); ctx.fillStyle=col; ctx.fill();
+      ctx.lineWidth=1.5; ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.stroke();
+    }
+    panel(-0.5,'#9fb4c4');   // far side (darker)
+
+    // deck (sloped band where steps live)
+    const d0=escPoint(0,-0.5,z0), d1=escPoint(0,0.5,z0),
+          d2=escPoint(1,0.5,z1), d3=escPoint(1,-0.5,z1);
+    ctx.beginPath();
+    ctx.moveTo(d0.x,d0.y);ctx.lineTo(d1.x,d1.y);ctx.lineTo(d2.x,d2.y);ctx.lineTo(d3.x,d3.y);
+    ctx.closePath(); ctx.fillStyle='#c4cfd8'; ctx.fill();
+
+    // moving steps (huella + contrahuella)
+    const N = 9;
+    for (let i=0;i<N;i++){
+      let t = (i/N + escPhase) % 1;       // loop upward
+      const tNext = Math.min(1, t + (1/N)*0.78);
+      const zT = z0 + (z1-z0)*t;
+      const zN = z0 + (z1-z0)*tNext;
+      // tread (top)
+      const a=escPoint(t,-0.46,zT+8), b=escPoint(t,0.46,zT+8);
+      const c=escPoint(tNext,0.46,zN+8), e=escPoint(tNext,-0.46,zN+8);
+      ctx.beginPath();
+      ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.lineTo(c.x,c.y);ctx.lineTo(e.x,e.y);
+      ctx.closePath(); ctx.fillStyle='#eef3f7'; ctx.fill();
+      ctx.lineWidth=1; ctx.strokeStyle='#9fb0bd'; ctx.stroke();
+      // riser (front vertical face)
+      const af=escPoint(t,-0.46,zT-2), bf=escPoint(t,0.46,zT-2);
+      ctx.beginPath();
+      ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.lineTo(bf.x,bf.y);ctx.lineTo(af.x,af.y);
+      ctx.closePath(); ctx.fillStyle='#b9c6d1'; ctx.fill();
+    }
+
+    panel(0.5,'#c8d6e0');    // near side (lighter, over steps edge)
+
+    // handrails (two)
+    function rail(side){
+      const a=escPoint(0,side,z0+40), b=escPoint(1,side,z1+40);
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
+      ctx.lineWidth=7; ctx.lineCap='round'; ctx.strokeStyle='#445166'; ctx.stroke();
+      ctx.lineWidth=3; ctx.strokeStyle='#7fd6ff'; ctx.stroke();
+    }
+    rail(-0.5); rail(0.5);
+
+    // pulsing UP arrow above top
+    const top = escPoint(1, 0, z1+58);
+    const pulse = 0.6 + 0.4*Math.sin(performance.now()/300);
+    ctx.save(); ctx.translate(top.x, top.y);
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#2bd47a';
+    ctx.beginPath();
+    ctx.moveTo(0,-16); ctx.lineTo(13,6); ctx.lineTo(5,6);
+    ctx.lineTo(5,18); ctx.lineTo(-5,18); ctx.lineTo(-5,6); ctx.lineTo(-13,6);
     ctx.closePath(); ctx.fill();
-  } else { // gamepad
-    rrect(x-r, y-r*0.5, r*2, r, 4); ctx.fill();
-    ctx.fillStyle = "#222";
-    ctx.fillRect(x-r*0.6, y-r*0.1, r*0.18, r*0.5);
-    ctx.fillRect(x-r*0.78, y+r*0.08, r*0.5, r*0.18);
-    ctx.beginPath(); ctx.arc(x+r*0.55, y, r*0.16, 0, 7); ctx.fill();
+    ctx.globalAlpha=1;
+    ctx.restore();
   }
-}
 
-// ===================== Taco (humanoide) =====================
-function drawTaco(tx, ty, phase, face){
-  var ground = S(tx, ty, 0);
-  // SOMBRA en el piso (elipse iso)
-  ctx.save();
-  ctx.globalAlpha = 0.28;
-  ctx.fillStyle = "#000";
-  ctx.beginPath();
-  ctx.ellipse(ground.x, ground.y, 20, 10, 0, 0, 7);
-  ctx.fill();
-  ctx.restore();
-
-  var bob = Math.abs(Math.sin(phase)) * 4;
-  var cx = ground.x, cy = ground.y - 30 - bob;
-  var legSwing = Math.sin(phase) * 5;
-  var s = 1; // scale
-  // PIECITOS
-  ctx.fillStyle = "#e8b33a";
-  ctx.beginPath(); ctx.ellipse(cx - 7 + legSwing, ground.y - 3, 6, 4, 0, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(cx + 7 - legSwing, ground.y - 3, 6, 4, 0, 0, 7); ctx.fill();
-  // piernitas
-  ctx.strokeStyle = "#caa030"; ctx.lineWidth = 4; ctx.lineCap="round";
-  ctx.beginPath(); ctx.moveTo(cx-5, cy+18); ctx.lineTo(cx-7+legSwing, ground.y-5); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(cx+5, cy+18); ctx.lineTo(cx+7-legSwing, ground.y-5); ctx.stroke();
-
-  // CUERPO = tortilla doblada (taco)
-  // relleno (asoma por arriba)
-  ctx.fillStyle = "#7ec06a";
-  ctx.beginPath(); ctx.ellipse(cx, cy-2, 15, 7, 0, Math.PI, 0); ctx.fill();
-  ctx.fillStyle = "#e05c4a";
-  ctx.beginPath(); ctx.arc(cx-6, cy-3, 3, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.arc(cx+5, cy-4, 3, 0, 7); ctx.fill();
-  ctx.fillStyle = "#f0e2a0";
-  ctx.beginPath(); ctx.arc(cx+1, cy-2, 2.5, 0, 7); ctx.fill();
-  // tortilla (cuerpo amarillo doblado en U)
-  ctx.fillStyle = COL.taco;
-  ctx.beginPath();
-  ctx.moveTo(cx-18, cy-4);
-  ctx.quadraticCurveTo(cx-22, cy+22, cx, cy+24);
-  ctx.quadraticCurveTo(cx+22, cy+22, cx+18, cy-4);
-  ctx.quadraticCurveTo(cx+13, cy+6, cx, cy+7);
-  ctx.quadraticCurveTo(cx-13, cy+6, cx-18, cy-4);
-  ctx.closePath();
-  ctx.fill();
-  // sombreado interno de la tortilla (volumen)
-  ctx.fillStyle = COL.tacoSh;
-  ctx.beginPath();
-  ctx.moveTo(cx+18, cy-4);
-  ctx.quadraticCurveTo(cx+22, cy+22, cx, cy+24);
-  ctx.quadraticCurveTo(cx+10, cy+22, cx+9, cy+2);
-  ctx.closePath();
-  ctx.fill();
-  // bracitos
-  ctx.strokeStyle = COL.tacoSh; ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.moveTo(cx-15, cy+8); ctx.lineTo(cx-21, cy+14 - legSwing); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(cx+15, cy+8); ctx.lineTo(cx+21, cy+14 + legSwing); ctx.stroke();
-  // OJITOS (miran según face)
-  ctx.fillStyle = "#fff";
-  ctx.beginPath(); ctx.arc(cx-6, cy+10, 4.5, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.arc(cx+6, cy+10, 4.5, 0, 7); ctx.fill();
-  ctx.fillStyle = "#222";
-  ctx.beginPath(); ctx.arc(cx-6 + face*1.5, cy+11, 2.2, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.arc(cx+6 + face*1.5, cy+11, 2.2, 0, 7); ctx.fill();
-  // sonrisa
-  ctx.strokeStyle = "#9a6a20"; ctx.lineWidth = 1.6;
-  ctx.beginPath(); ctx.arc(cx, cy+15, 4, 0.1, Math.PI-0.1); ctx.stroke();
-}
-
-// NPC simple (persona iso)
-function drawNpc(n){
-  var g = S(n.tx, n.ty, 0);
-  var bob = Math.abs(Math.sin(n.phase))*3;
-  var cx = g.x, cy = g.y - 24 - bob;
-  // sombra
-  ctx.save(); ctx.globalAlpha=0.22; ctx.fillStyle="#000";
-  ctx.beginPath(); ctx.ellipse(g.x, g.y, 13, 6, 0,0,7); ctx.fill(); ctx.restore();
-  var sw = Math.sin(n.phase)*3;
-  // piernas
-  ctx.strokeStyle="#444"; ctx.lineWidth=3; ctx.lineCap="round";
-  ctx.beginPath(); ctx.moveTo(cx-3, cy+14); ctx.lineTo(cx-4+sw, g.y-2); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(cx+3, cy+14); ctx.lineTo(cx+4-sw, g.y-2); ctx.stroke();
-  // cuerpo
-  ctx.fillStyle = n.col;
-  rrect(cx-8, cy, 16, 17, 6); ctx.fill();
-  // cabeza
-  ctx.fillStyle = "#f2c9a0";
-  ctx.beginPath(); ctx.arc(cx, cy-6, 6, 0, 7); ctx.fill();
-  ctx.fillStyle = shade(n.col,0.7);
-  ctx.beginPath(); ctx.arc(cx, cy-9, 6.5, Math.PI, 0); ctx.fill(); // pelo
-}
-
-// ===================== Ceiling / atrio / luces =====================
-function drawCeiling(){
-  // claraboya/atrio: banda luminosa sobre el atrio (parte alta de pantalla, fija a cámara)
-  var sk = S(GW*0.5, GH*0.5, 240);
-  var grd = ctx.createRadialGradient(W/2, sk.y, 20, W/2, sk.y, 360);
-  grd.addColorStop(0, "rgba(160,210,255,0.22)");
-  grd.addColorStop(1, "rgba(160,210,255,0)");
-  ctx.fillStyle = grd;
-  ctx.fillRect(0, 0, W, H*0.5);
-}
-function drawGarland(){
-  // guirnalda de luces colgando a lo largo de la pared del fondo
-  var n = 26;
-  ctx.lineWidth = 1.5; ctx.strokeStyle = "rgba(255,255,255,0.25)";
-  var prev = null;
-  var pts = [];
-  for (var i=0;i<=n;i++){
-    var tx = (i/n)*GW;
-    var sag = Math.sin((i/n)*Math.PI) * 10;
-    var p = S(tx, 0.05, 150 - sag);
-    pts.push(p);
+  /* =========================================================
+     PLANTS & BENCHES
+     ========================================================= */
+  const PLANTS = [ {tx:1.2,ty:6.4},{tx:10.6,ty:6.2},{tx:7.6,ty:7.0},{tx:0.6,ty:2.0} ];
+  function drawPlant(p){
+    const b = P(p.tx, p.ty, 0);
+    ctx.beginPath(); ctx.ellipse(b.x,b.y+2,18,8,0,0,Math.PI*2);
+    ctx.fillStyle='rgba(40,40,60,.16)'; ctx.fill();
+    // pot
+    ctx.beginPath();
+    ctx.moveTo(b.x-13,b.y); ctx.lineTo(b.x+13,b.y);
+    ctx.lineTo(b.x+9,b.y-20); ctx.lineTo(b.x-9,b.y-20); ctx.closePath();
+    ctx.fillStyle='#c97b52'; ctx.fill();
+    ctx.fillStyle='#a86038'; ctx.fillRect(b.x-9,b.y-22,18,4);
+    // foliage
+    ctx.fillStyle='#3fa65a';
+    for (let i=0;i<6;i++){
+      const ang = i/6*Math.PI*2;
+      ctx.beginPath();
+      ctx.ellipse(b.x+Math.cos(ang)*10, b.y-30+Math.sin(ang)*8, 12,9, ang,0,Math.PI*2);
+      ctx.fill();
+    }
+    ctx.fillStyle='#5ecb78';
+    ctx.beginPath(); ctx.ellipse(b.x,b.y-34,13,11,0,0,Math.PI*2); ctx.fill();
   }
-  ctx.beginPath();
-  ctx.moveTo(pts[0].x, pts[0].y);
-  for (var j=1;j<pts.length;j++) ctx.lineTo(pts[j].x, pts[j].y);
-  ctx.stroke();
-  var bulbCols = ["#ff6b8a","#ffd84a","#7fd6ff","#c060e0","#7ee0a8"];
-  for (var k=0;k<pts.length;k++){
-    var blink = 0.55 + 0.45*Math.sin(T*3 + k*0.7);
-    ctx.fillStyle = bulbCols[k % bulbCols.length];
-    ctx.globalAlpha = blink;
-    ctx.shadowColor = bulbCols[k % bulbCols.length]; ctx.shadowBlur = 8;
-    ctx.beginPath(); ctx.arc(pts[k].x, pts[k].y+5, 3, 0, 7); ctx.fill();
-    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+
+  const BENCHES = [ {tx:3.4,ty:7.1},{tx:9.0,ty:6.9} ];
+  function drawBench(bn){
+    const b = P(bn.tx, bn.ty, 0);
+    ctx.beginPath(); ctx.ellipse(b.x,b.y+3,26,8,0,0,Math.PI*2);
+    ctx.fillStyle='rgba(40,40,60,.14)'; ctx.fill();
+    // seat (iso plank)
+    isoBox(bn.tx-0.05, bn.ty-0.05, 0.9, 0.35, 16,
+           '#d98c4a', '#bf7838', '#a5642c');
+    // backrest
+    ctx.fillStyle='#bf7838';
+    ctx.fillRect(b.x-22,b.y-28,4,14);
+    ctx.fillStyle='#d98c4a';
+    ctx.fillRect(b.x-22,b.y-30,40,5);
   }
-}
 
-// ===================== Render =====================
-function render(){
-  // fondo (degradé de ambiente)
-  var bg = ctx.createLinearGradient(0,0,0,H);
-  bg.addColorStop(0, "#241640");
-  bg.addColorStop(0.5, "#1a1030");
-  bg.addColorStop(1, "#120a22");
-  ctx.fillStyle = bg;
-  ctx.fillRect(0,0,W,H);
-
-  drawCeiling();
-  drawFloor();
-  drawBackWall();
-  drawGarland();
-
-  // ----- DEPTH SORT: recolectar objetos con clave (tx+ty)+altura -----
-  var items = [];
-  // plantas
-  for (var i=0;i<PLANTS.length;i++){ var p=PLANTS[i]; items.push({ key: p.tx+p.ty, kind:"plant", o:p }); }
-  // bancos
-  for (var b=0;b<BENCHES.length;b++){ var bn=BENCHES[b]; items.push({ key: bn.tx+bn.ty, kind:"bench", o:bn }); }
-  // estaciones
-  for (var s=0;s<STATIONS.length;s++){ var st=STATIONS[s]; items.push({ key: st.tx+st.ty+0.3, kind:"station", o:st }); }
-  // escalera (su pie determina su orden)
-  items.push({ key: ESCAL.tx + ESCAL.ty + 0.2, kind:"escalator", o:ESCAL });
-  // npcs
-  for (var nn=0;nn<npcs.length;nn++){ var n=npcs[nn]; items.push({ key: n.tx+n.ty, kind:"npc", o:n }); }
-  // taco
-  items.push({ key: player.tx + player.ty + 0.05, kind:"taco", o:player });
-
-  // painter's algorithm: menor key primero (más al fondo)
-  items.sort(function(a,b){ return a.key - b.key; });
-
-  for (var it=0; it<items.length; it++){
-    var I = items[it];
-    if (I.kind === "plant") drawPlant(I.o.tx, I.o.ty);
-    else if (I.kind === "bench") drawBench(I.o.tx, I.o.ty);
-    else if (I.kind === "station") drawStation(I.o);
-    else if (I.kind === "escalator") drawEscalator();
-    else if (I.kind === "npc") drawNpc(I.o);
-    else if (I.kind === "taco") drawTaco(player.tx, player.ty, player.phase, player.face);
+  /* =========================================================
+     NPCs — little walking people
+     ========================================================= */
+  function makeNPC(tx,ty,col){
+    return { tx,ty, col, dir:Math.random()*Math.PI*2,
+             spd:0.012+Math.random()*0.01, t:Math.random()*10 };
   }
-}
+  const NPCS = [
+    makeNPC(3,4,'#ff6b8a'), makeNPC(8,5,'#7fd6ff'),
+    makeNPC(6,3,'#9b8cff'), makeNPC(10,4.5,'#ffb04a')
+  ];
+  function updateNPC(n,dt){
+    n.t += dt;
+    if (Math.random()<0.012) n.dir += (Math.random()-0.5)*1.4;
+    let nx = n.tx + Math.cos(n.dir)*n.spd;
+    let ny = n.ty + Math.sin(n.dir)*n.spd;
+    if (nx<0.6||nx>MAP_W-0.6){ n.dir = Math.PI - n.dir; nx=n.tx; }
+    if (ny<2.0 ||ny>MAP_H-0.6){ n.dir = -n.dir; ny=n.ty; }
+    n.tx=nx; n.ty=ny;
+  }
+  function drawPerson(tx,ty,col,bob){
+    const f = P(tx,ty,0);
+    ctx.beginPath(); ctx.ellipse(f.x,f.y+2,12,5,0,0,Math.PI*2);
+    ctx.fillStyle='rgba(40,40,60,.18)'; ctx.fill();
+    const by = -bob;
+    // legs
+    ctx.strokeStyle='#445166'; ctx.lineWidth=4; ctx.lineCap='round';
+    const sw = Math.sin(bob*0.9+performance.now()/120)*4;
+    ctx.beginPath(); ctx.moveTo(f.x-3,f.y+by-2); ctx.lineTo(f.x-3+sw,f.y-2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(f.x+3,f.y+by-2); ctx.lineTo(f.x+3-sw,f.y-2); ctx.stroke();
+    // body
+    ctx.fillStyle=col;
+    roundRect(f.x-8, f.y+by-30, 16, 24, 6); ctx.fill();
+    // head
+    ctx.fillStyle='#ffe0bd';
+    ctx.beginPath(); ctx.arc(f.x, f.y+by-36, 8,0,Math.PI*2); ctx.fill();
+    // hair
+    ctx.fillStyle=shade(col,0.6);
+    ctx.beginPath(); ctx.arc(f.x, f.y+by-39, 8, Math.PI,0); ctx.fill();
+  }
 
-// ===================== Main loop =====================
-function frame(now){
-  var dt = Math.min(0.05, (now - last)/1000);
-  last = now;
-  update(dt);
-  render();
+  /* =========================================================
+     TACO HERO
+     ========================================================= */
+  const taco = { tx:6, ty:6, speed:3.2 /*tiles/sec*/, walkT:0, moving:false };
+
+  function drawTaco(){
+    const bob = taco.moving ? Math.abs(Math.sin(taco.walkT*9))*5 : 0;
+    const f = P(taco.tx, taco.ty, 0);
+    // shadow
+    ctx.beginPath(); ctx.ellipse(f.x, f.y+3, 22, 9, 0, 0, Math.PI*2);
+    ctx.fillStyle='rgba(40,40,60,.22)'; ctx.fill();
+
+    const cx = f.x, cy = f.y - bob;
+
+    // little feet
+    ctx.fillStyle='#caa23a';
+    const step = taco.moving ? Math.sin(taco.walkT*9)*5 : 0;
+    ctx.beginPath(); ctx.ellipse(cx-8, f.y-2, 6,4,0,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx+8+step*0.3, f.y-2, 6,4,0,0,Math.PI*2); ctx.fill();
+
+    // filling peeking out (clipped to shell area)
+    ctx.save();
+    ctx.beginPath(); ctx.ellipse(cx, cy-24, 22, 18, 0, 0, Math.PI*2); ctx.clip();
+    ctx.fillStyle='#6fc25a'; ctx.fillRect(cx-22, cy-30, 44, 8);      // lettuce
+    ctx.fillStyle='#d2533a';                                        // tomato/meat
+    ctx.beginPath();
+    ctx.arc(cx-7,cy-20,5,0,Math.PI*2); ctx.arc(cx+8,cy-22,5,0,Math.PI*2);
+    ctx.arc(cx+1,cy-15,5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#ffd84a'; ctx.fillRect(cx-18, cy-14, 36, 5);     // cheese
+    ctx.restore();
+
+    // TORTILLA SHELL — folded taco (two halves)
+    const shell = ctx.createLinearGradient(cx, cy-44, cx, cy);
+    shell.addColorStop(0,'#ffe27a');
+    shell.addColorStop(.5,'#f5cd46');
+    shell.addColorStop(1,'#e0b32f');
+    ctx.fillStyle = shell;
+    ctx.strokeStyle = '#caa028'; ctx.lineWidth = 2;
+    // left half
+    ctx.beginPath();
+    ctx.moveTo(cx-22, cy-2);
+    ctx.quadraticCurveTo(cx-28, cy-44, cx-6, cy-44);
+    ctx.lineTo(cx-6, cy-26);
+    ctx.quadraticCurveTo(cx-14, cy-26, cx-14, cy-2);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    // right half
+    ctx.beginPath();
+    ctx.moveTo(cx+22, cy-2);
+    ctx.quadraticCurveTo(cx+28, cy-44, cx+6, cy-44);
+    ctx.lineTo(cx+6, cy-26);
+    ctx.quadraticCurveTo(cx+14, cy-26, cx+14, cy-2);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    // toasty speckles
+    ctx.fillStyle='rgba(180,130,30,.4)';
+    ctx.beginPath();
+    ctx.arc(cx-18,cy-30,1.4,0,7); ctx.arc(cx+17,cy-22,1.4,0,7);
+    ctx.arc(cx-9,cy-10,1.4,0,7); ctx.fill();
+
+    // little arms
+    ctx.strokeStyle='#e0b32f'; ctx.lineWidth=4; ctx.lineCap='round';
+    const aw = taco.moving ? Math.sin(taco.walkT*9)*6 : 0;
+    ctx.beginPath(); ctx.moveTo(cx-16,cy-18); ctx.lineTo(cx-26, cy-10+aw); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+16,cy-18); ctx.lineTo(cx+26, cy-10-aw); ctx.stroke();
+
+    // eyes
+    ctx.fillStyle='#fff';
+    ctx.beginPath(); ctx.arc(cx-6,cy-30,4.5,0,Math.PI*2); ctx.arc(cx+6,cy-30,4.5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#222';
+    ctx.beginPath(); ctx.arc(cx-5,cy-29,2.2,0,Math.PI*2); ctx.arc(cx+7,cy-29,2.2,0,Math.PI*2); ctx.fill();
+    // smile
+    ctx.strokeStyle='#7a4a18'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(cx, cy-22, 5, 0.15*Math.PI, 0.85*Math.PI); ctx.stroke();
+  }
+
+  /* =========================================================
+     SKYLIGHT / ATRIUM glow + light garland
+     ========================================================= */
+  function drawSkylightGlow(){
+    const cx = VW/2;
+    const g = ctx.createRadialGradient(cx, VH*0.30, 20, cx, VH*0.30, Math.max(VW,VH)*0.55);
+    g.addColorStop(0,'rgba(255,255,255,.30)');
+    g.addColorStop(.5,'rgba(255,245,210,.12)');
+    g.addColorStop(1,'rgba(255,245,210,0)');
+    ctx.fillStyle=g; ctx.fillRect(0,0,VW,VH);
+  }
+  function drawGarland(){
+    const left  = P(0, 0, STORE_H+30);
+    const right = P(MAP_W, 0, STORE_H+30);
+    const segs = 26;
+    ctx.lineWidth=2; ctx.strokeStyle='rgba(60,70,90,.5)';
+    ctx.beginPath();
+    for (let i=0;i<=segs;i++){
+      const t=i/segs;
+      const x=left.x+(right.x-left.x)*t;
+      const sag=Math.sin(t*Math.PI)*26;
+      const y=left.y+(right.y-left.y)*t + sag;
+      if(i===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+    const cols=['#ff6b8a','#ffd84a','#7fd6ff','#7be0b0'];
+    for (let i=0;i<=segs;i++){
+      const t=i/segs;
+      const x=left.x+(right.x-left.x)*t;
+      const sag=Math.sin(t*Math.PI)*26;
+      const y=left.y+(right.y-left.y)*t + sag;
+      const tw=0.6+0.4*Math.sin(performance.now()/250 + i);
+      ctx.globalAlpha=tw;
+      ctx.fillStyle=cols[i%cols.length];
+      ctx.beginPath(); ctx.arc(x,y+4,3.4,0,Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha=1;
+  }
+
+  /* =========================================================
+     DEPTH-SORTED SCENE ASSEMBLY
+     sort key = (tx+ty) footprint; larger = nearer = drawn later.
+     ========================================================= */
+  function buildDrawList(){
+    const list = [];
+    STORES.forEach(s=>{
+      list.push({ key:(s.tx + (-STORE_D)), fn:()=>drawStore(s) });
+    });
+    list.push({ key:((ESC.tx0+ESC.tx1)/2 + (ESC.ty0+ESC.ty1)/2), fn:drawEscalator });
+    KIOSKS.forEach(k=> list.push({ key:(k.tx+K_W/2 + k.ty+K_D/2), fn:()=>drawKiosk(k) }) );
+    PLANTS.forEach(p=> list.push({ key:(p.tx+p.ty), fn:()=>drawPlant(p) }) );
+    BENCHES.forEach(b=> list.push({ key:(b.tx+b.ty), fn:()=>drawBench(b) }) );
+    NPCS.forEach(n=> list.push({ key:(n.tx+n.ty),
+                fn:()=>drawPerson(n.tx,n.ty,n.col, Math.abs(Math.sin(n.t*5))*4) }) );
+    list.push({ key:(taco.tx+taco.ty)+0.01, fn:drawTaco });
+
+    list.sort((a,b)=> a.key - b.key);
+    return list;
+  }
+
+  /* =========================================================
+     INPUT
+     ========================================================= */
+  const keys = {};
+  window.addEventListener('keydown', e=>{
+    const k=e.key.toLowerCase();
+    keys[k]=true;
+    if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
+  }, {passive:false});
+  window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; });
+
+  // touch d-pad
+  const pad = { up:false,down:false,left:false,right:false };
+  function bindPad(id, prop){
+    const el = document.getElementById(id);
+    const set=(v)=>(e)=>{ e.preventDefault(); pad[prop]=v; };
+    el.addEventListener('touchstart', set(true), {passive:false});
+    el.addEventListener('touchend',   set(false),{passive:false});
+    el.addEventListener('touchcancel',set(false),{passive:false});
+    el.addEventListener('mousedown',  set(true));
+    el.addEventListener('mouseup',    set(false));
+    el.addEventListener('mouseleave', set(false));
+  }
+  bindPad('pUp','up'); bindPad('pDown','down');
+  bindPad('pLeft','left'); bindPad('pRight','right');
+  if ('ontouchstart' in window || navigator.maxTouchPoints>0){
+    document.body.classList.add('touch');
+  }
+
+  // collision: keep taco on floor and out of solid stuff
+  function blocked(tx,ty){
+    if (tx<0.4||tx>MAP_W-0.4) return true;
+    if (ty<1.6||ty>MAP_H-0.4) return true;          // north wall barrier
+    for (const k of KIOSKS){
+      if (tx>k.tx-0.3 && tx<k.tx+K_W+0.3 && ty>k.ty-0.3 && ty<k.ty+K_D+0.3) return true;
+    }
+    return false;
+  }
+
+  function updateTaco(dt){
+    let mx=0, my=0;
+    // map intuitive arrows to iso tile axes
+    if (keys['w']||keys['arrowup']   || pad.up)    { mx-=1; my-=1; }
+    if (keys['s']||keys['arrowdown'] || pad.down)  { mx+=1; my+=1; }
+    if (keys['a']||keys['arrowleft'] || pad.left)  { mx-=1; my+=1; }
+    if (keys['d']||keys['arrowright']|| pad.right) { mx+=1; my-=1; }
+
+    taco.moving = (mx!==0||my!==0);
+    if (taco.moving){
+      const len=Math.hypot(mx,my); mx/=len; my/=len;
+      const stepDist = taco.speed*dt;
+      const nx = taco.tx + mx*stepDist;
+      const ny = taco.ty + my*stepDist;
+      if (!blocked(nx, taco.ty)) taco.tx = nx;
+      if (!blocked(taco.tx, ny)) taco.ty = ny;
+      taco.walkT += dt;
+    }
+  }
+
+  /* =========================================================
+     MAIN LOOP
+     ========================================================= */
+  let last = performance.now();
+  function frame(now){
+    let dt = (now - last)/1000; last = now;
+    if (dt>0.05) dt=0.05;            // clamp
+
+    // update
+    escPhase = (escPhase + dt*0.45) % 1;
+    NPCS.forEach(n=>updateNPC(n,dt));
+    updateTaco(dt);
+
+    // clear with bright mall ambient
+    const bg = ctx.createLinearGradient(0,0,0,VH);
+    bg.addColorStop(0,'#dff0fa');
+    bg.addColorStop(.55,'#eaf4f0');
+    bg.addColorStop(1,'#f3ecdf');
+    ctx.fillStyle=bg; ctx.fillRect(0,0,VW,VH);
+
+    drawSkylightGlow();
+    drawFloor();
+    drawGarland();
+
+    // depth-sorted props + characters
+    const list = buildDrawList();
+    for (const o of list) o.fn();
+
+    requestAnimationFrame(frame);
+  }
+
+  // ---- boot ----
+  resize();
   requestAnimationFrame(frame);
-}
-requestAnimationFrame(frame);
 })();
 </script>
 </body>

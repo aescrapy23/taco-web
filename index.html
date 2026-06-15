@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v51 - SINCRONIZADO: autos/gente/enemigos pasan por DETRAS de la fachada (no encima) + tu edificio construido aparece AL INSTANTE en la ciudad (cartel MI CASA/TIENDA/TORRE)";
+const VERSION = "v52 - STOCK por TIENDA: cada local vende cosas distintas y tematicas (farmacia/gym/super/panaderia/libreria educativa/banco/comida/moda/arcade...) con productos de colores variados";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -1351,7 +1351,7 @@ function updateInterior(dt) {
   if (intP.y > R.y + R.h - 30 && Math.abs(intP.x - (R.x + R.w / 2)) < 48 && inp.my > 0.2) exitInterior();
 }
 function mallIcon(kind, cx, cy, r) {
-  if (kind === "heal" || kind === "shield") return shopIcon(kind, cx, cy, r);
+  if (kind === "heal" || kind === "shield" || kind === "rapid" || kind === "triple") return shopIcon(kind, cx, cy, r);
   if (kind === "shirt") { ctx.fillStyle = "#f5cd46"; ctx.beginPath(); ctx.moveTo(cx - r, cy - r * 0.4); ctx.lineTo(cx - r * 0.4, cy - r); ctx.lineTo(cx + r * 0.4, cy - r); ctx.lineTo(cx + r, cy - r * 0.4); ctx.lineTo(cx + r * 0.5, cy - r * 0.1); ctx.lineTo(cx + r * 0.5, cy + r); ctx.lineTo(cx - r * 0.5, cy + r); ctx.lineTo(cx - r * 0.5, cy - r * 0.1); ctx.closePath(); ctx.fill(); }
   else if (kind === "wheel") { ctx.fillStyle = "#1a1a1f"; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill(); ctx.fillStyle = "#7fd6ff"; ctx.beginPath(); ctx.arc(cx, cy, r * 0.45, 0, 7); ctx.fill(); ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = 2; for (let k = 0; k < 4; k++) { const a = k / 4 * 6.28; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); ctx.stroke(); } }
   else if (kind === "food") { ctx.fillStyle = "#caa050"; ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0, false); ctx.fill(); ctx.fillStyle = "#7a4a2a"; ctx.fillRect(cx - r, cy, r * 2, r * 0.5); ctx.fillStyle = "#60d050"; ctx.fillRect(cx - r, cy + r * 0.3, r * 2, r * 0.18); ctx.fillStyle = "#e0479a"; ctx.fillRect(cx - r, cy + r * 0.48, r * 2, r * 0.16); ctx.fillStyle = "#caa050"; ctx.beginPath(); ctx.arc(cx, cy + r * 0.7, r, 0, Math.PI, false); ctx.fill(); }
@@ -1494,29 +1494,64 @@ function drawInterior() {
 
 // ---- TIENDA del mall: entras a un local y lo recorres caminando ----
 let store = null, stP = { x: 0, y: 0, r: 16 };
+// fabricas de productos (efecto + icono + color)
+const _hf = (n, c) => ({ name: n, icon: "heal", cost: c, col: "#60d050", act: () => { player.hp = MAXHP; } });
+const _h3 = (n, c) => ({ name: n, icon: "heal", cost: c, col: "#8ee07a", act: () => { player.hp = Math.min(MAXHP, player.hp + 35); } });
+const _sh = (n, c) => ({ name: n, icon: "shield", cost: c, col: "#5eead4", act: () => { pShield = 9; } });
+const _rp = (n, c) => ({ name: n, icon: "rapid", cost: c, col: "#f5cd46", act: () => { pRapid = 10; } });
+const _tr = (n, c) => ({ name: n, icon: "triple", cost: c, col: "#ff963c", act: () => { pTriple = 10; } });
+const _wb = (n, tab, ic) => ({ name: n, icon: ic || "shirt", cost: 0, col: "#f5cd46", act: () => { closeStore(); wbTab = tab; openWb("interior"); } });
+const _rul = (n) => ({ name: n, icon: "dice", cost: 0, col: "#ffd84a", act: () => { closeStore(); openRoulette(); } });
+const _uno = (n) => ({ name: n, icon: "dice", cost: 0, col: "#ff6b8a", act: () => { closeStore(); openUno(); } });
+const _mem = (n) => ({ name: n, icon: "dice", cost: 0, col: "#7fd6ff", act: () => { closeStore(); openMemory(); } });
+const _cine = (n) => ({ name: n, icon: "film", cost: 2, col: "#c060e0", act: () => { closeStore(); openCine(); } });
+const _learn = (n, c) => ({ name: n, icon: "shirt", cost: c, col: "#62e074", act: () => { const r = pickItem(); words++; saveL(); try { speak(r.item[1], r.L.code); } catch (e) {} } });
+const STORE_CATALOG = {
+  FARMACIA: [_hf("JARABE", 3), _h3("CURITA", 1), _sh("VITAMINA", 3), _rp("ENERGIZANTE", 3)],
+  GYM: [_hf("PROTEINA", 3), _tr("PESAS", 4), _rp("CARDIO", 3), _sh("CREATINA", 3)],
+  SUPER: [_hf("COMBO", 3), _h3("FRUTA", 1), _sh("GASEOSA", 2), _rp("CHOCOLATE", 3)],
+  PANADERIA: [_hf("TORTA", 3), _h3("PAN", 1), _rp("FACTURA", 2), _sh("DONA", 2)],
+  KIOSCO: [_h3("GOLOSINA", 1), _rp("GASEOSA", 2), _sh("CHICLE", 1), _hf("ALFAJOR", 3)],
+  LIBRERIA: [_learn("LIBRO INGLES", 1), _learn("CUENTO", 1), _learn("DICCIONARIO", 2), _mem("PASATIEMPO")],
+  BANCO: [_hf("SEGURO", 2), _sh("BOVEDA", 3), _tr("PLAN VIP", 4), _rp("BONO", 3)],
+  VERDU: [_h3("VERDURA", 1), _hf("ENSALADA", 2), _sh("JUGO VERDE", 2)],
+  MODA: [_wb("ROPA", 0), _wb("CARAS", 1), _wb("ACCESORIOS", 2)],
+  ZAPATOS: [_wb("VEHICULOS", 3, "wheel"), _rp("ZAPATILLA", 3), _wb("ROPA", 0)],
+  JOYAS: [_wb("ORO", 0), _sh("ANILLO", 4), _wb("ACCESORIOS", 2)],
+  RELOJES: [_rp("CRONO", 3), _sh("RELOJ", 3), _wb("ACCESORIOS", 2)],
+  OPTICA: [_wb("GAFAS", 2), _sh("LENTES", 2), _wb("CARAS", 1)],
+  PERFUME: [_sh("AROMA", 2), _h3("COLONIA", 1), _wb("ACCESORIOS", 2)],
+  BOLSOS: [_wb("ACCESORIOS", 2), _wb("VEHICULOS", 3, "wheel"), _hf("VALIJA", 3)],
+  DEPORTES: [_tr("PELOTA", 3), _wb("VEHICULOS", 3, "wheel"), _rp("ZAPATILLA", 3)],
+  ARCADE: [_rul("RULETA"), _uno("UNO"), _mem("MEMORIA")],
+  JUGUETES: [_mem("MEMORIA"), _rul("RULETA"), _tr("RESORTE", 3)],
+  COMICS: [_mem("TRIVIA"), _learn("COMIC INGLES", 1), _uno("UNO")],
+  MUSICA: [_rul("RULETA"), _sh("AURICULAR", 3), _uno("UNO")],
+  TECH: [_uno("UNO"), _rul("RULETA"), _rp("GADGET", 3)],
+  HOBBIES: [_mem("MEMORIA"), _learn("MANUAL", 1), _rul("RULETA")],
+  CINE: [_cine("FUNCION"), _hf("POCHOCLO", 2), _rp("GASEOSA", 2)],
+  VR: [_rul("RULETA"), _uno("UNO"), _mem("MEMORIA")],
+  CAFE: [_sh("CAFE", 3), _h3("MEDIALUNA", 2), _rp("EXPRESO", 3)],
+  HELADOS: [_hf("HELADO", 2), _rp("PALETA", 2), _h3("CONO", 1)],
+  PIZZA: [_hf("PORCION", 3), _sh("MUZZA", 3), _rp("FUGAZZA", 3)],
+  SUSHI: [_hf("ROLL", 3), _sh("TE", 2), _tr("WASABI", 4)],
+  TACOS: [_hf("TACO COMBO", 2), _tr("SALSA EXTRA", 3), _rp("NACHOS", 3)],
+  JUGOS: [_rp("JUGO", 2), _h3("LICUADO", 1), _sh("SMOOTHIE", 2)],
+  DULCES: [_h3("CARAMELO", 1), _hf("TORTA", 3), _rp("CHUPETIN", 2)],
+  RESTO: [_hf("MENU", 3), _rp("POSTRE", 3), _sh("VINO SIN", 3)],
+};
 function storeItemsFor(name) {
+  if (STORE_CATALOG[name]) return STORE_CATALOG[name];
   const moda = ["MODA", "ZAPATOS", "JOYAS", "RELOJES", "OPTICA", "PERFUME", "BOLSOS", "DEPORTES"];
   const juegos = ["ARCADE", "JUGUETES", "COMICS", "MUSICA", "TECH", "HOBBIES", "CINE", "VR"];
-  if (moda.indexOf(name) >= 0) return [
-    { name: "ROPA", icon: "shirt", cost: 0, act: () => { closeStore(); wbTab = 0; openWb("interior"); } },
-    { name: "ACCES.", icon: "shirt", cost: 0, act: () => { closeStore(); wbTab = 2; openWb("interior"); } },
-    { name: "VEHIC.", icon: "wheel", cost: 0, act: () => { closeStore(); wbTab = 3; openWb("interior"); } },
-  ];
-  if (juegos.indexOf(name) >= 0) return [
-    { name: "RULETA", icon: "dice", cost: 0, act: () => { closeStore(); openRoulette(); } },
-    { name: "UNO", icon: "dice", cost: 0, act: () => { closeStore(); openUno(); } },
-    { name: "MEMORIA", icon: "dice", cost: 0, act: () => { closeStore(); openMemory(); } },
-  ];
-  return [
-    { name: "BEBIDA", icon: "heal", cost: 2, act: () => { player.hp = MAXHP; } },
-    { name: "ESCUDO", icon: "shield", cost: 3, act: () => { pShield = 9; } },
-    { name: "SNACK", icon: "rapid", cost: 3, act: () => { pRapid = 10; } },
-  ];
+  if (moda.indexOf(name) >= 0) return [_wb("ROPA", 0), _wb("ACCESORIOS", 2), _wb("VEHICULOS", 3, "wheel")];
+  if (juegos.indexOf(name) >= 0) return [_rul("RULETA"), _uno("UNO"), _mem("MEMORIA")];
+  return [_hf("BEBIDA", 2), _sh("ESCUDO", 3), _rp("SNACK", 3)];
 }
 function openStore(shop) {
   const R = intRoom(), wallH = Math.min(108, R.h * 0.3), fy = R.y + wallH, floorH = R.y + R.h - fy;
   const its = storeItemsFor(shop.name), n = its.length;
-  const items = its.map((d, i) => ({ def: d, x: R.x + R.w * (n === 1 ? 0.5 : (0.25 + i * (0.5 / (n - 1)))), y: fy + floorH * 0.5, bought: false }));
+  const items = its.map((d, i) => ({ def: d, x: R.x + R.w * (n === 1 ? 0.5 : (0.16 + i * (0.68 / (n - 1)))), y: fy + floorH * (n > 3 ? 0.46 + (i % 2) * 0.16 : 0.5), bought: false }));
   const cns = []; for (let i = 0; i < 4; i++) cns.push({ x: R.x + 50 + Math.random() * (R.w - 100), y: fy + 40 + Math.random() * (floorH - 80), got: false });
   store = { name: shop.name, col: shop.col, wallH, fy, floorH, items, coins: cns, toastT: 0, toastMsg: "", toastCol: "#fff" };
   stP.x = R.x + R.w / 2; stP.y = R.y + R.h - 30; stickL.id = null; state = "store"; sPower();
@@ -1549,11 +1584,12 @@ function drawStore() {
   ctx.fillStyle = "#5a4632"; ctx.fillRect(R.x + 22, fy - 8, R.w * 0.26, 22); ctx.fillStyle = "#6a543c"; ctx.fillRect(R.x + 22, fy - 8, R.w * 0.26, 5);
   drawTaco(R.x + 22 + R.w * 0.13, fy - 18, 38, 6);
   for (const it of store.items) {
+    const ic = it.def.col || store.col;
     ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(it.x, it.y + 16, 20, 6, 0, 0, 7); ctx.fill();
-    ctx.fillStyle = it.bought ? "#2a2e3a" : "#2c3147"; ctx.beginPath(); ctx.roundRect(it.x - 20, it.y - 8, 40, 26, 8); ctx.fill(); ctx.strokeStyle = it.bought ? "#445" : store.col; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = it.bought ? "#2a2e3a" : "#2c3147"; ctx.beginPath(); ctx.roundRect(it.x - 20, it.y - 8, 40, 26, 8); ctx.fill(); ctx.strokeStyle = it.bought ? "#445" : ic; ctx.lineWidth = 2; ctx.stroke();
     ctx.globalAlpha = it.bought ? 0.4 : 1; mallIcon(it.def.icon, it.x, it.y + 4, 11); ctx.globalAlpha = 1;
     if (it.bought) text("LISTO", it.x, it.y - 14, 11, "#6a6", "center");
-    else { text(it.def.name, it.x, it.y - 26, 12, store.col, "center"); if (it.def.cost > 0) { ctx.fillStyle = "#3a3320"; ctx.beginPath(); ctx.roundRect(it.x - 22, it.y - 20, 44, 15, 6); ctx.fill(); drawCoin(it.x - 10, it.y - 13, 5.5); text(it.def.cost + " mon", it.x + 9, it.y - 8, 11, "#ffd84a", "center"); } else text("GRATIS ►", it.x, it.y - 9, 11, "#9be7c0", "center"); }
+    else { text(it.def.name, it.x, it.y - 26, fitFont(it.def.name, 70, 12), ic, "center"); if (it.def.cost > 0) { ctx.fillStyle = "#3a3320"; ctx.beginPath(); ctx.roundRect(it.x - 22, it.y - 20, 44, 15, 6); ctx.fill(); drawCoin(it.x - 10, it.y - 13, 5.5); text(it.def.cost + " mon", it.x + 9, it.y - 8, 11, "#ffd84a", "center"); } else text("GRATIS ►", it.x, it.y - 9, 11, "#9be7c0", "center"); }
   }
   for (const c of store.coins) if (!c.got) { const bob = Math.sin(t * 5 + c.x) * 2; drawCoin(c.x, c.y + bob, 8); }
   ctx.fillStyle = "#3a2030"; ctx.fillRect(mxc - 42, R.y + R.h - 16, 84, 13); text("SALIDA  ↓", mxc, R.y + R.h - 5, 11, "#ff9bb0", "center");

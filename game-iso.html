@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#1b2a4a">
-<title>TACO CITY ISO · jugable (milestone 1)</title>
+<title>TACO CITY ISO · jugable (milestone 2)</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
@@ -49,6 +49,40 @@
   }
   #missionText { font-size: clamp(11px, 2.7vw, 14px); font-weight: 800; color: #8fe9ff; }
   #missionProg { font-size: clamp(13px, 3.2vw, 17px); font-weight: 900; color: #ffffff; }
+  #waveBox {
+    display: block; margin-top: 6px;
+    background: rgba(40,20,55,0.55); border-radius: 10px; padding: 5px 10px;
+    box-shadow: inset 0 0 0 1.5px rgba(255,150,90,0.45);
+  }
+  #waveText { font-size: clamp(11px, 2.7vw, 14px); font-weight: 900; color: #ffae5d; letter-spacing: 0.5px; }
+  #waveLeft { font-size: clamp(11px, 2.7vw, 13px); font-weight: 800; color: #ffe1c2; }
+
+  /* Wave announce banner (center) */
+  #waveBanner {
+    position: fixed; left: 0; right: 0; top: 28%; z-index: 12; pointer-events: none;
+    text-align: center; opacity: 0; transition: opacity 0.25s;
+    text-shadow: 0 3px 0 #7a2e10, 0 5px 18px rgba(0,0,0,0.6);
+  }
+  #waveBanner.show { opacity: 1; }
+  #waveBannerBig {
+    font-size: clamp(30px, 10vw, 70px); font-weight: 900; letter-spacing: 2px; color: #ffae5d; line-height: 1;
+  }
+  #waveBannerSub { margin-top: 6px; font-size: clamp(13px, 3.4vw, 20px); font-weight: 800; color: #ffe1c2; }
+
+  /* Contextual ENTER button (mall door) */
+  #enterBtn {
+    position: fixed; z-index: 16; pointer-events: auto; cursor: pointer;
+    left: 50%; transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 96px);
+    padding: 13px 28px; border: none; border-radius: 16px;
+    font-size: clamp(15px, 4.2vw, 20px); font-weight: 900; letter-spacing: 1px; color: #2a1838;
+    background: linear-gradient(180deg, #ff9bce, #c98bff);
+    box-shadow: 0 5px 0 #7a3aa0, 0 9px 20px rgba(0,0,0,0.45);
+    display: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  }
+  #enterBtn.show { display: block; animation: enterPulse 1.1s ease-in-out infinite; }
+  #enterBtn:active { transform: translateX(-50%) translateY(3px); box-shadow: 0 2px 0 #7a3aa0, 0 5px 12px rgba(0,0,0,0.45); }
+  @keyframes enterPulse { 0%,100%{ box-shadow: 0 5px 0 #7a3aa0, 0 9px 20px rgba(0,0,0,0.45); } 50%{ box-shadow: 0 5px 0 #7a3aa0, 0 9px 26px rgba(255,140,220,0.6); } }
 
   /* Touch sticks */
   .stickZone { position: fixed; bottom: 0; top: 25%; z-index: 8; touch-action: none; }
@@ -167,8 +201,19 @@
       <span id="missionText">Misión</span>
       <span id="missionProg">0/0</span>
     </div>
+    <div id="waveBox">
+      <span id="waveText">OLEADA 1</span><br>
+      <span id="waveLeft">Quedan 0</span>
+    </div>
   </div>
 </div>
+
+<div id="waveBanner">
+  <div id="waveBannerBig">OLEADA 1</div>
+  <div id="waveBannerSub">¡Prepárate!</div>
+</div>
+
+<button id="enterBtn">ENTRAR AL MALL</button>
 
 <div class="stickZone" id="moveZone">
   <div class="stickBase" id="moveBase"></div>
@@ -181,12 +226,13 @@
 <div id="aimHint">Toca derecha = apuntar y disparar</div>
 
 <div class="overlay" id="titleOverlay">
-  <h1>TACO CITY <span>ISO</span><br>· jugable (milestone 1)</h1>
-  <div class="sub">Twin-stick en una ciudad isométrica</div>
+  <h1>TACO CITY <span>ISO</span><br>· jugable (milestone 2)</h1>
+  <div class="sub">Twin-stick · OLEADAS · día/noche · MALL iso</div>
   <div class="help">
     <b>Mover:</b> WASD / flechas o stick izquierdo (táctil)<br>
     <b>Apuntar y disparar salsa:</b> mouse (clic sostenido) o stick derecho (táctil)<br>
-    Junta <b>gemas</b>, derrota <b>enemigos</b> y completa la misión.<br>
+    Sobrevive <b>oleadas</b> cada vez más duras &middot; cada 5 hay un <b>JEFE</b>.<br>
+    De <b>noche</b> se encienden las luces. Entra al <b>MALL</b> (cartel rosa) para curarte y ganar monedas.<br>
     Tu <b>BANCO</b> es el mismo que en el juego principal &middot; &larr; VOLVER
   </div>
   <button class="bigBtn" id="startBtn">JUGAR</button>
@@ -277,6 +323,32 @@
   function addShake(m) { shake.mag = Math.min(shake.mag + m, 16); }
 
   // ============================================================
+  //  Day / night cycle
+  //  clock: 0..1 over DAY_LEN seconds. night = 0 (day) .. 1 (deep night).
+  //  Phases: ~ [0..0.25] day, sunset, [.5..] night, sunrise.
+  // ============================================================
+  var DAY_LEN = 180; // ~3 min full cycle
+  var clock = 0.18;  // start mid-morning
+  var night = 0;     // computed each frame
+  var sunX = 0, sunY = 0, sunIsMoon = false; // sky body screen pos
+
+  function computeDayNight(dt) {
+    clock = (clock + dt / DAY_LEN) % 1;
+    // night curve: dark around clock~0.75, light around clock~0.25
+    // use a smooth cosine so dawn/dusk are gradual
+    var n = 0.5 - 0.5 * Math.cos((clock - 0.25) * Math.PI * 2);
+    night = Math.max(0, Math.min(1, n));
+    // sun/moon arc across the sky (sun in day half, moon in night half)
+    var dayHalf = clock < 0.5; // first half = sun rising/setting
+    var t = dayHalf ? (clock / 0.5) : ((clock - 0.5) / 0.5);
+    sunIsMoon = !dayHalf;
+    sunX = VW * (0.1 + t * 0.8);
+    sunY = VH * (0.42 - Math.sin(t * Math.PI) * 0.34);
+  }
+  // are city lights on? (windows, lamps glow) — fade in at dusk
+  function lightLevel() { return Math.max(0, Math.min(1, (night - 0.18) / 0.5)); }
+
+  // ============================================================
   //  City grid generation
   // ============================================================
   var GRID = 22;
@@ -284,6 +356,7 @@
   var BLOCK_STEP = 5;
 
   var grid = [], heightMap = [], props = [];
+  var mall = { tx: 0, ty: 0, door: { tx: 0, ty: 0 } }; // special MALL building + its street door
 
   function isRoadCoord(i) { return (i % BLOCK_STEP) === 0; }
 
@@ -323,6 +396,34 @@
         }
       }
     }
+    // ---- designate ONE building as the MALL (near center) and find its door ----
+    (function () {
+      var best = null, bestD = 1e9, cc = (GRID - 1) / 2;
+      for (var my = 1; my < GRID - 1; my++) {
+        for (var mx = 1; mx < GRID - 1; mx++) {
+          if (grid[my][mx] !== TILE_BLOCK || heightMap[my][mx] <= 0) continue;
+          // need at least one adjacent walkable (road/sidewalk) tile for a door
+          var doorT = null;
+          var nb = [[mx - 1, my], [mx + 1, my], [mx, my - 1], [mx, my + 1]];
+          for (var n = 0; n < nb.length; n++) {
+            var ax = nb[n][0], ay = nb[n][1];
+            if (ax < 0 || ay < 0 || ax >= GRID || ay >= GRID) continue;
+            var tt = grid[ay][ax];
+            if (tt === TILE_ROAD || tt === TILE_SIDEWALK) { doorT = { tx: ax + 0.5, ty: ay + 0.5 }; break; }
+          }
+          if (!doorT) continue;
+          var d = Math.abs(mx - cc) + Math.abs(my - cc);
+          if (d < bestD) { bestD = d; best = { tx: mx, ty: my, door: doorT }; }
+        }
+      }
+      if (best) {
+        heightMap[best.ty][best.tx] = 6 * 16; // tall, distinctive
+        mall = { tx: best.tx, ty: best.ty, door: best.door };
+      } else {
+        mall = { tx: -99, ty: -99, door: { tx: -99, ty: -99 } };
+      }
+    })();
+
     props = [];
     for (var py = 0; py < GRID; py++) {
       for (var px = 0; px < GRID; px++) {
@@ -411,7 +512,7 @@
   // ============================================================
   //  Game state
   // ============================================================
-  var STATE_TITLE = 0, STATE_PLAY = 1, STATE_OVER = 2;
+  var STATE_TITLE = 0, STATE_PLAY = 1, STATE_OVER = 2, STATE_MALL = 3;
   var state = STATE_TITLE;
 
   var taco = {
@@ -432,7 +533,26 @@
   var enemyKills = 0;
   var gemsCollected = 0;
 
-  // Mission: alternate randomly between gems / kills
+  // ---- Waves ----
+  var wave = 0;             // current wave number (1-based once started)
+  var waveToSpawn = 0;      // enemies still queued to spawn this wave
+  var waveAlive = 0;        // enemies belonging to this wave still on the map
+  var waveBannerT = 0;      // banner display timer
+  var betweenWaves = false; // short pause between waves
+  var betweenT = 0;
+  var bossWave = false;     // is this a boss wave?
+  var bossSpawned = false;  // has the boss for this wave been spawned yet?
+
+  function waveRecordKey() { return "pl_" + playerName + "_isowave"; }
+  function loadWaveRecord() {
+    try { var n = parseInt(localStorage.getItem(waveRecordKey()), 10); return isNaN(n) ? 0 : n; }
+    catch (e) { return 0; }
+  }
+  function saveWaveRecord(w) {
+    try { if (w > loadWaveRecord()) localStorage.setItem(waveRecordKey(), String(w)); } catch (e) {}
+  }
+
+  // Mission kept as a flavor goal that persists across waves (gems / kills)
   var mission = { type: "gems", goal: 5, cur: 0, done: false };
 
   function pickMission() {
@@ -479,14 +599,57 @@
     return best;
   }
 
-  function spawnEnemy() {
+  function spawnEnemy(opts) {
     var p = findSpawnFar();
     if (!p) return;
+    opts = opts || {};
+    var boss = !!opts.boss;
+    // difficulty scales with wave: more hp, more speed
+    var w = Math.max(1, wave);
+    var baseHp = boss ? (14 + w * 3) : (3 + Math.floor((w - 1) * 0.6));
+    var baseSpeed = (boss ? 1.05 : 1.5) + Math.min(1.4, (w - 1) * 0.12) + rnd() * 0.5;
     enemies.push({
-      tx: p.x, ty: p.y, hp: 3, maxHp: 3,
-      speed: 1.5 + rnd() * 0.7, wob: rnd() * 6.28,
-      hurt: 0, contactCd: 0
+      tx: p.x, ty: p.y, hp: baseHp, maxHp: baseHp,
+      speed: baseSpeed, wob: rnd() * 6.28,
+      hurt: 0, contactCd: 0,
+      boss: boss, scale: boss ? 2.1 : 1,
+      dmg: boss ? 22 : 12, fromWave: true
     });
+    waveAlive++;
+  }
+
+  // ---- Wave control ----
+  function startWave(n) {
+    wave = n;
+    bossWave = (n % 5 === 0);
+    bossSpawned = false;
+    betweenWaves = false;
+    waveAlive = 0;
+    if (bossWave) {
+      // 1 boss + a small escort that grows over time
+      waveToSpawn = 1 + Math.min(6, 2 + Math.floor(n / 5));
+    } else {
+      waveToSpawn = 3 + Math.floor(n * 1.3);
+    }
+    spawnTimer = 0.4;
+    // banner
+    waveBannerT = 1.6;
+    if (elWaveBig) elWaveBig.textContent = bossWave ? ("JEFE · OLEADA " + n) : ("OLEADA " + n);
+    if (elWaveSub) elWaveSub.textContent = bossWave ? "¡Cuidado con el grande!" : "¡Sobrevive!";
+    if (waveBanner) { waveBanner.classList.add("show"); }
+    updateHUD();
+  }
+
+  function spawnFromQueue() {
+    if (waveToSpawn <= 0) return;
+    // on boss waves, spawn the boss first
+    if (bossWave && !bossSpawned) {
+      spawnEnemy({ boss: true });
+      bossSpawned = true;
+    } else {
+      spawnEnemy({});
+    }
+    waveToSpawn--;
   }
 
   function resetGame() {
@@ -497,9 +660,12 @@
     taco.aimAngle = 0; taco.fireCd = 0; taco.hurtFlash = 0; taco.invuln = 0;
     bullets = []; enemies = []; gems = []; particles = []; floaters = [];
     score = 0; spawnTimer = 1.0; enemyKills = 0; gemsCollected = 0;
+    wave = 0; waveToSpawn = 0; waveAlive = 0; waveBannerT = 0;
+    betweenWaves = false; betweenT = 0; bossWave = false; bossSpawned = false;
+    coinsKioskUsed = false; clock = 0.18; night = 0;
     pickMission();
     scatterGems(8);
-    for (var i = 0; i < 3; i++) spawnEnemy();
+    startWave(1);
     // snap camera
     var tp = (taco.tx - taco.ty) * halfW;
     var tpy = (taco.tx + taco.ty) * halfH;
@@ -736,7 +902,7 @@
     }
   }
 
-  function drawBuilding(tx, ty, h, baseColor) {
+  function drawBuilding(tx, ty, h, baseColor, isMall) {
     var topZ = h;
     var b = worldToScreen(tx, ty, 0);
     var tCen = worldToScreen(tx, ty, topZ);
@@ -762,7 +928,7 @@
     ctx.lineTo(tCen.x + bottom.x, tCen.y + bottom.y);
     ctx.lineTo(tCen.x + left.x, tCen.y + left.y);
     ctx.closePath(); ctx.fillStyle = leftC; ctx.fill();
-    drawWindows(b, tCen, left, bottom, h, "left");
+    drawWindows(b, tCen, left, bottom, h, "left", isMall);
 
     ctx.beginPath();
     ctx.moveTo(b.x + bottom.x, b.y + bottom.y);
@@ -770,7 +936,7 @@
     ctx.lineTo(tCen.x + right.x, tCen.y + right.y);
     ctx.lineTo(tCen.x + bottom.x, tCen.y + bottom.y);
     ctx.closePath(); ctx.fillStyle = rightC; ctx.fill();
-    drawWindows(b, tCen, bottom, right, h, "right");
+    drawWindows(b, tCen, bottom, right, h, "right", isMall);
 
     ctx.beginPath();
     ctx.moveTo(tCen.x + top.x, tCen.y + top.y);
@@ -788,14 +954,48 @@
     ctx.lineTo(tCen.x, tCen.y + rs * 0.5);
     ctx.lineTo(tCen.x - rs, tCen.y);
     ctx.closePath(); ctx.fill();
+
+    // ---- MALL: distinctive rooftop sign + neon glow ----
+    if (isMall) {
+      var roofY = tCen.y - 18;
+      var ll = lightLevel();
+      // glow halo (additive, stronger at night)
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      var gg = ctx.createRadialGradient(tCen.x, roofY, 4, tCen.x, roofY, 60);
+      var ga = 0.35 + ll * 0.5;
+      gg.addColorStop(0, "rgba(255,120,210," + ga + ")");
+      gg.addColorStop(1, "rgba(255,120,210,0)");
+      ctx.fillStyle = gg;
+      ctx.beginPath(); ctx.arc(tCen.x, roofY, 60, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      // sign plate
+      var sw = 58, sh = 20;
+      ctx.fillStyle = "#2a2150";
+      ctx.beginPath();
+      ctx.moveTo(tCen.x - sw / 2, roofY - sh / 2);
+      ctx.lineTo(tCen.x + sw / 2, roofY - sh / 2);
+      ctx.lineTo(tCen.x + sw / 2, roofY + sh / 2);
+      ctx.lineTo(tCen.x - sw / 2, roofY + sh / 2);
+      ctx.closePath(); ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = "#ff9bce"; ctx.stroke();
+      ctx.fillStyle = "#ffd0ee";
+      ctx.font = "900 15px -apple-system, sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("MALL", tCen.x, roofY + 1);
+      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    }
   }
 
-  function drawWindows(base, top, cA, cB, h, side) {
+  function drawWindows(base, top, cA, cB, h, side, isMall) {
     var floors = Math.max(1, Math.round(h / 16));
     var cols = 2;
+    var ll = lightLevel();           // 0 day .. 1 night
     ctx.save();
     var lit = side === "left" ? "rgba(255,240,180,0.85)" : "rgba(180,210,255,0.55)";
     var dim = side === "left" ? "rgba(40,55,80,0.5)" : "rgba(25,35,55,0.55)";
+    // warm "on" color for lit-up windows at night
+    var litWarm = isMall ? "rgba(255,170,235,0.95)" : "rgba(255,224,150,0.95)";
     for (var f = 0; f < floors; f++) {
       var zf0 = (f + 0.28) / floors, zf1 = (f + 0.78) / floors;
       for (var col = 0; col < cols; col++) {
@@ -812,8 +1012,20 @@
         ctx.moveTo(a.x, a.y); ctx.lineTo(bb.x, bb.y);
         ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y);
         ctx.closePath();
-        ctx.fillStyle = ((f * 7 + col * 3 + (side === "left" ? 1 : 0)) % 3 === 0) ? lit : dim;
+        // deterministic "is this window lit?" pattern (per building face)
+        var seedV = (f * 7 + col * 3 + (side === "left" ? 1 : 0));
+        var dayLit = (seedV % 3 === 0);
+        // at night, light up ~2/3 of windows warmly
+        var nightOn = (ll > 0.05) && ((seedV * 13 + 5) % 3 !== 0 || isMall);
+        ctx.fillStyle = dayLit ? lit : dim;
         ctx.fill();
+        if (nightOn && ll > 0.02) {
+          ctx.save();
+          ctx.globalAlpha = 0.25 + ll * 0.7;
+          ctx.fillStyle = litWarm;
+          ctx.fill();
+          ctx.restore();
+        }
       }
     }
     ctx.restore();
@@ -831,14 +1043,30 @@
 
   function drawLamp(tx, ty) {
     var p = worldToScreen(tx, ty, 0);
+    var ll = lightLevel();
     ctx.fillStyle = "rgba(0,0,0,0.16)";
     ctx.beginPath(); ctx.ellipse(p.x, p.y + 2, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = "#4a4f5c"; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x, p.y - 34); ctx.stroke();
-    var g = ctx.createRadialGradient(p.x, p.y - 36, 1, p.x, p.y - 36, 12);
-    g.addColorStop(0, "rgba(255,236,150,0.95)"); g.addColorStop(1, "rgba(255,236,150,0)");
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y - 36, 12, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#ffe98a"; ctx.beginPath(); ctx.arc(p.x, p.y - 36, 4, 0, Math.PI * 2); ctx.fill();
+    // warm pool of light on the ground at night (additive)
+    if (ll > 0.02) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      var gp = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, 42);
+      gp.addColorStop(0, "rgba(255,210,120," + (0.18 + ll * 0.32) + ")");
+      gp.addColorStop(1, "rgba(255,210,120,0)");
+      ctx.fillStyle = gp; ctx.beginPath(); ctx.ellipse(p.x, p.y, 42, 21, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    // bulb halo brightens at night
+    var ha = 0.45 + ll * 0.5;
+    var g = ctx.createRadialGradient(p.x, p.y - 36, 1, p.x, p.y - 36, 13 + ll * 5);
+    g.addColorStop(0, "rgba(255,236,150," + ha + ")"); g.addColorStop(1, "rgba(255,236,150,0)");
+    if (ll > 0.02) { ctx.save(); ctx.globalCompositeOperation = "lighter"; }
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y - 36, 13 + ll * 5, 0, Math.PI * 2); ctx.fill();
+    if (ll > 0.02) ctx.restore();
+    ctx.fillStyle = ll > 0.3 ? "#fff3b0" : "#ffe98a";
+    ctx.beginPath(); ctx.arc(p.x, p.y - 36, 4, 0, Math.PI * 2); ctx.fill();
   }
 
   function drawCar(prop) {
@@ -932,11 +1160,18 @@
     ctx.fill();
   }
 
-  // ---- enemy: angry chili pepper ----
+  // ---- enemy: angry chili pepper (boss = bigger, scaled) ----
   function drawEnemy(e) {
+    var sc = e.scale || 1;
     var p = worldToScreen(e.tx, e.ty, 0);
     var bob = Math.sin(e.wob) * 2.5;
-    var cx = p.x, groundY = p.y, bodyY = groundY - 16 + bob;
+    var cx = p.x, groundY = p.y, bodyY = groundY - 16 * sc + bob;
+    if (sc !== 1) {
+      ctx.save();
+      ctx.translate(cx, bodyY);
+      ctx.scale(sc, sc);
+      ctx.translate(-cx, -bodyY);
+    }
 
     ctx.fillStyle = "rgba(0,0,0,0.26)";
     ctx.beginPath(); ctx.ellipse(cx, groundY + 2, 12, 6, 0, 0, Math.PI * 2); ctx.fill();
@@ -977,8 +1212,18 @@
     if (e.hp < e.maxHp) {
       ctx.fillStyle = "rgba(0,0,0,0.4)";
       ctx.fillRect(cx - 11, bodyY - 24, 22, 4);
-      ctx.fillStyle = "#7ee08a";
+      ctx.fillStyle = e.boss ? "#ffae5d" : "#7ee08a";
       ctx.fillRect(cx - 11, bodyY - 24, 22 * (e.hp / e.maxHp), 4);
+    }
+    if (sc !== 1) ctx.restore();
+    // boss crown marker (drawn unscaled, above)
+    if (e.boss) {
+      ctx.fillStyle = "#ffd24d";
+      var crownY = bodyY - 30 * sc;
+      ctx.beginPath();
+      ctx.moveTo(cx - 10, crownY); ctx.lineTo(cx - 6, crownY - 9);
+      ctx.lineTo(cx, crownY - 2); ctx.lineTo(cx + 6, crownY - 9);
+      ctx.lineTo(cx + 10, crownY); ctx.closePath(); ctx.fill();
     }
   }
 
@@ -1008,6 +1253,39 @@
     ctx.beginPath();
     ctx.moveTo(cx, cy - s); ctx.lineTo(cx + s * 0.7, cy); ctx.lineTo(cx, cy + s); ctx.lineTo(cx - s * 0.7, cy);
     ctx.closePath(); ctx.stroke();
+  }
+
+  // glowing entrance pad on the street in front of the mall
+  function drawMallDoor() {
+    var p = worldToScreen(mall.door.tx, mall.door.ty, 0);
+    var pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
+    // glowing diamond mat
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = 0.35 + pulse * 0.35;
+    var g = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, halfW);
+    g.addColorStop(0, "rgba(255,120,220,0.9)");
+    g.addColorStop(1, "rgba(255,120,220,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, halfW * 0.9, halfH * 0.9, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    // diamond outline
+    ctx.strokeStyle = "rgba(255,200,240," + (0.6 + pulse * 0.4) + ")";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y - halfH * 0.7);
+    ctx.lineTo(p.x + halfW * 0.7, p.y);
+    ctx.lineTo(p.x, p.y + halfH * 0.7);
+    ctx.lineTo(p.x - halfW * 0.7, p.y);
+    ctx.closePath(); ctx.stroke();
+    // arrow / label floating above
+    ctx.fillStyle = "#ffd0ee";
+    ctx.font = "900 12px -apple-system, sans-serif";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(60,20,55,0.7)";
+    ctx.strokeText("ENTRADA MALL", p.x, p.y - 14);
+    ctx.fillText("ENTRADA MALL", p.x, p.y - 14);
+    ctx.textAlign = "left";
   }
 
   function drawBullet(b) {
@@ -1042,8 +1320,9 @@
       for (var x = 0; x < GRID; x++) {
         if (grid[y][x] === TILE_BLOCK && heightMap[y][x] > 0) {
           (function (xx, yy) {
+            var isMall = (xx === mall.tx && yy === mall.ty);
             list.push({ depth: xx + yy, sub: 1, tx: xx, ty: yy, h: heightMap[yy][xx],
-              draw: function () { drawBuilding(xx, yy, heightMap[yy][xx], bldgColorFor(xx, yy)); } });
+              draw: function () { drawBuilding(xx, yy, heightMap[yy][xx], isMall ? "#d98cc0" : bldgColorFor(xx, yy), isMall); } });
           })(x, y);
         }
       }
@@ -1058,6 +1337,12 @@
             else if (pr.kind === "car") drawCar(pr);
           } });
       })(props[i]);
+    }
+
+    // mall door marker on the street
+    if (mall.tx >= 0) {
+      list.push({ depth: mall.door.tx + mall.door.ty, sub: 0.5, tx: mall.door.tx, ty: mall.door.ty, h: 0,
+        draw: function () { drawMallDoor(); } });
     }
 
     for (var gi = 0; gi < gems.length; gi++) {
@@ -1128,16 +1413,103 @@
   // ============================================================
   //  Background
   // ============================================================
+  // lerp between two "#rrggbb"/rgb triplet arrays
+  function mixCol(c1, c2, t) {
+    return [
+      Math.round(c1[0] + (c2[0] - c1[0]) * t),
+      Math.round(c1[1] + (c2[1] - c1[1]) * t),
+      Math.round(c1[2] + (c2[2] - c1[2]) * t)
+    ];
+  }
+  function rgbStr(c) { return "rgb(" + c[0] + "," + c[1] + "," + c[2] + ")"; }
+
   function drawSky() {
+    var n = night;
+    // warm tint near dusk/dawn (peaks around n~0.45)
+    var warm = Math.max(0, 1 - Math.abs(n - 0.45) / 0.32);
+    // day -> night sky band colors
+    var dayTop = [159, 216, 255], nightTop = [18, 24, 58], duskTop = [255, 168, 120];
+    var dayBot = [214, 234, 208], nightBot = [30, 40, 78], duskBot = [255, 130, 110];
+    var topC = mixCol(mixCol(dayTop, nightTop, n), duskTop, warm * 0.55);
+    var botC = mixCol(mixCol(dayBot, nightBot, n), duskBot, warm * 0.45);
     var g = ctx.createLinearGradient(0, 0, 0, VH);
-    g.addColorStop(0, "#9fd8ff"); g.addColorStop(0.45, "#bfe9ff");
-    g.addColorStop(0.75, "#e8f7e4"); g.addColorStop(1, "#d6ead0");
+    g.addColorStop(0, rgbStr(topC));
+    g.addColorStop(0.5, rgbStr(mixCol(topC, botC, 0.5)));
+    g.addColorStop(1, rgbStr(botC));
     ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
-    var sg = ctx.createRadialGradient(VW * 0.82, VH * 0.12, 10, VW * 0.82, VH * 0.12, Math.max(VW, VH) * 0.55);
-    sg.addColorStop(0, "rgba(255,250,210,0.85)");
-    sg.addColorStop(0.4, "rgba(255,245,190,0.18)");
-    sg.addColorStop(1, "rgba(255,245,190,0)");
-    ctx.fillStyle = sg; ctx.fillRect(0, 0, VW, VH);
+
+    // ---- sun / moon traveling the sky ----
+    ctx.save();
+    if (sunIsMoon) {
+      // moon glow
+      var mg = ctx.createRadialGradient(sunX, sunY, 4, sunX, sunY, 70);
+      mg.addColorStop(0, "rgba(220,230,255,0.5)"); mg.addColorStop(1, "rgba(220,230,255,0)");
+      ctx.fillStyle = mg; ctx.beginPath(); ctx.arc(sunX, sunY, 70, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#eef2ff";
+      ctx.beginPath(); ctx.arc(sunX, sunY, 18, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(180,190,220,0.5)";
+      ctx.beginPath(); ctx.arc(sunX + 6, sunY - 4, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(sunX - 5, sunY + 5, 3, 0, Math.PI * 2); ctx.fill();
+    } else {
+      var sunCol = warm > 0.3 ? "rgba(255,180,120,0.95)" : "rgba(255,250,210,0.95)";
+      var sg = ctx.createRadialGradient(sunX, sunY, 8, sunX, sunY, Math.max(VW, VH) * 0.5);
+      sg.addColorStop(0, "rgba(255,250,210,0.7)");
+      sg.addColorStop(0.35, "rgba(255,240,180,0.16)");
+      sg.addColorStop(1, "rgba(255,240,180,0)");
+      ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(sunX, sunY, Math.max(VW, VH) * 0.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = sunCol;
+      ctx.beginPath(); ctx.arc(sunX, sunY, 22, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+
+    // ---- stars at night ----
+    if (n > 0.45) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, (n - 0.45) / 0.3) * 0.9;
+      ctx.fillStyle = "#ffffff";
+      for (var si = 0; si < 60; si++) {
+        var sx = ((si * 6151) % 1000) / 1000 * VW;
+        var sy = ((si * 3917) % 1000) / 1000 * VH * 0.55;
+        var tw = 0.4 + 0.6 * Math.abs(Math.sin(performance.now() / 900 + si));
+        ctx.globalAlpha = Math.min(1, (n - 0.45) / 0.3) * tw * 0.9;
+        ctx.fillRect(sx, sy, 1.6, 1.6);
+      }
+      ctx.restore();
+    }
+  }
+
+  // bluish night tint over the whole rendered scene (applied after world draw),
+  // then an ADDITIVE re-pass of the warm lights so they punch through the tint.
+  function drawNightTint() {
+    if (night <= 0.04) return;
+    var a = night * 0.46;
+    ctx.fillStyle = "rgba(18,28,66," + a + ")";
+    ctx.fillRect(0, 0, VW, VH);
+
+    var ll = lightLevel();
+    if (ll <= 0.02) return;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    // lamp glow pools punch back through (additive)
+    for (var i = 0; i < props.length; i++) {
+      var pr = props[i];
+      if (pr.kind !== "lamp") continue;
+      var p = worldToScreen(pr.tx, pr.ty, 0);
+      if (p.x < -60 || p.x > VW + 60 || p.y < -60 || p.y > VH + 60) continue;
+      var gp = ctx.createRadialGradient(p.x, p.y - 36, 1, p.x, p.y - 36, 22);
+      gp.addColorStop(0, "rgba(255,225,140," + (0.4 * ll) + ")");
+      gp.addColorStop(1, "rgba(255,225,140,0)");
+      ctx.fillStyle = gp; ctx.beginPath(); ctx.arc(p.x, p.y - 36, 22, 0, Math.PI * 2); ctx.fill();
+    }
+    // mall neon punches through too
+    if (mall.tx >= 0) {
+      var mp = worldToScreen(mall.tx, mall.ty, heightMap[mall.ty][mall.tx]);
+      var mg = ctx.createRadialGradient(mp.x, mp.y - 18, 4, mp.x, mp.y - 18, 70);
+      mg.addColorStop(0, "rgba(255,120,210," + (0.45 * ll) + ")");
+      mg.addColorStop(1, "rgba(255,120,210,0)");
+      ctx.fillStyle = mg; ctx.beginPath(); ctx.arc(mp.x, mp.y - 18, 70, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
   }
   function drawVignette() {
     var g = ctx.createRadialGradient(VW / 2, VH / 2, Math.min(VW, VH) * 0.35, VW / 2, VH / 2, Math.max(VW, VH) * 0.72);
@@ -1188,6 +1560,10 @@
   }
 
   function update(dt) {
+    // ---- day/night clock ----
+    computeDayNight(dt);
+    if (mallEnterCd > 0) mallEnterCd -= dt;
+
     // ---- player move ----
     var mx = 0, my = 0;
     if (moveStick.active) {
@@ -1263,9 +1639,10 @@
       var dd = Math.hypot(ddx, ddy) || 1;
       var es = en.speed * dt;
       moveActor(en, (ddx / dd) * es, (ddy / dd) * es, 0.2);
-      // contact damage
-      if (dd < 0.55 && en.contactCd <= 0 && taco.invuln <= 0) {
-        damageTaco(12);
+      // contact damage (boss reaches further & hits harder)
+      var reach = en.boss ? 0.95 : 0.55;
+      if (dd < reach && en.contactCd <= 0 && taco.invuln <= 0) {
+        damageTaco(en.dmg || 12);
         en.contactCd = 0.6;
       }
     }
@@ -1323,11 +1700,38 @@
     if (taco.hurtFlash > 0) taco.hurtFlash -= dt * 2.5;
     if (taco.invuln > 0) taco.invuln -= dt;
 
-    // ---- enemy spawning (capped) ----
-    spawnTimer -= dt;
-    if (spawnTimer <= 0 && enemies.length < 9 && !mission.done) {
-      spawnEnemy();
-      spawnTimer = Math.max(1.1, 3.2 - score * 0.01);
+    // ---- WAVE management ----
+    if (waveBannerT > 0) {
+      waveBannerT -= dt;
+      if (waveBannerT <= 0 && waveBanner) waveBanner.classList.remove("show");
+    }
+    if (betweenWaves) {
+      betweenT -= dt;
+      if (betweenT <= 0) startWave(wave + 1);
+    } else {
+      // trickle-spawn the queued enemies for this wave (cap concurrent)
+      var cap = bossWave ? 8 : 10;
+      spawnTimer -= dt;
+      if (waveToSpawn > 0 && spawnTimer <= 0 && enemies.length < cap) {
+        spawnFromQueue();
+        spawnTimer = Math.max(0.5, (bossWave ? 1.1 : 1.4) - wave * 0.04);
+      }
+      // wave cleared?
+      if (waveToSpawn <= 0 && waveAlive <= 0 && enemies.length === 0) {
+        saveWaveRecord(wave);
+        betweenWaves = true;
+        betweenT = 1.8;
+      }
+    }
+    updateWaveHUD();
+
+    // ---- mall proximity: show contextual ENTER button + auto-enter on door ----
+    if (mall.tx >= 0) {
+      var dDoor = Math.hypot(taco.tx - mall.door.tx, taco.ty - mall.door.ty);
+      var near = dDoor < 1.1;
+      if (near !== enterShown) { enterShown = near; if (enterBtn) enterBtn.classList.toggle("show", near); }
+      // step onto the door pad => enter the mall
+      if (dDoor < 0.45) enterMall();
     }
 
     // ---- keep some gems on map ----
@@ -1355,14 +1759,25 @@
 
   function killEnemy(index) {
     var e = enemies[index];
-    burst(e.tx, e.ty, 14, 16, "#ff3b3b", 3.2);
-    burst(e.tx, e.ty, 14, 8, "#3a9a3a", 2.6);
-    addFloater(e.tx, e.ty, "+25", "#ffe14d");
-    addShake(2.5);
+    if (e.boss) {
+      burst(e.tx, e.ty, 18, 34, "#ff3b3b", 4.2);
+      burst(e.tx, e.ty, 18, 18, "#ffd24d", 3.6);
+      addFloater(e.tx, e.ty, "JEFE +200", "#ffae5d");
+      addFloater(e.tx, e.ty - 0.4, "+10 mon", "#ffe14d");
+      addBank(10); // boss reward to the shared bank, persisted
+      addShake(6);
+      score += 200;
+    } else {
+      burst(e.tx, e.ty, 14, 16, "#ff3b3b", 3.2);
+      burst(e.tx, e.ty, 14, 8, "#3a9a3a", 2.6);
+      addFloater(e.tx, e.ty, "+25", "#ffe14d");
+      addShake(2.5);
+      score += 25;
+    }
     sndDeath();
+    if (e.fromWave) waveAlive = Math.max(0, waveAlive - 1);
     enemies.splice(index, 1);
     enemyKills++;
-    score += 25;
     if (mission.type === "kills") { mission.cur++; checkMission(); }
     updateHUD();
   }
@@ -1381,16 +1796,395 @@
   function checkMission() {
     if (mission.done) return;
     if (mission.cur >= mission.goal) {
-      mission.done = true;
+      // Waves mode: the mission is a recurring bonus, NOT a game-ender.
       score += 100;
-      addBank(20); // mission victory bonus to the shared bank, persisted
+      addBank(20); // mission bonus to the shared bank, persisted
       addFloater(taco.tx, taco.ty, "MISIÓN COMPLETA +100", "#7ee08a");
       addFloater(taco.tx, taco.ty - 0.45, "BONUS +20 mon", "#ffe14d");
       addShake(4);
       sndGem();
+      // pick a fresh mission to keep the bonus loop going
+      pickMission();
       updateHUD();
-      // small celebratory victory shortly after
-      setTimeout(function () { if (state === STATE_PLAY) gameOver(true); }, 900);
+    }
+  }
+
+  // ============================================================
+  //  MALL INTERIOR (isometric, walkable, embedded sub-scene)
+  //  Reuses the same iso projection + a local camera offset.
+  // ============================================================
+  var MALL_W = 12, MALL_H = 8;        // floor grid (tiles)
+  var coinsKioskUsed = false;         // MONEDAS kiosk one-time payout
+  var mallCam = { x: 0, y: 0 };
+  var mallReturn = { tx: 0, ty: 0 };  // where to drop the taco back in the city
+  var mallTaco = { tx: 6, ty: 6, walkPhase: 0, moving: false, facing: 1 };
+  var mallMsg = { text: "", col: "#fff", t: 0 };
+  var mallEnterCd = 0;                // debounce re-entry
+
+  // mall kiosks: health / coins / arcade(flavor)
+  var mallKiosks = [
+    { kind: "health", tx: 2.4, ty: 3.2, col: "#7be0b0", label: "SALUD" },
+    { kind: "coins",  tx: 5.5, ty: 5.2, col: "#ffd84a", label: "MONEDAS" },
+    { kind: "arcade", tx: 8.6, ty: 2.8, col: "#7fd6ff", label: "ARCADE" }
+  ];
+  var K_W = 1.0, K_D = 1.0, K_H = 64;
+  // storefronts along the back (north) wall
+  var mallStores = [
+    { name: "MODA",    awn: "#ff6b8a", tx: 0.3 },
+    { name: "TACOS",   awn: "#ffd84a", tx: 2.6 },
+    { name: "TECH",    awn: "#9b8cff", tx: 6.4 },
+    { name: "HELADO",  awn: "#7be0b0", tx: 9.0 }
+  ];
+  var S_W = 2.0, S_D = 0.9, S_H = 130;
+  var mallPlants = [{ tx: 1.0, ty: 6.4 }, { tx: 10.6, ty: 6.2 }, { tx: 7.4, ty: 7.0 }];
+  // exit pad (front-right, back to the city)
+  var mallExit = { tx: 10.5, ty: 6.8 };
+
+  function mallW2S(tx, ty, tz) {
+    return {
+      x: (tx - ty) * halfW + mallCam.x,
+      y: (tx + ty) * halfH - (tz || 0) + mallCam.y
+    };
+  }
+  function centerMallCam() {
+    var c = (MALL_W / 2 - MALL_H / 2) * halfW;
+    var cy = (MALL_W / 2 + MALL_H / 2) * halfH;
+    mallCam.x = VW / 2 - c;
+    mallCam.y = VH / 2 - cy + 20;
+  }
+
+  function enterMall() {
+    if (state !== STATE_PLAY) return;
+    if (mallEnterCd > 0) return;
+    state = STATE_MALL;
+    mallReturn = { tx: mall.door.tx, ty: mall.door.ty };
+    mallTaco.tx = MALL_W / 2; mallTaco.ty = MALL_H - 1.2;
+    mallTaco.walkPhase = 0; mallTaco.moving = false;
+    mallMsg = { text: "Bienvenido al MALL", col: "#ffd0ee", t: 2.2 };
+    mallEnterCd = 0.6;
+    centerMallCam();
+    if (enterBtn) enterBtn.classList.remove("show");
+    enterShown = false;
+    sndGem();
+  }
+
+  function exitMall() {
+    state = STATE_PLAY;
+    // drop the taco just OFF the door pad so it doesn't instantly re-trigger
+    taco.tx = mallReturn.tx; taco.ty = mallReturn.ty + 0.9;
+    if (!canStand(taco.tx, taco.ty, 0.24)) { taco.tx = mallReturn.tx; taco.ty = mallReturn.ty; }
+    mallEnterCd = 1.2;
+    // snap city camera back onto the taco
+    var tp = (taco.tx - taco.ty) * halfW, tpy = (taco.tx + taco.ty) * halfH;
+    cam.x = VW / 2 - tp; cam.y = VH / 2 - tpy;
+  }
+
+  function mallBlocked(tx, ty) {
+    if (tx < 0.4 || tx > MALL_W - 0.4) return true;
+    if (ty < 1.5 || ty > MALL_H - 0.4) return true;   // north wall barrier
+    for (var i = 0; i < mallKiosks.length; i++) {
+      var k = mallKiosks[i];
+      if (tx > k.tx - 0.35 && tx < k.tx + K_W + 0.35 && ty > k.ty - 0.35 && ty < k.ty + K_D + 0.35) return true;
+    }
+    return false;
+  }
+
+  function mallKioskNear() {
+    // nearest interactable kiosk within range
+    for (var i = 0; i < mallKiosks.length; i++) {
+      var k = mallKiosks[i];
+      var d = Math.hypot(mallTaco.tx - (k.tx + K_W / 2), mallTaco.ty - (k.ty + K_D / 2));
+      if (d < 1.25) return k;
+    }
+    return null;
+  }
+
+  function useMallKiosk(k) {
+    if (k.kind === "health") {
+      if (taco.hp >= taco.maxHp) { mallMsg = { text: "Vida llena", col: "#cfe0ff", t: 1.4 }; return; }
+      taco.hp = taco.maxHp;
+      mallMsg = { text: "¡Vida restaurada!", col: "#7be0b0", t: 1.8 };
+      updateHUD(); sndGem();
+    } else if (k.kind === "coins") {
+      if (coinsKioskUsed) { mallMsg = { text: "Ya cobraste (1 vez)", col: "#cfe0ff", t: 1.6 }; return; }
+      coinsKioskUsed = true;
+      addBank(5); // +5 to the SHARED bank, persisted
+      mallMsg = { text: "+5 monedas al BANCO", col: "#ffe14d", t: 2.0 };
+      sndGem();
+    } else {
+      mallMsg = { text: "ARCADE: ¡próximamente!", col: "#7fd6ff", t: 1.6 };
+      sndShoot();
+    }
+  }
+
+  function updateMall(dt) {
+    if (mallEnterCd > 0) mallEnterCd -= dt;
+    computeDayNight(dt); // keep the city clock running while inside
+    // ---- movement (left stick / WASD reused) ----
+    var mx = 0, my = 0;
+    if (moveStick.active) {
+      var len = Math.hypot(moveStick.dx, moveStick.dy);
+      if (len > 8) {
+        var td = screenVecToTile(moveStick.dx, moveStick.dy);
+        var tl = Math.hypot(td.tx, td.ty) || 1;
+        mx = td.tx / tl; my = td.ty / tl;
+      }
+    } else {
+      if (keys.up) { mx -= 1; my -= 1; }
+      if (keys.down) { mx += 1; my += 1; }
+      if (keys.left) { mx -= 1; my += 1; }
+      if (keys.right) { mx += 1; my -= 1; }
+      var l = Math.hypot(mx, my); if (l > 0) { mx /= l; my /= l; }
+    }
+    mallTaco.moving = (mx !== 0 || my !== 0);
+    if (mallTaco.moving) {
+      var step = taco.speed * dt;
+      var nx = mallTaco.tx + mx * step, ny = mallTaco.ty + my * step;
+      if (!mallBlocked(nx, mallTaco.ty)) mallTaco.tx = nx;
+      if (!mallBlocked(mallTaco.tx, ny)) mallTaco.ty = ny;
+      var sdx = (mx - my);
+      if (sdx > 0.01) mallTaco.facing = 1; else if (sdx < -0.01) mallTaco.facing = -1;
+      mallTaco.walkPhase += dt * 11;
+    } else {
+      mallTaco.walkPhase += dt * 2.4;
+    }
+    // ---- auto-use kiosk by stepping onto it; exit pad returns to city ----
+    var k = mallKioskNear();
+    if (k && mallEnterCd <= 0) {
+      // only fire once per approach: tiny cooldown via mallMsg timer gate
+      if (mallMsg.t <= 0 || mallMsg.kind !== k.kind) {
+        useMallKiosk(k);
+        mallMsg.kind = k.kind;
+      }
+    }
+    if (Math.hypot(mallTaco.tx - mallExit.tx, mallTaco.ty - mallExit.ty) < 0.6 && mallEnterCd <= 0) {
+      exitMall();
+      return;
+    }
+    if (mallMsg.t > 0) mallMsg.t -= dt;
+    // floaters/particles still tick for shared bank popups if any
+    for (var fi = floaters.length - 1; fi >= 0; fi--) {
+      var fl = floaters[fi]; fl.tz += fl.vy * dt; fl.life -= dt;
+      if (fl.life <= 0) floaters.splice(fi, 1);
+    }
+  }
+
+  // ---------- mall drawing ----------
+  function mallIsoBox(tx, ty, w, d, h, topCol, frontCol, sideCol) {
+    function P(ix, iy, iz) { return mallW2S(ix, iy, iz); }
+    var bE = P(tx + w, ty, 0), bS = P(tx + w, ty + d, 0), bW = P(tx, ty + d, 0);
+    var tN = P(tx, ty, h), tE = P(tx + w, ty, h), tS = P(tx + w, ty + d, h), tW = P(tx, ty + d, h);
+    // left face
+    ctx.beginPath(); ctx.moveTo(bW.x, bW.y); ctx.lineTo(bS.x, bS.y); ctx.lineTo(tS.x, tS.y); ctx.lineTo(tW.x, tW.y);
+    ctx.closePath(); ctx.fillStyle = sideCol; ctx.fill();
+    // right/front face
+    ctx.beginPath(); ctx.moveTo(bS.x, bS.y); ctx.lineTo(bE.x, bE.y); ctx.lineTo(tE.x, tE.y); ctx.lineTo(tS.x, tS.y);
+    ctx.closePath(); ctx.fillStyle = frontCol; ctx.fill();
+    // top
+    ctx.beginPath(); ctx.moveTo(tN.x, tN.y); ctx.lineTo(tE.x, tE.y); ctx.lineTo(tS.x, tS.y); ctx.lineTo(tW.x, tW.y);
+    ctx.closePath(); ctx.fillStyle = topCol; ctx.fill();
+  }
+
+  function drawMallFloor() {
+    for (var ty = 0; ty < MALL_H; ty++) {
+      for (var tx = 0; tx < MALL_W; tx++) {
+        var a = mallW2S(tx, ty, 0), b = mallW2S(tx + 1, ty, 0),
+            c = mallW2S(tx + 1, ty + 1, 0), d = mallW2S(tx, ty + 1, 0);
+        var light = ((tx + ty) % 2 === 0);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.closePath();
+        ctx.fillStyle = light ? "#efe9dc" : "#ddd6c6";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(120,110,90,0.22)"; ctx.lineWidth = 1; ctx.stroke();
+      }
+    }
+  }
+
+  function drawMallStore(s) {
+    var tx = s.tx, ty = -S_D;
+    mallIsoBox(tx, ty, S_W, S_D, S_H, "#fbf7ef", "#e9e2d4", "#cdc4b2");
+    // glowing glass front
+    var f0 = mallW2S(tx + S_W, ty + S_D, 0), f1 = mallW2S(tx, ty + S_D, 0);
+    var f0t = mallW2S(tx + S_W, ty + S_D, S_H * 0.6), f1t = mallW2S(tx, ty + S_D, S_H * 0.6);
+    ctx.beginPath();
+    ctx.moveTo(f1t.x, f1t.y); ctx.lineTo(f0t.x, f0t.y); ctx.lineTo(f0.x, f0.y); ctx.lineTo(f1.x, f1.y);
+    ctx.closePath();
+    var gg = ctx.createLinearGradient(f1t.x, f1t.y, f1.x, f1.y);
+    gg.addColorStop(0, "#fff7d6"); gg.addColorStop(0.5, "#ffe9a8"); gg.addColorStop(1, "#bfe9ff");
+    ctx.fillStyle = gg; ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = 1.5; ctx.stroke();
+    // sign
+    var sg = mallW2S(tx + S_W / 2, ty + S_D, S_H * 0.86);
+    var sw = S_W * tileW * 0.85, sh = 22;
+    ctx.fillStyle = "#2a3550";
+    ctx.fillRect(sg.x - sw / 2, sg.y - sh / 2, sw, sh);
+    ctx.lineWidth = 2; ctx.strokeStyle = s.awn; ctx.strokeRect(sg.x - sw / 2, sg.y - sh / 2, sw, sh);
+    ctx.fillStyle = "#fff"; ctx.font = "700 14px -apple-system, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(s.name, sg.x, sg.y + 1);
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  }
+
+  function drawMallKiosk(k) {
+    mallIsoBox(k.tx, k.ty, K_W, K_D, K_H, shade(k.col, 0.2), shade(k.col, -0.1), shade(k.col, -0.3));
+    var top = mallW2S(k.tx + K_W / 2, k.ty + K_D / 2, K_H);
+    ctx.save(); ctx.translate(top.x, top.y);
+    ctx.beginPath(); ctx.ellipse(0, -2, 24, 13, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff"; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = shade(k.col, -0.3); ctx.stroke();
+    ctx.translate(0, -3);
+    if (k.kind === "health") {
+      ctx.fillStyle = "#1f9d6b"; ctx.fillRect(-4, -11, 8, 22); ctx.fillRect(-11, -4, 22, 8);
+    } else if (k.kind === "coins") {
+      ctx.fillStyle = "#e0a82a"; ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#fff2a8"; ctx.font = "900 14px -apple-system, sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("$", 0, 1);
+      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    } else {
+      ctx.fillStyle = "#2e9ad6";
+      ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(11, -6); ctx.lineTo(9, 8); ctx.lineTo(0, 13);
+      ctx.lineTo(-9, 8); ctx.lineTo(-11, -6); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#fff"; ctx.font = "900 12px -apple-system, sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("★", 0, 1);
+      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    }
+    ctx.restore();
+    // sign
+    var sg = mallW2S(k.tx + K_W / 2, k.ty + K_D / 2, K_H + 30);
+    var w = k.label.length * 9 + 16;
+    ctx.fillStyle = "#2a3550"; ctx.fillRect(sg.x - w / 2, sg.y - 11, w, 22);
+    ctx.lineWidth = 2; ctx.strokeStyle = k.col; ctx.strokeRect(sg.x - w / 2, sg.y - 11, w, 22);
+    ctx.fillStyle = "#fff"; ctx.font = "700 13px -apple-system, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(k.label, sg.x, sg.y + 1);
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    // "usado" check on coins
+    if (k.kind === "coins" && coinsKioskUsed) {
+      ctx.fillStyle = "#7be0b0"; ctx.font = "900 16px -apple-system, sans-serif";
+      ctx.textAlign = "center"; ctx.fillText("✓", sg.x, sg.y - 18); ctx.textAlign = "left";
+    }
+  }
+
+  function drawMallPlant(p) {
+    var b = mallW2S(p.tx, p.ty, 0);
+    ctx.fillStyle = "rgba(40,40,60,0.16)";
+    ctx.beginPath(); ctx.ellipse(b.x, b.y + 2, 17, 8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#c97b52";
+    ctx.beginPath(); ctx.moveTo(b.x - 12, b.y); ctx.lineTo(b.x + 12, b.y);
+    ctx.lineTo(b.x + 8, b.y - 18); ctx.lineTo(b.x - 8, b.y - 18); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#3fa65a";
+    for (var i = 0; i < 6; i++) {
+      var ang = i / 6 * Math.PI * 2;
+      ctx.beginPath();
+      ctx.ellipse(b.x + Math.cos(ang) * 10, b.y - 28 + Math.sin(ang) * 8, 11, 8, ang, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = "#5ecb78";
+    ctx.beginPath(); ctx.ellipse(b.x, b.y - 32, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawMallExit(pulse) {
+    var p = mallW2S(mallExit.tx, mallExit.ty, 0);
+    ctx.save();
+    ctx.globalAlpha = 0.4 + pulse * 0.4;
+    var g = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, halfW);
+    g.addColorStop(0, "rgba(120,230,160,0.9)"); g.addColorStop(1, "rgba(120,230,160,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(p.x, p.y, halfW * 0.95, halfH * 0.95, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = "#bdf5d2"; ctx.font = "900 12px -apple-system, sans-serif";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(20,55,35,0.7)";
+    ctx.strokeText("SALIDA → CIUDAD", p.x, p.y - 12);
+    ctx.fillText("SALIDA → CIUDAD", p.x, p.y - 12);
+    ctx.textAlign = "left";
+  }
+
+  // taco hero inside the mall (reuse the city drawTaco logic via a local copy)
+  function drawMallTaco() {
+    var p = mallW2S(mallTaco.tx, mallTaco.ty, 0);
+    var bob = Math.sin(mallTaco.walkPhase) * (mallTaco.moving ? 3 : 0.8);
+    var cx = p.x, groundY = p.y, bodyY = groundY - 20 + bob, dir = mallTaco.facing;
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.beginPath(); ctx.ellipse(cx, groundY + 2, 15, 7, 0, 0, Math.PI * 2); ctx.fill();
+    var legSwing = Math.sin(mallTaco.walkPhase) * (mallTaco.moving ? 4 : 0);
+    ctx.fillStyle = "#5a3a1c";
+    ctx.beginPath(); ctx.ellipse(cx - 6 + legSwing, groundY - 1, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx + 6 - legSwing, groundY - 1, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+    var bw = 16, bh = 18;
+    ctx.fillStyle = "#f2c44d";
+    ctx.beginPath();
+    ctx.moveTo(cx - bw, bodyY - bh * 0.2);
+    ctx.quadraticCurveTo(cx - bw, bodyY + bh, cx, bodyY + bh);
+    ctx.quadraticCurveTo(cx + bw, bodyY + bh, cx + bw, bodyY - bh * 0.2);
+    ctx.quadraticCurveTo(cx + bw * 0.6, bodyY - bh * 0.55, cx, bodyY - bh * 0.55);
+    ctx.quadraticCurveTo(cx - bw * 0.6, bodyY - bh * 0.55, cx - bw, bodyY - bh * 0.2);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#5fd16f";
+    for (var i = -1; i <= 1; i++) { ctx.beginPath(); ctx.arc(cx + i * 7, bodyY - bh * 0.5, 5, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = "#ff6b5e";
+    ctx.beginPath(); ctx.arc(cx - 3, bodyY - bh * 0.55, 3.2, 0, Math.PI * 2); ctx.fill();
+    var eyeY = bodyY + 1, eo = dir * 1.5;
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath(); ctx.arc(cx - 5 + eo, eyeY, 4.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 5 + eo, eyeY, 4.2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#222";
+    ctx.beginPath(); ctx.arc(cx - 5 + eo + dir, eyeY, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 5 + eo + dir, eyeY, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#7a3b1c"; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.arc(cx + eo, eyeY + 5, 4, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+  }
+
+  function renderMall() {
+    // bright ambient bg
+    var bg = ctx.createLinearGradient(0, 0, 0, VH);
+    bg.addColorStop(0, "#dff0fa"); bg.addColorStop(0.55, "#eaf4f0"); bg.addColorStop(1, "#f3ecdf");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, VW, VH);
+    // skylight glow
+    var cx = VW / 2;
+    var sk = ctx.createRadialGradient(cx, VH * 0.28, 20, cx, VH * 0.28, Math.max(VW, VH) * 0.55);
+    sk.addColorStop(0, "rgba(255,255,255,0.3)"); sk.addColorStop(0.5, "rgba(255,245,210,0.12)"); sk.addColorStop(1, "rgba(255,245,210,0)");
+    ctx.fillStyle = sk; ctx.fillRect(0, 0, VW, VH);
+
+    drawMallFloor();
+
+    var pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
+    drawMallExit(pulse);
+
+    // depth-sorted props + characters
+    var list = [];
+    for (var si = 0; si < mallStores.length; si++) {
+      (function (s) { list.push({ k: s.tx + (-S_D), fn: function () { drawMallStore(s); } }); })(mallStores[si]);
+    }
+    for (var ki = 0; ki < mallKiosks.length; ki++) {
+      (function (kk) { list.push({ k: kk.tx + K_W / 2 + kk.ty + K_D / 2, fn: function () { drawMallKiosk(kk); } }); })(mallKiosks[ki]);
+    }
+    for (var pi = 0; pi < mallPlants.length; pi++) {
+      (function (pp) { list.push({ k: pp.tx + pp.ty, fn: function () { drawMallPlant(pp); } }); })(mallPlants[pi]);
+    }
+    list.push({ k: mallTaco.tx + mallTaco.ty + 0.01, fn: drawMallTaco });
+    list.sort(function (a, b) { return a.k - b.k; });
+    for (var li = 0; li < list.length; li++) list[li].fn();
+
+    // contextual hint text near a kiosk
+    var nk = mallKioskNear();
+    if (nk) {
+      ctx.fillStyle = "#2a3550"; ctx.font = "800 14px -apple-system, sans-serif";
+      ctx.textAlign = "center";
+      var hint = nk.kind === "health" ? "Acércate: cura tu vida" :
+                 nk.kind === "coins" ? (coinsKioskUsed ? "MONEDAS: ya cobrado" : "Acércate: +5 al banco") :
+                 "ARCADE (decorativo)";
+      ctx.fillText(hint, VW / 2, VH - 24);
+      ctx.textAlign = "left";
+    }
+
+    // mall message banner
+    if (mallMsg.t > 0) {
+      ctx.globalAlpha = Math.min(1, mallMsg.t * 1.5);
+      ctx.fillStyle = mallMsg.col; ctx.font = "900 22px -apple-system, sans-serif";
+      ctx.textAlign = "center";
+      ctx.lineWidth = 4; ctx.strokeStyle = "rgba(0,0,0,0.5)";
+      ctx.strokeText(mallMsg.text, VW / 2, VH * 0.18);
+      ctx.fillText(mallMsg.text, VW / 2, VH * 0.18);
+      ctx.textAlign = "left"; ctx.globalAlpha = 1;
     }
   }
 
@@ -1403,6 +2197,24 @@
   var elMissionProg = document.getElementById("missionProg");
   var elBankPlayer = document.getElementById("bankPlayer");
   var elBankVal = document.getElementById("bankVal");
+  var elWaveText = document.getElementById("waveText");
+  var elWaveLeft = document.getElementById("waveLeft");
+  var waveBanner = document.getElementById("waveBanner");
+  var elWaveBig = document.getElementById("waveBannerBig");
+  var elWaveSub = document.getElementById("waveBannerSub");
+  var enterBtn = document.getElementById("enterBtn");
+  var enterShown = false;
+
+  function updateWaveHUD() {
+    if (elWaveText) elWaveText.textContent = (bossWave ? "JEFE · OLEADA " : "OLEADA ") + Math.max(1, wave);
+    if (elWaveLeft) {
+      if (betweenWaves) elWaveLeft.textContent = "¡Despejada!";
+      else {
+        var remaining = waveToSpawn + enemies.length;
+        elWaveLeft.textContent = "Quedan " + remaining;
+      }
+    }
+  }
 
   function updateBankHUD() {
     if (elBankPlayer) elBankPlayer.textContent = "Jugador: " + playerName;
@@ -1433,10 +2245,17 @@
   function gameOver(victory) {
     if (state !== STATE_PLAY) return;
     state = STATE_OVER;
-    overTitle.textContent = victory ? "¡VICTORIA!" : "GAME OVER";
-    overTitle.style.color = victory ? "#7ee08a" : "#ff6b5e";
-    goStats.innerHTML = "Puntaje: <b>" + score + "</b><br>Enemigos: " + enemyKills + " · Gemas: " + gemsCollected;
+    saveWaveRecord(wave);
+    var rec = loadWaveRecord();
+    overTitle.textContent = "GAME OVER";
+    overTitle.style.color = "#ff6b5e";
+    goStats.innerHTML = "Llegaste a la <b>OLEADA " + Math.max(1, wave) + "</b>" +
+      "<br>Puntaje: <b>" + score + "</b> · Enemigos: " + enemyKills + " · Gemas: " + gemsCollected +
+      "<br><span style='color:#ffae5d'>Récord: oleada " + rec + "</span>";
     overOverlay.classList.remove("hidden");
+    // hide contextual UI
+    if (enterBtn) enterBtn.classList.remove("show"); enterShown = false;
+    if (waveBanner) waveBanner.classList.remove("show");
   }
 
   document.getElementById("startBtn").addEventListener("click", startGame);
@@ -1450,12 +2269,16 @@
   var backBtn = document.getElementById("backBtn");
   backBtn.addEventListener("click", function (e) { e.preventDefault(); goBack(); });
   backBtn.addEventListener("touchend", function (e) { e.preventDefault(); goBack(); }, { passive: false });
-  // also allow Enter/Space to start
+  // also allow Enter/Space to start (only from title / game-over)
   window.addEventListener("keydown", function (e) {
-    if ((e.code === "Enter" || e.code === "Space") && state !== STATE_PLAY) {
+    if ((e.code === "Enter" || e.code === "Space") && (state === STATE_TITLE || state === STATE_OVER)) {
       startGame(); e.preventDefault();
     }
   });
+
+  // contextual ENTER-MALL button
+  enterBtn.addEventListener("click", function (e) { e.preventDefault(); enterMall(); });
+  enterBtn.addEventListener("touchend", function (e) { e.preventDefault(); enterMall(); }, { passive: false });
 
   // ============================================================
   //  Main loop
@@ -1466,11 +2289,22 @@
     if (dt > 0.05) dt = 0.05;
     last = now;
 
+    if (state === STATE_MALL) {
+      updateMall(dt);
+      if (state === STATE_MALL) { // updateMall may exit back to city
+        renderMall();
+        drawVignette();
+        requestAnimationFrame(frame);
+        return;
+      }
+    }
+
     if (state === STATE_PLAY) update(dt);
 
     drawSky();
     drawGround();
     renderScene();
+    drawNightTint();   // bluish night overlay over the city scene
     drawVignette();
     drawHurtVignette();
 
@@ -1486,6 +2320,7 @@
     cam.x = VW / 2 - tp; cam.y = VH / 2 - tpy;
   })();
   updateHUD();
+  updateWaveHUD();
   updateBankHUD();
   requestAnimationFrame(frame);
 

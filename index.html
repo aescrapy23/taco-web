@@ -1104,6 +1104,12 @@ function update(dt) {
     c.x += c.vx * dt; c.y += c.vy * dt;
   }
 
+  // MISION "derrota N": re-aparecen enemigos hasta poder cumplir las bajas (evita quedar trabado en p.ej. 3/4)
+  if (mission && mission.type === 1 && !missionDone()) {
+    const need = mission.target - mission.prog;            // bajas que aun faltan
+    let guard = 0;
+    while (enemies.length < need && guard++ < 12) spawnEnemy(false);
+  }
   if (missionDone() && !portal) portal = farFree(player.x, player.y);
   if (portal && len(portal.x - player.x, portal.y - player.y) < player.r + 22) { openQuiz(); return; }
 
@@ -1121,6 +1127,11 @@ function update(dt) {
       moveAxis(e, ux * e.speed * dt, 0); moveAxis(e, 0, uy * e.speed * dt);
     }
     if (e.flash > 0) e.flash -= dt;
+    // anti-softlock: en mision de bajas, si un enemigo queda inalcanzable mucho rato (atascado tras un edificio), lo reubicamos cerca
+    if (mission && mission.type === 1 && d > 540) {
+      e.farT = (e.farT || 0) + dt;
+      if (e.farT > 6) { for (let k = 0; k < 24; k++) { const c = freeCell(), cd = len(c.x - player.x, c.y - player.y); if (cd > 150 && cd < 470) { e.x = c.x; e.y = c.y; break; } } e.farT = 0; addParts(e.x, e.y, 10, e.col, 160); }
+    } else e.farT = 0;
     if (!driving && d < e.r + player.r) hurt(e.dmg);
   }
   for (let i = eshots.length - 1; i >= 0; i--) {

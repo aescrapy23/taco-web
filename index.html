@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v38 - MALL DE 4 PISOS (escalera ▲▼ + locales por piso) + accesorios OSHA (casco/antiparras/orejeras) + traje CONSTRUCTOR + prompts de obra";
+const VERSION = "v39 - MALL REAL: locales con nombre/toldo/vidriera/maniqui, ESCALERA MECANICA animada (caminas y subis/bajas), atrio con claraboya y balcon";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -1248,6 +1248,12 @@ const MALL_FLOORS = [
     ] },
   ] },
 ];
+const MALL_SHOP_SIGNS = [
+  ["FARMACIA", "GYM", "SUPER", "PANADERIA", "KIOSCO", "VERDU", "LIBRERIA", "BANCO"],
+  ["MODA", "ZAPATOS", "JOYAS", "RELOJES", "OPTICA", "PERFUME", "BOLSOS", "DEPORTES"],
+  ["ARCADE", "JUGUETES", "COMICS", "MUSICA", "TECH", "HOBBIES", "CINE", "VR"],
+  ["CAFE", "HELADOS", "PIZZA", "SUSHI", "TACOS", "JUGOS", "DULCES", "RESTO"],
+];
 function intRoom() { return { x: 18, y: 60 + safeT, w: W - 36, h: H - 116 - safeB }; }
 function mallFloorStations(floor) {
   const R = intRoom(), wallH = Math.min(120, R.h * 0.34), fy = R.y + wallH, floorH = R.y + R.h - fy;
@@ -1261,7 +1267,8 @@ function openInterior(b) {
   const npcs = []; for (let i = 0; i < 5; i++) { const a = Math.random() * 6.28; npcs.push({ x: R.x + 60 + Math.random() * (R.w - 120), y: fy + 30 + Math.random() * (floorH - 60), vx: Math.cos(a) * 34, vy: Math.sin(a) * 34, col: PEDCOLS[randi(0, PEDCOLS.length)], wp: Math.random() * 6.28, rescued: false }); }
   const plants = [{ x: R.x + 28, y: fy + 22 }, { x: R.x + R.w - 28, y: fy + 22 }, { x: R.x + 28, y: R.y + R.h - 46 }, { x: R.x + R.w - 28, y: R.y + R.h - 46 }];
   const benches = [{ x: R.x + R.w * 0.3, y: fy + floorH * 0.92 }, { x: R.x + R.w * 0.7, y: fy + floorH * 0.92 }];
-  interior = { wallH, fy, floorH, floor: 0, stations: mallFloorStations(0), coins: cns, npcs, plants, benches, popup: null };
+  const mxc = R.x + R.w / 2, esc = { upX: mxc - 40, downX: mxc + 40, topY: R.y + 30, botY: fy, cd: 0 };
+  interior = { wallH, fy, floorH, floor: 0, stations: mallFloorStations(0), coins: cns, npcs, plants, benches, esc, popup: null };
   intP.x = R.x + R.w / 2; intP.y = R.y + R.h - 30; stickL.id = null;
   state = "interior"; sPower();
 }
@@ -1276,6 +1283,12 @@ function updateInterior(dt) {
   if (Math.abs(inp.mx) > 0.06) playerFace = inp.mx > 0 ? 1 : -1;
   for (const c of interior.coins) if (!c.got && len(c.x - intP.x, c.y - intP.y) < 26) { c.got = true; coins += 1; floatText(c.x, c.y, "+1", "#ffd84a"); sGem(); }
   for (const p of interior.npcs) { p.wp += dt * 7; const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt; if (nx < R.x + 26 || nx > R.x + R.w - 26) p.vx *= -1; if (ny < interior.fy + 22 || ny > R.y + R.h - 26) p.vy *= -1; p.x += p.vx * dt; p.y += p.vy * dt; if (Math.random() < 0.01) { const a = Math.random() * 6.28; p.vx = Math.cos(a) * 34; p.vy = Math.sin(a) * 34; } }
+  // ESCALERA MECANICA: caminar hasta la base (arriba al centro) cambia de piso
+  const e = interior.esc; if (e.cd > 0) e.cd -= dt;
+  if (e.cd <= 0 && intP.y < interior.fy + 46) {
+    if (Math.abs(intP.x - e.upX) < 28 && interior.floor < MALL_FLOORS.length - 1) { changeFloor(1); e.cd = 1.4; intP.y = interior.fy + 60; }
+    else if (Math.abs(intP.x - e.downX) < 28 && interior.floor > 0) { changeFloor(-1); e.cd = 1.4; intP.y = interior.fy + 60; }
+  }
   if (intP.y > R.y + R.h - 30 && Math.abs(intP.x - (R.x + R.w / 2)) < 48 && inp.my > 0.2) exitInterior();
 }
 function mallIcon(kind, cx, cy, r) {
@@ -1297,13 +1310,43 @@ function drawBench(x, y) {
   ctx.fillStyle = "#6a543c"; ctx.fillRect(x - 24, y, 48, 8); ctx.fillStyle = "#7a6048"; ctx.fillRect(x - 24, y, 48, 2);
   ctx.fillStyle = "#4a3826"; ctx.fillRect(x - 20, y + 8, 5, 9); ctx.fillRect(x + 15, y + 8, 5, 9);
 }
-function drawStorefront(x, y, w, h, col) {
-  ctx.fillStyle = "#1c1f2c"; ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = "rgba(150,200,255,0.22)"; ctx.fillRect(x + 4, y + 12, w - 8, h - 16); // vidriera
-  for (let i = 0; i < Math.round(w / 24); i++) { ctx.fillStyle = ["#ff6b8a", "#ffd84a", "#7fd6ff", "#60d050", "#ff9b3c"][i % 5]; ctx.fillRect(x + 8 + i * 24, y + h - 18, 13, 12); }
-  ctx.fillStyle = col; ctx.fillRect(x, y, w, 9); // cartel
-  ctx.fillStyle = "rgba(255,255,255,0.9)"; for (let i = 0; i < Math.round(w / 13); i++) ctx.fillRect(x + 5 + i * 13, y + 2, 7, 4);
-  ctx.fillStyle = "rgba(0,0,0,0.2)"; ctx.fillRect(x, y + 9, w, 2);
+function drawStorefront(x, y, w, h, col, name) {
+  // pilastras laterales (marco del local)
+  ctx.fillStyle = "#14161e"; ctx.fillRect(x - 3, y, w + 6, h);
+  const gy0 = y + 24; // debajo del cartel/toldo
+  // interior iluminado
+  const ig = ctx.createLinearGradient(0, gy0, 0, y + h); ig.addColorStop(0, "#444c64"); ig.addColorStop(1, "#222838"); ctx.fillStyle = ig; ctx.fillRect(x + 4, gy0, w - 8, h - 24 - 4);
+  // estante con productos al fondo
+  ctx.fillStyle = "#2a3142"; ctx.fillRect(x + 8, y + h - 30, w - 16, 4);
+  for (let i = 0; i < Math.round((w - 16) / 15); i++) { ctx.fillStyle = ["#ff6b8a", "#ffd84a", "#7fd6ff", "#60d050", "#ff9b3c", "#c060e0"][i % 6]; ctx.fillRect(x + 10 + i * 15, y + h - 42, 10, 12); }
+  // maniqui (silueta)
+  ctx.fillStyle = "#0c0f18"; ctx.beginPath(); ctx.arc(x + w * 0.32, y + h - 34, 6, 0, 7); ctx.fill(); ctx.beginPath(); ctx.moveTo(x + w * 0.32 - 7, y + h - 12); ctx.lineTo(x + w * 0.32, y + h - 28); ctx.lineTo(x + w * 0.32 + 7, y + h - 12); ctx.closePath(); ctx.fill();
+  // vidrio con reflejos diagonales
+  ctx.fillStyle = "rgba(170,215,255,0.1)"; ctx.fillRect(x + 4, gy0, w - 8, h - 28);
+  ctx.strokeStyle = "rgba(255,255,255,0.16)"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x + 10, gy0 + 2); ctx.lineTo(x + 26, y + h - 4); ctx.moveTo(x + 28, gy0 + 2); ctx.lineTo(x + 44, y + h - 4); ctx.stroke();
+  // marco del vidrio
+  ctx.strokeStyle = "#0c0e16"; ctx.lineWidth = 2; ctx.strokeRect(x + 4, gy0, w - 8, h - 28);
+  // toldo a rayas (festoneado)
+  for (let i = 0; i < Math.round(w / 13); i++) { ctx.fillStyle = i % 2 ? col : "#f3ece0"; ctx.beginPath(); ctx.moveTo(x + i * 13, y + 14); ctx.lineTo(x + i * 13 + 6.5, y + 24); ctx.lineTo(x + i * 13 + 19, y + 24); ctx.lineTo(x + i * 13 + 13, y + 14); ctx.closePath(); ctx.fill(); }
+  // cartel con NOMBRE del local
+  ctx.fillStyle = "#0b0b11"; ctx.fillRect(x, y, w, 14); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.strokeRect(x, y, w, 14);
+  if (name) text(name, x + w / 2, y + 11, fitFont(name, w - 8, 11), col, "center");
+}
+function drawRailing(x1, x2, y) {
+  ctx.strokeStyle = "#3a4150"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+  ctx.strokeStyle = "#2a2f3c"; ctx.lineWidth = 2; for (let x = x1; x <= x2; x += 16) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 12); ctx.stroke(); }
+  ctx.fillStyle = "#7fd6ff"; ctx.globalAlpha = 0.5; ctx.fillRect(x1, y - 2, x2 - x1, 2); ctx.globalAlpha = 1;
+}
+function drawEscalator(cx, topY, botY, w, dir) {
+  const h = botY - topY;
+  ctx.fillStyle = "#20232e"; ctx.fillRect(cx - w / 2 - 6, topY, 6, h); ctx.fillRect(cx + w / 2, topY, 6, h); // laterales
+  ctx.save(); ctx.beginPath(); ctx.rect(cx - w / 2, topY, w, h); ctx.clip();
+  ctx.fillStyle = "#262a36"; ctx.fillRect(cx - w / 2, topY, w, h);
+  const scroll = ((t * 26) % 16) * (dir > 0 ? 1 : -1);
+  for (let y = topY - 16; y < botY + 16; y += 16) { const yy = y - scroll; ctx.fillStyle = "#3c4254"; ctx.fillRect(cx - w / 2, yy, w, 12); ctx.fillStyle = "#4c5468"; ctx.fillRect(cx - w / 2, yy, w, 3); ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(cx - w / 2, yy + 12, w, 2); }
+  ctx.restore();
+  ctx.strokeStyle = "#15181f"; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(cx - w / 2 - 3, topY); ctx.lineTo(cx - w / 2 - 3, botY); ctx.moveTo(cx + w / 2 + 3, topY); ctx.lineTo(cx + w / 2 + 3, botY); ctx.stroke();
+  ctx.fillStyle = dir > 0 ? "#62e074" : "#ff9b3c"; ctx.globalAlpha = 0.55 + 0.45 * Math.sin(t * 5); const ay = topY + h * 0.5; ctx.beginPath(); if (dir > 0) { ctx.moveTo(cx, ay - 11); ctx.lineTo(cx - 10, ay + 6); ctx.lineTo(cx + 10, ay + 6); } else { ctx.moveTo(cx, ay + 11); ctx.lineTo(cx - 10, ay - 6); ctx.lineTo(cx + 10, ay - 6); } ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
 }
 function intCloseRect() { const R = intRoom(); return { x: R.x + R.w - 112, y: R.y + 8, w: 104, h: 34 }; }
 function escUpRect() { const R = intRoom(); return { x: R.x + 10, y: R.y + 8, w: 38, h: 34 }; }
@@ -1335,13 +1378,20 @@ function drawInterior() {
   ctx.strokeStyle = "rgba(255,255,255,0.06)"; ctx.lineWidth = 1; const mxc = R.x + R.w / 2;
   for (let gx = R.x; gx <= R.x + R.w; gx += 44) { ctx.beginPath(); ctx.moveTo(gx, fy); ctx.lineTo(mxc + (gx - mxc) * 1.7, R.y + R.h); ctx.stroke(); }
   for (let gy = fy; gy <= R.y + R.h; gy += 26) { ctx.beginPath(); ctx.moveTo(R.x, gy); ctx.lineTo(R.x + R.w, gy); ctx.stroke(); }
-  // VIDRIERAS (locales) en la pared del fondo
-  const sfW = 116, sfGap = 16, sfY = R.y + 26, sfH = interior.wallH - 38;
-  for (let sx = R.x + 14; sx + sfW < R.x + R.w - 130; sx += sfW + sfGap) drawStorefront(sx, sfY, sfW, sfH, ["#ff6b8a", "#3a8a4a", "#3a6ad6", "#e0a020", "#c060e0"][((sx / 60) | 0) % 5]);
-  // ventana con vista (dia/noche) a la derecha
-  const wx = R.x + R.w - 116; ctx.fillStyle = nightAmt > 0.5 ? "#0e1430" : "#8fc7f0"; ctx.fillRect(wx, sfY, 96, sfH); if (nightAmt > 0.5) { ctx.fillStyle = "#e6ebff"; ctx.beginPath(); ctx.arc(wx + 70, sfY + 18, 7, 0, 7); ctx.fill(); for (let k = 0; k < 8; k++) { ctx.fillStyle = "rgba(255,255,255,0.7)"; ctx.fillRect(wx + 10 + (k * 23 % 86), sfY + 8 + (k * 13 % (sfH - 16)), 1.5, 1.5); } } ctx.strokeStyle = "#2a2d3c"; ctx.lineWidth = 4; ctx.strokeRect(wx, sfY, 96, sfH);
-  // guirnalda de luces bajo el techo
-  for (let i = 0; i < Math.round(R.w / 36); i++) { const lc = ["#ff6b8a", "#ffd84a", "#7fd6ff", "#60d050"][i % 4]; ctx.fillStyle = lc; ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 3 + i); ctx.beginPath(); ctx.arc(R.x + 18 + i * 36, R.y + 12, 3, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+  // CLARABOYA / atrio (techo de vidrio) + balcon del piso de arriba
+  const skg = ctx.createLinearGradient(0, R.y, 0, R.y + 16); skg.addColorStop(0, nightAmt > 0.5 ? "#1a2342" : "#bfe0ff"); skg.addColorStop(1, "rgba(0,0,0,0)"); ctx.fillStyle = skg; ctx.fillRect(R.x, R.y, R.w, 16);
+  drawRailing(R.x + 8, R.x + R.w - 8, R.y + 20);
+  // VIDRIERAS (locales reales con nombre), con hueco central para la escalera
+  const sfW = 120, sfGap = 12, sfY = R.y + 28, sfH = interior.wallH - 36, signs = MALL_SHOP_SIGNS[interior.floor], cols2 = ["#ff6b8a", "#3a8a4a", "#3a6ad6", "#e0a020", "#c060e0", "#ff9b3c"];
+  let si = 0; for (let sx = R.x + 12; sx + sfW < R.x + R.w - 12; sx += sfW + sfGap) { if (Math.abs(sx + sfW / 2 - mxc) < 92) { si++; continue; } drawStorefront(sx, sfY, sfW, sfH, cols2[si % cols2.length], signs[si % signs.length]); si++; }
+  // guirnalda de luces bajo la baranda
+  for (let i = 0; i < Math.round(R.w / 36); i++) { const lc = ["#ff6b8a", "#ffd84a", "#7fd6ff", "#60d050"][i % 4]; ctx.fillStyle = lc; ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 3 + i); ctx.beginPath(); ctx.arc(R.x + 18 + i * 36, R.y + 26, 3, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+  // ESCALERA MECANICA real (sube/baja) en el atrio central
+  const e = interior.esc;
+  drawEscalator(e.upX, e.topY, e.botY, 34, interior.floor < MALL_FLOORS.length - 1 ? 1 : 0);
+  drawEscalator(e.downX, e.topY, e.botY, 34, interior.floor > 0 ? -1 : 0);
+  if (Math.abs(intP.x - e.upX) < 30 && intP.y < e.botY + 44 && interior.floor < MALL_FLOORS.length - 1) { ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 6); text("SUBIR ↑", e.upX, e.botY + 18, 12, "#62e074", "center"); ctx.globalAlpha = 1; }
+  if (Math.abs(intP.x - e.downX) < 30 && intP.y < e.botY + 44 && interior.floor > 0) { ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 6); text("BAJAR ↓", e.downX, e.botY + 18, 12, "#ff9b3c", "center"); ctx.globalAlpha = 1; }
   // plantas, bancos y gente caminando
   for (const pl of interior.plants) drawMallPlant(pl.x, pl.y);
   for (const bn of interior.benches) drawBench(bn.x, bn.y);

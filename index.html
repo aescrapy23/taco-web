@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v59 - MENU desbloqueable por niveles + tutor por materia: el menu casa ya no esta congestionado: lo esencial queda libre y lo demas se DESBLOQUEA POR MUNDOS (se VE con candado y 'Mundo N' hasta que llegas): KPIS+LOGROS (mundo 2), MIRADOR (mundo 2), DIMENSION 3D (mundo 3, tambien el portal en la ciudad). En la ACADEMIA: el tutor da un mini saludo HABLADO por materia y el hub muestra tu nivel de mates + racha + palabras dominadas. Sobre v58: edificio ACADEMIA con tutor y materias reusadas";
+const VERSION = "v60 - progresion por niveles en TODO: el candado-por-mundo (visible pero bloqueado) ahora tambien aplica a las MATERIAS de la ACADEMIA (Ortografia y Memoria en mundo 2, Logica/Secuencias en mundo 3; Mates e Idiomas libres) y a las ESTACIONES de DIVERSION del mall (Ruleta/Juegos mundo 2, Casino mundo 3, Cine mundo 4); las de supervivencia (Salud/Poderes/Comida/Vestuario) quedan libres. Cada bloqueado se VE atenuado con candado + 'Mundo N' y avisa al tocarlo. Sobre v59: menu desbloqueable, tutor hablado por materia";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -1330,11 +1330,11 @@ function drawThermalRadar() {
 }
 // ---- ACADEMIA: hub del TUTOR. Reusa las actividades educativas existentes (mates/idiomas/ortografia/logica/memoria). ----
 const ACADEMIA_SUBJECTS = [
-  { key: "math", name: "MATEMATICAS", desc: "sumas, restas, tablas, logica", col: "#ffd84a", say: "Vamos con matematicas. Pensa cada paso con calma, vos podes.", open: openMath },
-  { key: "lang", name: "IDIOMAS (INGLES/CHINO)", desc: "vocabulario y traduccion", col: "#62e074", say: "Practiquemos idiomas. Escucha y repeti en voz alta.", open: openTrivia },
-  { key: "spell", name: "ORTOGRAFIA", desc: "arma la palabra (anagrama)", col: "#7fd6ff", say: "Ordena las letras para formar la palabra. Tomate tu tiempo.", open: openAnagram },
-  { key: "logic", name: "LOGICA / SECUENCIAS", desc: "encuentra el patron", col: "#b480ff", say: "Observa la secuencia y descubri el patron.", open: openSeq },
-  { key: "memory", name: "MEMORIA", desc: "parea palabras", col: "#ff9bb0", say: "Encuentra las parejas. Concentrate y memoriza!", open: openMemory },
+  { key: "math", name: "MATEMATICAS", desc: "sumas, restas, tablas, logica", col: "#ffd84a", lv: 1, say: "Vamos con matematicas. Pensa cada paso con calma, vos podes.", open: openMath },
+  { key: "lang", name: "IDIOMAS (INGLES/CHINO)", desc: "vocabulario y traduccion", col: "#62e074", lv: 1, say: "Practiquemos idiomas. Escucha y repeti en voz alta.", open: openTrivia },
+  { key: "spell", name: "ORTOGRAFIA", desc: "arma la palabra (anagrama)", col: "#7fd6ff", lv: 2, say: "Ordena las letras para formar la palabra. Tomate tu tiempo.", open: openAnagram },
+  { key: "memory", name: "MEMORIA", desc: "parea palabras", col: "#ff9bb0", lv: 2, say: "Encuentra las parejas. Concentrate y memoriza!", open: openMemory },
+  { key: "logic", name: "LOGICA / SECUENCIAS", desc: "encuentra el patron", col: "#b480ff", lv: 3, say: "Observa la secuencia y descubri el patron.", open: openSeq },
 ];
 // lanza una materia: el tutor da un mini saludo hablado y abre la actividad (vuelve al tutor al terminar)
 function academiaStart(s) { eduReturn = "academia"; try { speak(s.say, "es-ES"); } catch (e) {} s.open(); }
@@ -1344,8 +1344,8 @@ function academiaGreeting() {
   const rec = academiaRec(), recName = (ACADEMIA_SUBJECTS.find(s => s.key === rec) || ACADEMIA_SUBJECTS[0]).name;
   return "Hola " + nm + "! Soy tu tutor. Llevas " + ms.m + "/" + ms.tt + " palabras dominadas y rango " + rk.name + ". Hoy te sugiero: " + recName + ". Que practicamos?";
 }
-function openAcademia(back) { academia = { back: back || "play", rec: academiaRec(), greet: academiaGreeting() }; state = "academia"; sPower(); try { saveKpi(); } catch (e) {} try { speak(academia.greet, "es-ES"); } catch (e) {} }
-function updateAcademia(dt) { }
+function openAcademia(back) { academia = { back: back || "play", rec: academiaRec(), greet: academiaGreeting(), msg: "", msgT: 0 }; state = "academia"; sPower(); try { saveKpi(); } catch (e) {} try { speak(academia.greet, "es-ES"); } catch (e) {} }
+function updateAcademia(dt) { if (academia.msgT > 0) academia.msgT -= dt; }
 function acaRect() { const n = ACADEMIA_SUBJECTS.length, w = Math.min(460, W - 24), h = Math.min(H - 14, 130 + n * 56 + 50); return { x: (W - w) / 2, y: Math.max(12 + safeT, (H - h) / 2), w, h }; }
 function acaRowRect(i) { const p = acaRect(); return { x: p.x + 18, y: p.y + 128 + i * 56, w: p.w - 36, h: 50 }; }
 function acaCloseRect() { const p = acaRect(); return { x: p.x + p.w / 2 - 90, y: p.y + p.h - 40, w: 180, h: 32 }; }
@@ -1357,7 +1357,7 @@ function acaWrap(txt, x, y, maxW, size, col, lineH, maxLines) {
 }
 function academiaTapAt(px, py) {
   const inR = (r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
-  for (let i = 0; i < ACADEMIA_SUBJECTS.length; i++) if (inR(acaRowRect(i))) { academiaStart(ACADEMIA_SUBJECTS[i]); return; }
+  for (let i = 0; i < ACADEMIA_SUBJECTS.length; i++) if (inR(acaRowRect(i))) { const s = ACADEMIA_SUBJECTS[i]; if (maxWorld < (s.lv || 1)) { sWrong(); academia.msg = s.name + " se desbloquea en el MUNDO " + s.lv; academia.msgT = 2; } else academiaStart(s); return; }
   if (inR(acaCloseRect())) state = academia.back;
 }
 function drawAcademia() {
@@ -1379,14 +1379,18 @@ function drawAcademia() {
     text("Idiomas: " + ms.m + "/" + ms.tt + " dominadas", p.x + p.w - 18, sy, 11, "#62e074", "right"); }
   // materias (reusan actividades existentes); la sugerida queda resaltada
   for (let i = 0; i < ACADEMIA_SUBJECTS.length; i++) {
-    const r = acaRowRect(i), s = ACADEMIA_SUBJECTS[i], rec = s.key === academia.rec;
-    ctx.fillStyle = rec ? "#22304a" : "#1b2030"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.strokeStyle = rec ? s.col : "#33384a"; ctx.lineWidth = rec ? 2 : 1.4; ctx.stroke();
-    ctx.fillStyle = s.col; ctx.beginPath(); ctx.roundRect(r.x, r.y, 5, r.h, 3); ctx.fill();
-    text(s.name, r.x + 16, r.y + 21, 15, "#fff", "left");
+    const r = acaRowRect(i), s = ACADEMIA_SUBJECTS[i], locked = maxWorld < (s.lv || 1), rec = !locked && s.key === academia.rec;
+    ctx.globalAlpha = locked ? 0.55 : 1;
+    ctx.fillStyle = rec ? "#22304a" : "#1b2030"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.strokeStyle = rec ? s.col : locked ? "#343a4e" : "#33384a"; ctx.lineWidth = rec ? 2 : 1.4; ctx.stroke();
+    ctx.fillStyle = locked ? "#4a5168" : s.col; ctx.beginPath(); ctx.roundRect(r.x, r.y, 5, r.h, 3); ctx.fill();
+    text(s.name, r.x + 16, r.y + 21, 15, locked ? "#8088a0" : "#fff", "left");
     text(s.desc, r.x + 16, r.y + 38, 11, "#9aa6c0", "left");
-    if (rec) { ctx.fillStyle = "#1d3a24"; ctx.beginPath(); ctx.roundRect(r.x + r.w - 96, r.y + 12, 88, 26, 8); ctx.fill(); ctx.strokeStyle = "#62e074"; ctx.lineWidth = 1; ctx.stroke(); text("SUGERIDO", r.x + r.w - 52, r.y + 29, 11, "#9be7c0", "center"); }
+    if (locked) { const lx = r.x + r.w - 74, ly = r.y + r.h / 2; drawLock(lx, ly, "#aab0c4"); text("Mundo " + s.lv, lx + 13, ly + 5, 11, "#aab0c4", "left"); }
+    else if (rec) { ctx.fillStyle = "#1d3a24"; ctx.beginPath(); ctx.roundRect(r.x + r.w - 96, r.y + 12, 88, 26, 8); ctx.fill(); ctx.strokeStyle = "#62e074"; ctx.lineWidth = 1; ctx.stroke(); text("SUGERIDO", r.x + r.w - 52, r.y + 29, 11, "#9be7c0", "center"); }
     else text("EMPEZAR", r.x + r.w - 16, r.y + r.h / 2 + 5, 12, s.col, "right");
+    ctx.globalAlpha = 1;
   }
+  if (academia.msgT > 0) { ctx.globalAlpha = Math.min(1, academia.msgT / 0.4); text(academia.msg, W / 2, p.y - 8, 13, "#ffba6b", "center"); ctx.globalAlpha = 1; }
   const c = acaCloseRect(); ctx.fillStyle = "#2a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); text(academia.back === "play" ? "SALIR A LA CIUDAD" : "VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 5, 13, "#ff9bb0", "center");
 }
 // Menu: lo esencial queda libre (lv 1); lo demas se DESBLOQUEA POR NIVELES (se ve, pero con candado hasta su mundo).
@@ -1723,13 +1727,13 @@ const MALL_FLOORS = [
     ] },
   ] },
   { name: "PISO 3 · DIVERSION", stations: [
-    { kind: "ruleta", name: "RULETA", icon: "dice", col: "#ffd84a", opts: [
+    { kind: "ruleta", name: "RULETA", icon: "dice", col: "#ffd84a", lv: 2, opts: [
       { label: "Girar (2 mon)", cost: 0, act: () => { interior.popup = null; openRoulette(); } },
     ] },
-    { kind: "memo", name: "JUEGOS", icon: "dice", col: "#7fd6ff", opts: [
+    { kind: "memo", name: "JUEGOS", icon: "dice", col: "#7fd6ff", lv: 2, opts: [
       { label: "Memoria de palabras", cost: 0, act: () => { interior.popup = null; openMemory(); } },
     ] },
-    { kind: "casino", name: "CASINO", icon: "dice", col: "#ff6b8a", opts: [
+    { kind: "casino", name: "CASINO", icon: "dice", col: "#ff6b8a", lv: 3, opts: [
       { label: "UNO de colores vs NPCs", cost: 0, act: () => { interior.popup = null; openUno(); } },
       { label: "Trivia neural (idiomas)", cost: 0, act: () => { interior.popup = null; openTrivia(); } },
       { label: "Anagrama (ortografia)", cost: 0, act: () => { interior.popup = null; openAnagram(); } },
@@ -1738,7 +1742,7 @@ const MALL_FLOORS = [
     ] },
   ] },
   { name: "PISO 4 · CINE Y TERRAZA", stations: [
-    { kind: "cine", name: "CINE", icon: "film", col: "#c060e0", opts: [
+    { kind: "cine", name: "CINE", icon: "film", col: "#c060e0", lv: 4, opts: [
       { label: "Ver funcion (+vida +escudo)", cost: 2, act: () => { interior.popup = null; openCine(); } },
     ] },
     { kind: "cafe", name: "CAFETERIA", icon: "food", col: "#caa050", opts: [
@@ -1876,7 +1880,7 @@ function interiorTapAt(px, py) {
   const eu = escUpRect(); if (px >= eu.x && px <= eu.x + eu.w && py >= eu.y && py <= eu.y + eu.h) { changeFloor(1); return true; }
   const ed = escDownRect(); if (px >= ed.x && px <= ed.x + ed.w && py >= ed.y && py <= ed.y + ed.h) { changeFloor(-1); return true; }
   for (const sh of interior.shops) if (px >= sh.x && px <= sh.x + sh.w && py >= sh.y && py <= sh.y + sh.h) { openStore(sh); return true; }
-  for (const s of interior.stations) if (len(px - s.x, py - s.y) < 42) { interior.popup = s.def; sRight(); return true; }
+  for (const s of interior.stations) if (len(px - s.x, py - s.y) < 42) { const lv = s.def.lv || 1; if (maxWorld < lv) { sWrong(); interior.toastMsg = s.def.name + " se desbloquea en el MUNDO " + lv; interior.toastCol = "#ffba6b"; interior.toastT = 1.8; } else { interior.popup = s.def; sRight(); } return true; }
   return false;
 }
 function drawInterior() {
@@ -1909,13 +1913,16 @@ function drawInterior() {
   for (const p of interior.npcs) drawPed(p);
   // estaciones (kioscos)
   for (const s of interior.stations) {
-    const near = len(intP.x - s.x, intP.y - s.y) < 60;
+    const near = len(intP.x - s.x, intP.y - s.y) < 60, locked = maxWorld < (s.def.lv || 1);
+    ctx.globalAlpha = locked ? 0.5 : 1;
     ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(s.x, s.y + 26, 28, 8, 0, 0, 7); ctx.fill();
-    ctx.fillStyle = "#23273a"; ctx.beginPath(); ctx.roundRect(s.x - 28, s.y - 26, 56, 52, 9); ctx.fill(); ctx.strokeStyle = s.def.col; ctx.lineWidth = near ? 3 : 2; ctx.stroke();
+    ctx.fillStyle = "#23273a"; ctx.beginPath(); ctx.roundRect(s.x - 28, s.y - 26, 56, 52, 9); ctx.fill(); ctx.strokeStyle = locked ? "#4a5168" : s.def.col; ctx.lineWidth = near ? 3 : 2; ctx.stroke();
     ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(s.x - 18, s.y - 20, 36, 28, 7); ctx.fill();
     mallIcon(s.def.icon, s.x, s.y - 6, 11);
-    text(s.def.name, s.x, s.y + 22, fitFont(s.def.name, 54, 11), s.def.col, "center");
-    if (near) { ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 6); text("toca", s.x, s.y - 32, 11, "#fff", "center"); ctx.globalAlpha = 1; }
+    text(s.def.name, s.x, s.y + 22, fitFont(s.def.name, 54, 11), locked ? "#8088a0" : s.def.col, "center");
+    ctx.globalAlpha = 1;
+    if (locked) { drawLock(s.x, s.y - 8, "#e0e6f5"); text("Mundo " + (s.def.lv || 1), s.x, s.y - 30, 10, "#aab0c4", "center"); }
+    else if (near) { ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 6); text("toca", s.x, s.y - 32, 11, "#fff", "center"); ctx.globalAlpha = 1; }
   }
   for (const c of interior.coins) if (!c.got) { const bob = Math.sin(t * 5 + c.x) * 2; drawCoin(c.x, c.y + bob, 8); }
   ctx.fillStyle = "#3a2030"; ctx.fillRect(mxc - 42, R.y + R.h - 16, 84, 13); text("SALIDA  ↓", mxc, R.y + R.h - 5, 11, "#ff9bb0", "center");

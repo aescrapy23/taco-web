@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v55 - LOGROS/MEDALLAS + SPARKLINES en AMBAS plataformas (normal + 3D): 15 medallas que se desbloquean por KPIs (cazador, poliglota, maestro, constructor, sobreviviente, oleadas 3D...) con aviso animado al ganarlas; pantalla LOGROS (boton en KPIS) con grafica de puntaje por partida. El juego 3D ahora suma a los MISMOS KPIs y logros (kills/partidas/tiempo/oleadas) y los comparte por jugador. Sobre v54: BODEGA con pestanas ITEMS/ACCESORIOS, KPIS + coach IA, API interna GAME";
+const VERSION = "v56 - PORTAL fisico al 3D + RANGOS + recompensas + MIRADOR + edificios mejorados: (1) portal cyan en la ciudad: te paras y viajas a la DIMENSION 3D; (2) las medallas dan MONEDAS al banco al ganarlas (ambas plataformas); (3) RANGOS Bronce/Plata/Oro/Diamante que combinan KPIs (el aprendizaje pesa mas) en KPIS y LOGROS; (4) pantalla LOGROS+RANGO nativa dentro del 3D; (5) MIRADOR (menu casa o tecla M): vista panoramica de toda la ciudad, normal e INFRARROJA para ver en la oscuridad, se gana por nivel (mundo 2 / mundo 4); (6) edificios 3D rectificados (paredes mas altas, pisos, ventanas con brillo, techo con relieve)";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -219,6 +219,7 @@ let kpanel = null; // estado de la pantalla de KPIs
 let ach = {}; // LOGROS desbloqueados { id: 1 } (compartido con el juego 3D)
 let hist = []; // historial de partidas para las sparklines [{ s, w, lvl }]
 let achToast = null, achT = 0, lpanel = null; // aviso de logro + timer de chequeo + pantalla de logros
+let mirador = null; // MIRADOR: vista panoramica (normal + infrarroja), se desbloquea por nivel
 function saveCosmetics() { lset("face", face); lset("acc", acc); lset("mount", mount); lset("uface", JSON.stringify(uFace)); lset("uacc", JSON.stringify(uAcc)); lset("umount", JSON.stringify(uMount)); }
 let wbScroll = 0, wbDrag = null;
 let uiBack = "title"; // a donde vuelve "VOLVER" (title o menu del juego)
@@ -286,7 +287,7 @@ function kpiReset() { kpi = {}; for (const k of KPI_KEYS) kpi[k] = 0; }
 function loadKpi() { try { kpi = JSON.parse(lget("kpi") || "{}"); } catch (e) { kpi = {}; } for (const k of KPI_KEYS) if (typeof kpi[k] !== "number") kpi[k] = 0; }
 let kpiDirty = false;
 function kpiBump(k, n) { kpi[k] = (kpi[k] || 0) + (n == null ? 1 : n); kpiDirty = true; }
-function saveKpi() { if (curPlayer) { lset("kpi", JSON.stringify(kpi)); kpiDirty = false; } }
+function saveKpi() { if (curPlayer) { try { kpi.mastered = aiMastery().m; } catch (e) {} lset("kpi", JSON.stringify(kpi)); kpiDirty = false; } }
 function fmtTime(s) { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60; return h > 0 ? h + "h " + m + "m" : m + "m " + ss + "s"; }
 // ===== Registro UNIFICADO de cosmeticos: lo usan la BODEGA (pestaña ACCESORIOS) y la API GAME =====
 const COSMO = {
@@ -318,22 +319,33 @@ const GAME = {
 };
 // ===== LOGROS / MEDALLAS (mismas definiciones que el juego 3D para compartir progreso) =====
 const ACHS = [
-  { id: "first", name: "PRIMER TACO", need: s => s.games >= 1, hint: "Juga 1 partida", c: "#ffd84a" },
-  { id: "hunter", name: "CAZADOR", need: s => s.kills >= 10, hint: "Vence 10 enemigos", c: "#ff7a6b" },
-  { id: "slayer", name: "EXTERMINADOR", need: s => s.kills >= 50, hint: "Vence 50 enemigos", c: "#ff7a6b" },
-  { id: "legend", name: "LEYENDA", need: s => s.kills >= 150, hint: "Vence 150 enemigos", c: "#ff5a4a" },
-  { id: "learn10", name: "APRENDIZ", need: s => s.words >= 10, hint: "Aprende 10 palabras", c: "#62e074" },
-  { id: "learn50", name: "POLIGLOTA", need: s => s.words >= 50, hint: "Aprende 50 palabras", c: "#62e074" },
-  { id: "master", name: "MAESTRO", need: s => s.mastered >= 10, hint: "Domina 10 palabras", c: "#5eead4" },
-  { id: "buyer", name: "COMPRADOR", need: s => s.bought >= 20, hint: "Compra 20 items", c: "#f5cd46" },
-  { id: "tactic", name: "ESTRATEGA", need: s => s.used >= 10, hint: "Usa 10 items de bodega", c: "#8ee07a" },
-  { id: "builder", name: "CONSTRUCTOR", need: s => s.builds >= 1, hint: "Construi 1 edificio", c: "#ffb060" },
-  { id: "fashion", name: "FASHIONISTA", need: s => s.cosmetics >= 8, hint: "Ten 8 accesorios", c: "#ff9bb0" },
-  { id: "endure", name: "SOBREVIVIENTE", need: s => s.playSec >= 600, hint: "Juga 10 minutos", c: "#7fd6ff" },
-  { id: "rich", name: "MILLONARIO", need: s => s.best >= 1000, hint: "Llega a 1000 puntos", c: "#ffd84a" },
-  { id: "wave5", name: "OLEADA 5 (3D)", need: s => s.isoWave >= 5, hint: "Oleada 5 en DIMENSION 3D", c: "#b480ff" },
-  { id: "wave10", name: "OLEADA 10 (3D)", need: s => s.isoWave >= 10, hint: "Oleada 10 en DIMENSION 3D", c: "#b480ff" },
+  { id: "first", name: "PRIMER TACO", need: s => s.games >= 1, hint: "Juga 1 partida", c: "#ffd84a", reward: 5 },
+  { id: "hunter", name: "CAZADOR", need: s => s.kills >= 10, hint: "Vence 10 enemigos", c: "#ff7a6b", reward: 8 },
+  { id: "slayer", name: "EXTERMINADOR", need: s => s.kills >= 50, hint: "Vence 50 enemigos", c: "#ff7a6b", reward: 15 },
+  { id: "legend", name: "LEYENDA", need: s => s.kills >= 150, hint: "Vence 150 enemigos", c: "#ff5a4a", reward: 30 },
+  { id: "learn10", name: "APRENDIZ", need: s => s.words >= 10, hint: "Aprende 10 palabras", c: "#62e074", reward: 15 },
+  { id: "learn50", name: "POLIGLOTA", need: s => s.words >= 50, hint: "Aprende 50 palabras", c: "#62e074", reward: 40 },
+  { id: "master", name: "MAESTRO", need: s => s.mastered >= 10, hint: "Domina 10 palabras", c: "#5eead4", reward: 50 },
+  { id: "buyer", name: "COMPRADOR", need: s => s.bought >= 20, hint: "Compra 20 items", c: "#f5cd46", reward: 10 },
+  { id: "tactic", name: "ESTRATEGA", need: s => s.used >= 10, hint: "Usa 10 items de bodega", c: "#8ee07a", reward: 12 },
+  { id: "builder", name: "CONSTRUCTOR", need: s => s.builds >= 1, hint: "Construi 1 edificio", c: "#ffb060", reward: 15 },
+  { id: "fashion", name: "FASHIONISTA", need: s => s.cosmetics >= 8, hint: "Ten 8 accesorios", c: "#ff9bb0", reward: 12 },
+  { id: "endure", name: "SOBREVIVIENTE", need: s => s.playSec >= 600, hint: "Juga 10 minutos", c: "#7fd6ff", reward: 10 },
+  { id: "rich", name: "MILLONARIO", need: s => s.best >= 1000, hint: "Llega a 1000 puntos", c: "#ffd84a", reward: 20 },
+  { id: "wave5", name: "OLEADA 5 (3D)", need: s => s.isoWave >= 5, hint: "Oleada 5 en DIMENSION 3D", c: "#b480ff", reward: 15 },
+  { id: "wave10", name: "OLEADA 10 (3D)", need: s => s.isoWave >= 10, hint: "Oleada 10 en DIMENSION 3D", c: "#b480ff", reward: 30 },
 ];
+// ===== RANGOS / MAESTRIA: combinan varios KPIs; el motor educativo (palabras aprendidas+dominadas) pesa mas =====
+const RANKS = [
+  { n: "NOVATO", at: 0, c: "#9aa0b4" },
+  { n: "BRONCE", at: 40, c: "#c97a3a" },
+  { n: "PLATA", at: 110, c: "#c9d2dc" },
+  { n: "ORO", at: 240, c: "#ffd84a" },
+  { n: "DIAMANTE", at: 450, c: "#7fe6ff" },
+];
+function rankScoreOf(s) { return (s.mastered || 0) * 8 + (s.words || 0) * 3 + (s.games || 0) * 2 + Math.floor((s.kills || 0) / 4) + (s.builds || 0) * 6 + Math.floor((s.playSec || 0) / 120) + (s.isoWave || 0) * 3 + Math.floor((s.best || 0) / 200) + (s.used || 0) * 2; }
+function rankOf(score) { let i = 0; for (let k = 0; k < RANKS.length; k++) if (score >= RANKS[k].at) i = k; const cur = RANKS[i], nxt = RANKS[i + 1] || null; return { i: i, name: cur.n, col: cur.c, score: score, nextAt: nxt ? nxt.at : null, nextName: nxt ? nxt.n : null, prog: nxt ? Math.max(0, Math.min(1, (score - cur.at) / (nxt.at - cur.at))) : 1 }; }
+function curRank() { return rankOf(rankScoreOf(statsSnapshot())); }
 function loadAch() { try { ach = JSON.parse(lget("ach") || "{}"); } catch (e) { ach = {}; } try { hist = JSON.parse(lget("hist") || "[]"); } catch (e) { hist = []; } if (!Array.isArray(hist)) hist = []; }
 function saveAch() { lset("ach", JSON.stringify(ach)); }
 function statsSnapshot() {
@@ -342,9 +354,9 @@ function statsSnapshot() {
 }
 function achCount() { let n = 0; for (const a of ACHS) if (ach[a.id]) n++; return n; }
 function achCheck() {
-  const s = statsSnapshot(); let last = null, changed = false;
-  for (const a of ACHS) if (!ach[a.id] && a.need(s)) { ach[a.id] = 1; changed = true; last = a; }
-  if (changed) { saveAch(); if (last) { achToast = { name: last.name, c: last.c, t: 3.4 }; try { sPower(); speak("Logro desbloqueado", "es-ES"); } catch (e) {} } }
+  const s = statsSnapshot(); let last = null, changed = false, rew = 0;
+  for (const a of ACHS) if (!ach[a.id] && a.need(s)) { ach[a.id] = 1; changed = true; last = a; rew += (a.reward || 0); }
+  if (changed) { saveAch(); if (rew > 0) { bank += rew; lset("bank", bank); } if (last) { achToast = { name: last.name, c: last.c, t: 3.6, rew: rew }; try { sPower(); speak("Logro desbloqueado", "es-ES"); } catch (e) {} } }
   return changed;
 }
 function histPush(entry) { hist.push(entry); if (hist.length > 30) hist = hist.slice(-30); lset("hist", JSON.stringify(hist)); }
@@ -390,6 +402,7 @@ let level = 1, score = 0, best = 0, words = 0;
 const MAXHP = 100;
 const player = { x: 0, y: 0, r: 18, vx: 0, vy: 0, hp: MAXHP, inv: 0, aimx: 1, aimy: 0, fire: 0 };
 let gems = [], enemies = [], bullets = [], parts = [], heals = [], powerDrops = [], eshots = [], portal = null;
+let isoPortal = null, isoPortalDwell = 0; // PORTAL fisico a la DIMENSION 3D (game-iso.html)
 let peds = [], cars = [], props = [], mission = null; // mundo vivo (gente, autos, casas) + mision
 let cityBlocks = []; // manzanas (rectangulos) para dibujar edificios 3D
 let pShield = 0, pTriple = 0, pRapid = 0, weapon = 0;
@@ -490,6 +503,8 @@ function genLevel() {
     builtMarkers.push({ x: (bk.x + bk.w / 2) * TS, y: bk.y * TS, name: "MI " + d.name });
   }
   for (let y = sy - 1; y <= sy + 1; y++) for (let x = sx - 1; x <= sx + 1; x++) if (x > 0 && y > 0 && x < cols - 1 && y < rows - 1) grid[y * cols + x] = 0;
+  // PORTAL a la DIMENSION 3D: plaza despejada al norte del spawn; al pararte en el remolino viajas al juego iso
+  { const ppx = sx, ppy = Math.max(2, sy - 4); for (let yy = ppy - 1; yy <= ppy + 1; yy++) for (let xx = ppx - 1; xx <= ppx + 1; xx++) if (xx > 0 && yy > 0 && xx < cols - 1 && yy < rows - 1) grid[yy * cols + xx] = 0; isoPortal = { x: (ppx + 0.5) * TS, y: (ppy + 0.5) * TS }; isoPortalDwell = 0; }
 
   player.x = (sx + 0.5) * TS; player.y = (sy + 0.5) * TS; player.vx = player.vy = 0;
   { const c = camClamp(); camX = c.tx; camY = c.ty; }
@@ -585,6 +600,8 @@ addEventListener("keydown", e => {
   if (state === "bodega") { if (k === "escape") state = bodega.back; return; }
   if (state === "kpis") { if (k === "escape") state = kpanel.back; return; }
   if (state === "logros") { if (k === "escape") state = lpanel.back; return; }
+  if (state === "mirador") { if (k === "escape") state = mirador.back; else if (k === "i" && maxWorld >= MIR_IR_LV) mirador.mode = mirador.mode === 1 ? 0 : 1; return; }
+  if (state === "play" && k === "m") { openMirador("play"); return; }
   if (state === "ia") { if (k === "escape") state = iaHub.back; return; }
   if (state === "interior") { if (k === "escape") { if (interior.popup) interior.popup = null; else exitInterior(); } return; }
   if (state === "store") { if (k === "escape") exitStore(); return; }
@@ -614,6 +631,7 @@ canvas.addEventListener("mousedown", e => {
   if (state === "bodega") { bodegaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "kpis") { kpisTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "logros") { logrosTapAt(e.clientX, e.clientY); mouse.down = false; return; }
+  if (state === "mirador") { miradorTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "ia") { iaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "interior") { interiorTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "store") { storeTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -649,6 +667,7 @@ function onTouchStart(e) {
   if (state === "bodega") { for (const tch of e.changedTouches) bodegaTapAt(tch.clientX, tch.clientY); return; }
   if (state === "kpis") { for (const tch of e.changedTouches) kpisTapAt(tch.clientX, tch.clientY); return; }
   if (state === "logros") { for (const tch of e.changedTouches) logrosTapAt(tch.clientX, tch.clientY); return; }
+  if (state === "mirador") { for (const tch of e.changedTouches) miradorTapAt(tch.clientX, tch.clientY); return; }
   if (state === "ia") { for (const tch of e.changedTouches) iaTapAt(tch.clientX, tch.clientY); return; }
   if (state === "interior") { for (const tch of e.changedTouches) { if (interiorTapAt(tch.clientX, tch.clientY)) return; if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
   if (state === "store") { for (const tch of e.changedTouches) { if (storeTapAt(tch.clientX, tch.clientY)) return; if (stickL.id === null) { stickL.id = tch.identifier; stickL.bx = stickL.x = tch.clientX; stickL.by = stickL.y = tch.clientY; } } return; }
@@ -1144,8 +1163,9 @@ function drawKpis() {
   ctx.fillStyle = "rgba(0,0,0,0.66)"; ctx.fillRect(0, 0, W, H);
   const p = kpiRect(), list = buildKpis();
   ctx.shadowColor = "#7fd6ff"; ctx.shadowBlur = 16; ctx.fillStyle = "#13161f"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 14); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = 3; ctx.stroke();
+  const rk = curRank();
   text("KPIS  ·  " + (curPlayer || "jugador"), W / 2, p.y + 30, 19, "#7fd6ff", "center");
-  text("tu progreso personal y educativo", W / 2, p.y + 50, 11, "#9aa0b4", "center");
+  text("RANGO: " + rk.name + (rk.nextName ? "  ->  " + rk.nextName + " (" + rk.score + "/" + rk.nextAt + ")" : "  (MAXIMO)"), W / 2, p.y + 50, 11, rk.col, "center");
   for (let i = 0; i < list.length; i++) { const r = kpiCardRect(i), it = list[i]; ctx.fillStyle = "#1b1f2c"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 9); ctx.fill(); ctx.strokeStyle = "#2a3142"; ctx.lineWidth = 1; ctx.stroke(); ctx.fillStyle = it.c; ctx.beginPath(); ctx.roundRect(r.x, r.y, 5, r.h, 3); ctx.fill(); text(it.l, r.x + 12, r.y + 17, 11, "#9aa0b4", "left"); text("" + it.v, r.x + 12, r.y + 34, 17, "#fff", "left"); }
   const cy = kpiCardRect(list.length - 1).y + 50, cw = p.w - 36;
   ctx.fillStyle = "#10212b"; ctx.beginPath(); ctx.roundRect(p.x + 18, cy, cw, 38, 9); ctx.fill(); ctx.strokeStyle = "#2a6f8a"; ctx.lineWidth = 1; ctx.stroke();
@@ -1165,8 +1185,8 @@ function drawSpark(vals, x, y, w, h, col) {
   const lpx = x + 6 + (n === 1 ? (w - 12) / 2 : (w - 12)), lpy = y + h - 6 - (vals[n - 1] / mx) * (h - 12); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(lpx, lpy, 2.6, 0, 7); ctx.fill();
 }
 function openLogros(back) { lpanel = { back: back || "menu" }; state = "logros"; }
-function logRect() { const w = Math.min(480, W - 20), h = Math.min(H - 14, 116 + Math.ceil(ACHS.length / 2) * 34 + 50); return { x: (W - w) / 2, y: Math.max(10 + safeT, (H - h) / 2), w, h }; }
-function logCardRect(i) { const p = logRect(), col = i % 2, row = Math.floor(i / 2), cw = (p.w - 36) / 2; return { x: p.x + 18 + col * cw, y: p.y + 96 + row * 34, w: cw - 6, h: 30 }; }
+function logRect() { const w = Math.min(480, W - 20), h = Math.min(H - 14, 140 + Math.ceil(ACHS.length / 2) * 34 + 50); return { x: (W - w) / 2, y: Math.max(10 + safeT, (H - h) / 2), w, h }; }
+function logCardRect(i) { const p = logRect(), col = i % 2, row = Math.floor(i / 2), cw = (p.w - 36) / 2; return { x: p.x + 18 + col * cw, y: p.y + 120 + row * 34, w: cw - 6, h: 30 }; }
 function logCloseRect() { const p = logRect(); return { x: p.x + p.w / 2 - 80, y: p.y + p.h - 40, w: 160, h: 32 }; }
 function logrosTapAt(px, py) { const c = logCloseRect(); if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) state = lpanel.back; }
 function drawLogros() {
@@ -1174,8 +1194,15 @@ function drawLogros() {
   const p = logRect();
   ctx.shadowColor = "#ffd84a"; ctx.shadowBlur = 16; ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 14); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 3; ctx.stroke();
   text("LOGROS  ·  " + achCount() + "/" + ACHS.length + " medallas", W / 2, p.y + 28, 18, "#ffd84a", "center");
-  text("puntaje por partida (normal + 3D)", p.x + 18, p.y + 52, 10, "#9aa0b4", "left");
-  drawSpark(hist.map(h => h.s || 0), p.x + p.w - 160, p.y + 38, 142, 24, "#7fd6ff");
+  // ---- RANGO de maestria (combina KPIs; el aprendizaje pesa mas) ----
+  const rk = curRank();
+  text("RANGO: " + rk.name, p.x + 18, p.y + 54, 14, rk.col, "left");
+  const bx = p.x + 120, bw = p.w - 138, by = p.y + 46, bh = 11;
+  ctx.fillStyle = "#0e1018"; ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 5); ctx.fill();
+  ctx.fillStyle = rk.col; ctx.beginPath(); ctx.roundRect(bx, by, Math.max(4, bw * rk.prog), bh, 5); ctx.fill();
+  text(rk.nextName ? rk.name + " -> " + rk.nextName + "   " + rk.score + "/" + rk.nextAt + " pts" : "RANGO MAXIMO  (" + rk.score + " pts)", p.x + 18, p.y + 76, 10, "#9aa0b4", "left");
+  text("puntaje por partida (normal + 3D)", p.x + 18, p.y + 96, 10, "#9aa0b4", "left");
+  drawSpark(hist.map(h => h.s || 0), p.x + p.w - 160, p.y + 84, 142, 24, "#7fd6ff");
   for (let i = 0; i < ACHS.length; i++) { const r = logCardRect(i), a = ACHS[i], on = !!ach[a.id];
     ctx.fillStyle = on ? "#222717" : "#191c24"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 8); ctx.fill(); ctx.strokeStyle = on ? a.c : "#2a2f3c"; ctx.lineWidth = 1.2; ctx.stroke();
     ctx.globalAlpha = on ? 1 : 0.5; ctx.fillStyle = on ? a.c : "#3a3f4c"; ctx.beginPath(); ctx.arc(r.x + 16, r.y + r.h / 2, 8, 0, 7); ctx.fill(); text(on ? "*" : "?", r.x + 16, r.y + r.h / 2 + 4, 12, "#15161f", "center"); ctx.globalAlpha = 1;
@@ -1190,14 +1217,72 @@ function drawAchToast() {
   const w = Math.min(320, W - 40), x = (W - w) / 2, y = 70 + safeT, col = achToast.c || "#ffd84a";
   ctx.fillStyle = "rgba(12,14,22,0.94)"; ctx.beginPath(); ctx.roundRect(x, y, w, 50, 12); ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
   ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x + 26, y + 25, 13, 0, 7); ctx.fill(); text("*", x + 26, y + 30, 18, "#15161f", "center");
-  text("LOGRO DESBLOQUEADO", x + 48, y + 20, 10, col, "left"); text(achToast.name, x + 48, y + 38, 15, "#fff", "left");
+  text("LOGRO DESBLOQUEADO", x + 48, y + 18, 10, col, "left"); text(achToast.name, x + 48, y + 35, 15, "#fff", "left");
+  if (achToast.rew) text("+" + achToast.rew + " al banco", x + w - 12, y + 30, 12, "#ffd84a", "right");
   ctx.globalAlpha = 1;
+}
+// ---- MIRADOR: vista panoramica de TODA la ciudad, normal e INFRARROJA (ver en la oscuridad). Se gana por nivel. ----
+const MIR_PANO_LV = 2, MIR_IR_LV = 4; // mundos necesarios para desbloquear panorama / infrarrojo
+function openMirador(back) { mirador = { back: back || "menu", mode: 0, msg: "", msgT: 0 }; state = "mirador"; }
+function updateMirador(dt) { if (mirador.msgT > 0) mirador.msgT -= dt; }
+function mirBtns() { const gap = 8, total = W - 32, bw = (total - gap * 2) / 3, y = H - 48 - safeB; return [{ x: 16, y: y, w: bw, h: 36, id: "normal" }, { x: 16 + bw + gap, y: y, w: bw, h: 36, id: "ir" }, { x: 16 + 2 * (bw + gap), y: y, w: bw, h: 36, id: "close" }]; }
+function miradorTapAt(px, py) {
+  const bs = mirBtns(); for (const b of bs) if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) {
+    if (b.id === "normal") { mirador.mode = 0; sRight(); }
+    else if (b.id === "ir") { if (maxWorld >= MIR_IR_LV) { mirador.mode = 1; sPower(); } else { sWrong(); mirador.msg = "INFRARROJA se desbloquea en el MUNDO " + MIR_IR_LV; mirador.msgT = 2.2; } }
+    else state = mirador.back;
+    return;
+  }
+}
+function drawMirador() {
+  ctx.fillStyle = "rgba(2,6,10,0.94)"; ctx.fillRect(0, 0, W, H);
+  const pano = maxWorld >= MIR_PANO_LV, irOk = maxWorld >= MIR_IR_LV, ir = mirador.mode === 1 && irOk;
+  text("MIRADOR  ·  " + (ir ? "VISION INFRARROJA" : "PANORAMA"), W / 2, 32 + safeT, 19, ir ? "#7dff9a" : "#7fe6ff", "center");
+  if (!pano || dcanvas.width === 0) {
+    text(pano ? "Inicia una partida para ver el panorama." : "BLOQUEADO", W / 2, H / 2 - 12, pano ? 15 : 28, pano ? "#9aa0b4" : "#ff8a6b", "center");
+    if (!pano) text("Llega al MUNDO " + MIR_PANO_LV + " para desbloquear el mirador.", W / 2, H / 2 + 22, 13, "#9aa0b4", "center");
+    const bs = mirBtns(), c = bs[2]; ctx.fillStyle = "#23303a"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 9); ctx.fill(); text("CERRAR", c.x + c.w / 2, c.y + c.h / 2 + 5, 14, "#9be7c0", "center");
+    return;
+  }
+  const vy = 56 + safeT, vh = (H - 96 - safeB) - vy, vx = 16, vw = W - 32;
+  const mapW = cols * TS, mapH = rows * TS, sc = Math.min(vw / mapW, vh / mapH), dW = mapW * sc, dH = mapH * sc, ox = vx + (vw - dW) / 2, oy = vy + (vh - dH) / 2;
+  ctx.save(); ctx.beginPath(); ctx.rect(ox - 2, oy - 2, dW + 4, dH + 4); ctx.clip();
+  ctx.fillStyle = ir ? "#001a0e" : "#0a0f18"; ctx.fillRect(ox - 2, oy - 2, dW + 4, dH + 4);
+  if (ir) {
+    ctx.globalAlpha = 0.30; ctx.drawImage(dcanvas, ox, oy, dW, dH); ctx.globalAlpha = 1;
+    ctx.fillStyle = "rgba(0,255,110,0.10)"; ctx.fillRect(ox, oy, dW, dH);
+    ctx.strokeStyle = "rgba(80,255,150,0.06)"; ctx.lineWidth = 1; for (let yy = oy; yy < oy + dH; yy += 3) { ctx.beginPath(); ctx.moveTo(ox, yy); ctx.lineTo(ox + dW, yy); ctx.stroke(); }
+  } else {
+    ctx.drawImage(dcanvas, ox, oy, dW, dH);
+    if (nightAmt > 0.15) { ctx.fillStyle = "rgba(8,12,40," + (0.3 + nightAmt * 0.45) + ")"; ctx.fillRect(ox, oy, dW, dH); }
+  }
+  const M = (wx, wy) => ({ x: ox + wx * sc, y: oy + wy * sc });
+  for (const bm of builtMarkers) { const m = M(bm.x, bm.y); ctx.fillStyle = "#62e074"; ctx.beginPath(); ctx.arc(m.x, m.y, 3, 0, 7); ctx.fill(); }
+  ctx.fillStyle = ir ? "#39ff14" : "#5eead4"; for (const gm of gems) { const m = M(gm.x, gm.y); ctx.beginPath(); ctx.arc(m.x, m.y, 2, 0, 7); ctx.fill(); }
+  for (const e of enemies) { const m = M(e.x, e.y); if (ir) { const rg = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, 9); rg.addColorStop(0, "#ff6a3c"); rg.addColorStop(1, "rgba(255,90,60,0)"); ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(m.x, m.y, 9, 0, 7); ctx.fill(); } ctx.fillStyle = "#ff5a4a"; ctx.beginPath(); ctx.arc(m.x, m.y, 2.4, 0, 7); ctx.fill(); }
+  if (portal) { const m = M(portal.x, portal.y); ctx.fillStyle = "#b480ff"; ctx.beginPath(); ctx.arc(m.x, m.y, 4, 0, 7); ctx.fill(); }
+  if (isoPortal) { const m = M(isoPortal.x, isoPortal.y); ctx.fillStyle = "#36e0c8"; ctx.beginPath(); ctx.arc(m.x, m.y, 4, 0, 7); ctx.fill(); }
+  { const m = M(player.x, player.y); if (ir) { const rg = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, 12); rg.addColorStop(0, "#eafff2"); rg.addColorStop(0.5, "#7dff9a"); rg.addColorStop(1, "rgba(125,255,154,0)"); ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(m.x, m.y, 12, 0, 7); ctx.fill(); } ctx.fillStyle = ir ? "#eafff2" : "#ffd84a"; ctx.beginPath(); ctx.arc(m.x, m.y, 3.4, 0, 7); ctx.fill(); ctx.strokeStyle = "#15161f"; ctx.lineWidth = 1; ctx.stroke(); }
+  ctx.restore();
+  ctx.strokeStyle = ir ? "rgba(125,255,154,0.5)" : "rgba(127,230,255,0.4)"; ctx.lineWidth = 2; ctx.strokeRect(ox - 2, oy - 2, dW + 4, dH + 4);
+  text(ir ? "rojo = enemigos · verde = vos/objetos · ves en la oscuridad" : "amarillo = vos · violeta/cyan = portales · rojo = enemigos", W / 2, H - 60 - safeB, 10, "#9aa0b4", "center");
+  if (mirador.msgT > 0) { ctx.globalAlpha = Math.min(1, mirador.msgT); text(mirador.msg, W / 2, H - 74 - safeB, 12, "#ffba6b", "center"); ctx.globalAlpha = 1; }
+  const bs = mirBtns();
+  for (const b of bs) {
+    const sel = (b.id === "normal" && !ir) || (b.id === "ir" && ir);
+    const lock = b.id === "ir" && !irOk;
+    ctx.fillStyle = sel ? "#1d3a44" : "#1b2030"; ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 9); ctx.fill();
+    ctx.strokeStyle = b.id === "close" ? "#9be7c0" : lock ? "#555b6a" : sel ? (b.id === "ir" ? "#7dff9a" : "#7fe6ff") : "#3a4252"; ctx.lineWidth = sel ? 2 : 1.4; ctx.stroke();
+    const lbl = b.id === "normal" ? "NORMAL" : b.id === "ir" ? (irOk ? "INFRARROJA" : "INFRA (Mundo " + MIR_IR_LV + ")") : "CERRAR";
+    text(lbl, b.x + b.w / 2, b.y + b.h / 2 + 5, b.id === "ir" && !irOk ? 10 : 13, b.id === "close" ? "#9be7c0" : lock ? "#777" : sel ? "#fff" : "#aeb6c6", "center");
+  }
 }
 function menuRows() {
   return [
     { label: "CONTINUAR", col: "#5eead4", act: () => { state = "play"; } },
     { label: "BODEGA (items + accesorios)", col: "#ffd84a", act: () => { openBodega("play"); } },
     { label: "KPIS + LOGROS (" + achCount() + "/" + ACHS.length + ")", col: "#7fd6ff", act: () => { openKpis("menu"); } },
+    { label: maxWorld >= MIR_PANO_LV ? "MIRADOR (panorama" + (maxWorld >= MIR_IR_LV ? " + infrarrojo)" : ")") : "MIRADOR (mundo " + MIR_PANO_LV + ")", col: "#7fe6ff", act: () => { openMirador("menu"); } },
     { label: "DIMENSION 3D (ISO)", col: "#b480ff", act: () => { gotoIso(); } },
     { label: "OPCIONES", col: "#7fd6ff", act: () => { openOptions("menu"); } },
     { label: "VESTUARIO", col: "#f5cd46", act: () => { openWb("menu"); } },
@@ -1205,8 +1290,9 @@ function menuRows() {
     { label: "SALIR AL TITULO", col: "#ff9bb0", act: () => { state = "title"; } },
   ];
 }
-function menuRect() { const n = menuRows().length, w = Math.min(420, W - 36), h = 78 + n * 58; return { x: (W - w) / 2, y: Math.max(20 + safeT, (H - h) / 2), w, h }; }
-function menuRowRect(i) { const p = menuRect(); return { x: p.x + 22, y: p.y + 66 + i * 58, w: p.w - 44, h: 48 }; }
+function menuRowH() { const n = menuRows().length; return Math.max(38, Math.min(58, (H - 116 - safeT) / n)); }
+function menuRect() { const n = menuRows().length, w = Math.min(420, W - 36), rh = menuRowH(), h = 64 + n * rh; return { x: (W - w) / 2, y: Math.max(16 + safeT, (H - h) / 2), w, h }; }
+function menuRowRect(i) { const p = menuRect(), rh = menuRowH(); return { x: p.x + 22, y: p.y + 56 + i * rh, w: p.w - 44, h: rh - 9 }; }
 function menuTapAt(px, py) { const rows = menuRows(); for (let i = 0; i < rows.length; i++) { const r = menuRowRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { rows[i].act(); sRight(); return; } } }
 function drawMenu() {
   ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, W, H);
@@ -1293,6 +1379,7 @@ function update(dt) {
   if (state === "bodega") { updateBodega(dt); return; }
   if (state === "kpis") { return; }
   if (state === "logros") { return; }
+  if (state === "mirador") { updateMirador(dt); return; }
   if (state === "interior") { if (!paused) updateInterior(dt); return; }
   if (state === "store") { if (!paused) updateStore(dt); return; }
   if (state === "build") { updateBuild(dt); return; }
@@ -1371,6 +1458,7 @@ function update(dt) {
   }
   if (missionDone() && !portal) portal = farFree(player.x, player.y);
   if (portal && len(portal.x - player.x, portal.y - player.y) < player.r + 22) { openQuiz(); return; }
+  if (isoPortal) { if (len(isoPortal.x - player.x, isoPortal.y - player.y) < player.r + 24) { isoPortalDwell += dt; if (isoPortalDwell > 0.4) { gotoIso(); return; } } else if (isoPortalDwell > 0) isoPortalDwell = 0; }
 
   for (let i = heals.length - 1; i >= 0; i--) if (len(heals[i].x - player.x, heals[i].y - player.y) < player.r + 14) { player.hp = Math.min(MAXHP, player.hp + 25); addParts(heals[i].x, heals[i].y, 10, "#60d050", 150); floatText(heals[i].x, heals[i].y, "+VIDA", "#60d050"); heals.splice(i, 1); sGem(); }
   for (let i = powerDrops.length - 1; i >= 0; i--) { const pd = powerDrops[i]; if (len(pd.x - player.x, pd.y - player.y) < player.r + 16) { applyPower(pd.kind); addParts(pd.x, pd.y, 18, powerCol(pd.kind), 240); floatText(pd.x, pd.y, powerName(pd.kind) + "!", powerCol(pd.kind)); flash("94,234,212", 0.18); shake = Math.min(shake + 4, 14); powerDrops.splice(i, 1); } }
@@ -1444,6 +1532,7 @@ function drawMinimap() {
   for (const g of gems) dot(g.x, g.y, "#5eead4", 1.5);
   if (shop) dot(shop.x, shop.y, "#ffd84a", 2.5);
   if (portal) dot(portal.x, portal.y, "#b480ff", 2.6);
+  if (isoPortal) dot(isoPortal.x, isoPortal.y, "#36e0c8", 2.6);
   for (const e of enemies) dot(e.x, e.y, e.boss ? "#ce82ff" : e.shoot !== undefined ? "#78d2eb" : "#e24a3c", 1.8);
   dot(player.x, player.y, "#fff", 2.6);
 }
@@ -2370,27 +2459,36 @@ function drawBlock(g, px, py, s, col) {
 // Edificio 3D extruido: sombra + paredes (sur/este) con ventanas + azotea con parapeto y detalles.
 function draw3DBuilding(g, b) {
   const px = b.x * TS, py = b.y * TS, pw = b.w * TS, ph = b.h * TS;
-  const EH = b.landmark ? 72 + (b.seed % 4) * 15 : 28 + (b.seed % 5) * 13;  // mas altura = mas 3D (estilo iso); landmark = torre alta
+  const EH = b.landmark ? 78 + (b.seed % 4) * 16 : 40 + (b.seed % 5) * 16;  // paredes mas ALTAS = se ve mas 3D (menos "losa plana")
   const roof = b.tint;
-  // sombra proyectada en el piso (mas larga = mas alto)
-  g.fillStyle = "rgba(0,0,0,0.36)"; g.beginPath(); g.roundRect(px + 10, py + 12, pw, ph, 8); g.fill();
-  // pared SUR (frontal) con degradado vertical (luz arriba -> sombra abajo)
-  const sg = g.createLinearGradient(0, py + ph, 0, py + ph + EH); sg.addColorStop(0, shadeHex(roof, 0.64)); sg.addColorStop(1, shadeHex(roof, 0.32));
-  g.fillStyle = sg; g.fillRect(px, py + ph, pw, EH);
-  // pared ESTE (lateral) en perspectiva, mas oscura
-  g.fillStyle = shadeHex(roof, 0.3); g.beginPath(); g.moveTo(px + pw, py); g.lineTo(px + pw + EH, py + EH); g.lineTo(px + pw + EH, py + ph + EH); g.lineTo(px + pw, py + ph); g.closePath(); g.fill();
-  g.fillStyle = shadeHex(roof, 0.88); g.fillRect(px, py + ph - 1, pw, 2); // borde de luz techo/pared
   let _r = b.seed % 97 + 3; const rnd = () => { _r = (_r * 75 + 74) % 65537; return _r / 65537; };
-  // ventanas iluminadas en la pared SUR (varias filas = mas pisos)
-  const wc = Math.max(2, Math.round(pw / 26)), wr = Math.max(2, Math.round(EH / 15));
-  const ww = (pw - 12) / wc - 5, wh = (EH - 10) / wr - 4;
-  for (let c = 0; c < wc; c++) for (let r = 0; r < wr; r++) if (ww > 2 && wh > 2) {
-    const wx2 = px + 6 + c * (pw - 12) / wc + 2, wy2 = py + ph + 6 + r * (EH - 8) / wr, lit = rnd() < 0.5;
-    g.fillStyle = lit ? "#ffe7a0" : "#19202c"; g.fillRect(wx2, wy2, ww, wh);
-    if (lit) { g.fillStyle = "rgba(255,255,255,0.3)"; g.fillRect(wx2, wy2, ww, 2); }
+  // sombra proyectada en el piso (suave, escala con la altura)
+  g.fillStyle = "rgba(0,0,0,0.34)"; g.beginPath(); g.roundRect(px + 12, py + 14, pw, ph + EH * 0.2, 10); g.fill();
+  // ===== pared ESTE (lateral, en perspectiva) con su propio degradado =====
+  const eg = g.createLinearGradient(px + pw, 0, px + pw + EH, 0); eg.addColorStop(0, shadeHex(roof, 0.4)); eg.addColorStop(1, shadeHex(roof, 0.22));
+  g.fillStyle = eg; g.beginPath(); g.moveTo(px + pw, py); g.lineTo(px + pw + EH, py + EH); g.lineTo(px + pw + EH, py + ph + EH); g.lineTo(px + pw, py + ph); g.closePath(); g.fill();
+  // ===== pared SUR (frontal): degradado + PISOS con repisa + ventanas con brillo =====
+  const sg = g.createLinearGradient(0, py + ph, 0, py + ph + EH); sg.addColorStop(0, shadeHex(roof, 0.66)); sg.addColorStop(1, shadeHex(roof, 0.34));
+  g.fillStyle = sg; g.fillRect(px, py + ph, pw, EH);
+  const wc = Math.max(2, Math.round(pw / 24)), wr = Math.max(2, Math.round(EH / 17));
+  const cellW = (pw - 8) / wc, cellH = (EH - 6) / wr, ww = cellW - 7, wh = cellH - 6;
+  for (let r = 0; r < wr; r++) {
+    const rowY = py + ph + 4 + r * cellH;
+    g.fillStyle = shadeHex(roof, 0.84); g.fillRect(px + 3, rowY - 2, pw - 6, 2); // repisa de piso (luz)
+    g.fillStyle = "rgba(0,0,0,0.16)"; g.fillRect(px + 3, rowY, pw - 6, 1);       // sombra bajo la repisa
+    for (let c = 0; c < wc; c++) if (ww > 2 && wh > 2) {
+      const wx2 = px + 4 + c * cellW + 3, lit = rnd() < 0.5;
+      if (lit) { g.fillStyle = "rgba(255,220,140,0.22)"; g.fillRect(wx2 - 2, rowY + 1, ww + 4, wh + 3); } // halo
+      g.fillStyle = lit ? "#ffe7a0" : "#1a2230"; g.fillRect(wx2, rowY + 3, ww, wh);
+      g.fillStyle = lit ? "rgba(255,255,255,0.35)" : "rgba(130,170,210,0.14)"; g.fillRect(wx2, rowY + 3, ww, 2);
+    }
   }
+  // pilastras verticales en las esquinas (dan volumen a la fachada)
+  g.fillStyle = shadeHex(roof, 0.8); g.fillRect(px, py + ph, 4, EH);
+  g.fillStyle = shadeHex(roof, 0.24); g.fillRect(px + pw - 4, py + ph, 4, EH);
+  g.fillStyle = shadeHex(roof, 0.96); g.fillRect(px, py + ph - 1, pw, 2); // borde de luz techo/pared
   // lineas de pisos en la pared ESTE (sensacion de altura)
-  g.strokeStyle = shadeHex(roof, 0.2); g.lineWidth = 1; for (let r = 1; r < wr; r++) { const e0 = py + (ph) * r / wr; g.beginPath(); g.moveTo(px + pw, e0); g.lineTo(px + pw + EH, e0 + EH); g.stroke(); }
+  g.strokeStyle = shadeHex(roof, 0.18); g.lineWidth = 1; for (let r = 1; r < wr; r++) { const e0 = py + (ph) * r / wr; g.beginPath(); g.moveTo(px + pw, e0); g.lineTo(px + pw + EH, e0 + EH); g.stroke(); }
   // TIENDA: toldo a rayas + vidriera + cartel en la planta baja
   if (b.shop) {
     const ay = py + ph; const stripes = Math.max(3, Math.round(pw / 16));
@@ -2404,12 +2502,20 @@ function draw3DBuilding(g, b) {
     g.fillStyle = "#7fd6ff"; g.fillRect(dx + 3, dy + 4, dw - 6, dh * 0.4); // vidrio
     g.fillStyle = "#e0b840"; g.beginPath(); g.arc(dx + dw - 5, dy + dh * 0.6, 1.8, 0, 7); g.fill();
   }
-  // AZOTEA (techo) con degradado diagonal, rim-light y AO
-  const rgd = g.createLinearGradient(px, py, px + pw, py + ph); rgd.addColorStop(0, shadeHex(roof, 1.12)); rgd.addColorStop(0.5, roof); rgd.addColorStop(1, shadeHex(roof, 0.82));
-  g.fillStyle = rgd; g.beginPath(); g.roundRect(px, py, pw, ph, 4); g.fill();
-  g.fillStyle = shadeHex(roof, 1.32); g.fillRect(px, py, pw, 3); g.fillRect(px, py, 3, ph); // luz arriba-izq
-  g.fillStyle = "rgba(0,0,0,0.22)"; g.fillRect(px, py + ph - 3, pw, 3); g.fillRect(px + pw - 3, py, 3, ph); // sombra abajo-der
-  g.strokeStyle = shadeHex(roof, 1.18); g.lineWidth = 2; g.strokeRect(px + 3, py + 3, pw - 6, ph - 6); // parapeto
+  // AZOTEA (techo) con degradado diagonal, panel inset, rejilla, brillo y AO -> relieve real
+  const rgd = g.createLinearGradient(px, py, px + pw, py + ph); rgd.addColorStop(0, shadeHex(roof, 1.16)); rgd.addColorStop(0.5, roof); rgd.addColorStop(1, shadeHex(roof, 0.8));
+  g.fillStyle = rgd; g.beginPath(); g.roundRect(px, py, pw, ph, 5); g.fill();
+  // rejilla de paneles del techo (textura tecnica sutil)
+  g.strokeStyle = "rgba(0,0,0,0.10)"; g.lineWidth = 1;
+  for (let gx = px + TS; gx < px + pw - 4; gx += TS) { g.beginPath(); g.moveTo(gx, py + 5); g.lineTo(gx, py + ph - 5); g.stroke(); }
+  for (let gy = py + TS; gy < py + ph - 4; gy += TS) { g.beginPath(); g.moveTo(px + 5, gy); g.lineTo(px + pw - 5, gy); g.stroke(); }
+  // panel inset (hunde el centro del techo)
+  g.strokeStyle = shadeHex(roof, 0.72); g.lineWidth = 1; g.strokeRect(px + 7, py + 7, pw - 14, ph - 14);
+  // brillo diagonal (gloss)
+  g.save(); g.globalAlpha = 0.10; g.fillStyle = "#ffffff"; g.beginPath(); g.moveTo(px + pw * 0.12, py + 2); g.lineTo(px + pw * 0.34, py + 2); g.lineTo(px + pw * 0.16, py + ph - 2); g.lineTo(px + 2, py + ph - 2); g.closePath(); g.fill(); g.restore();
+  g.fillStyle = shadeHex(roof, 1.36); g.fillRect(px, py, pw, 3); g.fillRect(px, py, 3, ph); // luz arriba-izq
+  g.fillStyle = "rgba(0,0,0,0.24)"; g.fillRect(px, py + ph - 3, pw, 3); g.fillRect(px + pw - 3, py, 3, ph); // sombra abajo-der
+  g.strokeStyle = shadeHex(roof, 1.2); g.lineWidth = 2; g.strokeRect(px + 3, py + 3, pw - 6, ph - 6); // parapeto
   // detalles de azotea: AC, tanque, caja de escalera (con sombra)
   const units = Math.max(1, Math.floor((pw * ph) / (TS * TS * 2.2)));
   for (let i = 0; i < units; i++) { const ux = px + 12 + rnd() * (pw - 38), uy = py + 12 + rnd() * (ph - 30); g.fillStyle = "rgba(0,0,0,0.25)"; g.fillRect(ux + 2, uy + 13, 16, 2); g.fillStyle = shadeHex(roof, 0.7); g.fillRect(ux, uy, 16, 12); g.fillStyle = shadeHex(roof, 0.96); g.fillRect(ux + 2, uy + 2, 12, 3); }
@@ -2620,6 +2726,27 @@ function drawPortal(x, y) {
   ctx.strokeStyle = "rgba(220,190,255,0.8)"; ctx.lineWidth = 3;
   for (let k = 0; k < 3; k++) { const a = t * 3 + k * 2.094; ctx.beginPath(); ctx.arc(x, y, r * 0.7, a, a + 1.4); ctx.stroke(); }
   ctx.fillStyle = "#0c0c12"; ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill();
+  ctx.restore();
+}
+// PORTAL a la DIMENSION 3D (cyan/verde, con cartel "3D" y aro de carga al entrar)
+function drawIsoPortal(x, y) {
+  const r = 26 + Math.sin(t * 3.5) * 3;
+  ctx.save();
+  // base / pedestal
+  ctx.fillStyle = "rgba(8,20,24,0.55)"; ctx.beginPath(); ctx.ellipse(x, y + 14, r * 1.1, r * 0.5, 0, 0, 7); ctx.fill();
+  ctx.shadowColor = "#36e0c8"; ctx.shadowBlur = glowOn() ? 24 : 10;
+  for (let i = 3; i >= 0; i--) { ctx.fillStyle = "rgba(54,224,200," + (0.16 + i * 0.13) + ")"; ctx.beginPath(); ctx.arc(x, y, r - i * 4, 0, 7); ctx.fill(); }
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "rgba(180,128,255,0.85)"; ctx.lineWidth = 3;
+  for (let k = 0; k < 3; k++) { const a = -t * 3 + k * 2.094; ctx.beginPath(); ctx.arc(x, y, r * 0.7, a, a + 1.4); ctx.stroke(); }
+  ctx.fillStyle = "#06121a"; ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.fill();
+  // cartel flotante
+  const sy2 = y - r - 18 + Math.sin(t * 2) * 2;
+  ctx.fillStyle = "rgba(10,18,26,0.92)"; ctx.beginPath(); ctx.roundRect(x - 44, sy2 - 12, 88, 22, 7); ctx.fill(); ctx.strokeStyle = "#36e0c8"; ctx.lineWidth = 1.5; ctx.stroke();
+  text("DIMENSION 3D", x, sy2 + 4, 11, "#7ff0dd", "center");
+  text("3D", x, y + 5, 15, "#eafff9", "center");
+  // aro de carga mientras te parás en el portal
+  if (isoPortalDwell > 0) { const pr = Math.min(1, isoPortalDwell / 0.4); ctx.strokeStyle = "#eafff9"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, y, r + 7, -Math.PI / 2, -Math.PI / 2 + pr * 6.283); ctx.stroke(); }
   ctx.restore();
 }
 
@@ -3083,6 +3210,7 @@ function render() {
   for (const pd of powerDrops) drawPower(pd.x, pd.y, pd.kind);
   if (shop) { const yb = Math.sin(t * 4) * 2; ctx.fillStyle = "#caa23a"; ctx.fillRect(shop.x - 14, shop.y - 14 + yb, 28, 26); ctx.fillStyle = "#3a2a08"; ctx.fillRect(shop.x - 14, shop.y - 14 + yb, 28, 7); text("$", shop.x, shop.y + 6 + yb, 18, "#3a2408", "center"); }
   if (portal) drawPortal(portal.x, portal.y);
+  if (isoPortal) drawIsoPortal(isoPortal.x, isoPortal.y);
   for (const b of bullets) {
     if (b.explosive) { // COHETE de bazuca
       const ang = Math.atan2(b.vy, b.vx); ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(ang);
@@ -3142,6 +3270,7 @@ function render() {
   if (state === "bodega") drawBodega();
   if (state === "kpis") drawKpis();
   if (state === "logros") drawLogros();
+  if (state === "mirador") drawMirador();
   if (state === "ia") drawIA();
   if (state === "interior") drawInterior();
   if (state === "store") drawStore();

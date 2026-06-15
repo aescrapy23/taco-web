@@ -284,12 +284,14 @@
     Tu <b>taco</b> luce el diseño del juego principal &middot; tu <b>BANCO</b> es el mismo &middot; &larr; VOLVER
   </div>
   <button class="bigBtn" id="startBtn">JUGAR</button>
+  <button class="bigBtn" id="logrosBtn" style="margin-top:12px;font-size:clamp(13px,3.6vw,17px);padding:11px 26px;background:linear-gradient(180deg,#ffd84a,#e0a020)">LOGROS · RANGO</button>
 </div>
 
 <div class="overlay hidden" id="overOverlay">
   <h1 id="overTitle">GAME OVER</h1>
   <div id="goStats"></div>
   <button class="bigBtn" id="retryBtn">REINTENTAR</button>
+  <button class="bigBtn" id="logrosBtn2" style="margin-top:12px;font-size:clamp(13px,3.6vw,17px);padding:11px 26px;background:linear-gradient(180deg,#ffd84a,#e0a020)">LOGROS · RANGO</button>
 </div>
 
 <script>
@@ -353,53 +355,96 @@
   function rdLenIso(k) { try { var a = JSON.parse(localStorage.getItem("pl_" + playerName + "_" + k) || "[]"); return (a && a.length) || 0; } catch (e) { return 0; } }
   // mismas medallas que index.html (compartidas)
   var ACHS = [
-    { id: "first", name: "PRIMER TACO", need: function (s) { return s.games >= 1; }, c: "#ffd84a" },
-    { id: "hunter", name: "CAZADOR", need: function (s) { return s.kills >= 10; }, c: "#ff7a6b" },
-    { id: "slayer", name: "EXTERMINADOR", need: function (s) { return s.kills >= 50; }, c: "#ff7a6b" },
-    { id: "legend", name: "LEYENDA", need: function (s) { return s.kills >= 150; }, c: "#ff5a4a" },
-    { id: "learn10", name: "APRENDIZ", need: function (s) { return s.words >= 10; }, c: "#62e074" },
-    { id: "learn50", name: "POLIGLOTA", need: function (s) { return s.words >= 50; }, c: "#62e074" },
-    { id: "master", name: "MAESTRO", need: function (s) { return s.mastered >= 10; }, c: "#5eead4" },
-    { id: "buyer", name: "COMPRADOR", need: function (s) { return s.bought >= 20; }, c: "#f5cd46" },
-    { id: "tactic", name: "ESTRATEGA", need: function (s) { return s.used >= 10; }, c: "#8ee07a" },
-    { id: "builder", name: "CONSTRUCTOR", need: function (s) { return s.builds >= 1; }, c: "#ffb060" },
-    { id: "fashion", name: "FASHIONISTA", need: function (s) { return s.cosmetics >= 8; }, c: "#ff9bb0" },
-    { id: "endure", name: "SOBREVIVIENTE", need: function (s) { return s.playSec >= 600; }, c: "#7fd6ff" },
-    { id: "rich", name: "MILLONARIO", need: function (s) { return s.best >= 1000; }, c: "#ffd84a" },
-    { id: "wave5", name: "OLEADA 5 (3D)", need: function (s) { return s.isoWave >= 5; }, c: "#b480ff" },
-    { id: "wave10", name: "OLEADA 10 (3D)", need: function (s) { return s.isoWave >= 10; }, c: "#b480ff" }
+    { id: "first", name: "PRIMER TACO", need: function (s) { return s.games >= 1; }, c: "#ffd84a", reward: 5 },
+    { id: "hunter", name: "CAZADOR", need: function (s) { return s.kills >= 10; }, c: "#ff7a6b", reward: 8 },
+    { id: "slayer", name: "EXTERMINADOR", need: function (s) { return s.kills >= 50; }, c: "#ff7a6b", reward: 15 },
+    { id: "legend", name: "LEYENDA", need: function (s) { return s.kills >= 150; }, c: "#ff5a4a", reward: 30 },
+    { id: "learn10", name: "APRENDIZ", need: function (s) { return s.words >= 10; }, c: "#62e074", reward: 15 },
+    { id: "learn50", name: "POLIGLOTA", need: function (s) { return s.words >= 50; }, c: "#62e074", reward: 40 },
+    { id: "master", name: "MAESTRO", need: function (s) { return s.mastered >= 10; }, c: "#5eead4", reward: 50 },
+    { id: "buyer", name: "COMPRADOR", need: function (s) { return s.bought >= 20; }, c: "#f5cd46", reward: 10 },
+    { id: "tactic", name: "ESTRATEGA", need: function (s) { return s.used >= 10; }, c: "#8ee07a", reward: 12 },
+    { id: "builder", name: "CONSTRUCTOR", need: function (s) { return s.builds >= 1; }, c: "#ffb060", reward: 15 },
+    { id: "fashion", name: "FASHIONISTA", need: function (s) { return s.cosmetics >= 8; }, c: "#ff9bb0", reward: 12 },
+    { id: "endure", name: "SOBREVIVIENTE", need: function (s) { return s.playSec >= 600; }, c: "#7fd6ff", reward: 10 },
+    { id: "rich", name: "MILLONARIO", need: function (s) { return s.best >= 1000; }, c: "#ffd84a", reward: 20 },
+    { id: "wave5", name: "OLEADA 5 (3D)", need: function (s) { return s.isoWave >= 5; }, c: "#b480ff", reward: 15 },
+    { id: "wave10", name: "OLEADA 10 (3D)", need: function (s) { return s.isoWave >= 10; }, c: "#b480ff", reward: 30 }
   ];
+  // RANGOS (mismo calculo que index.html; comparte progreso por jugador)
+  var RANKS = [
+    { n: "NOVATO", at: 0, c: "#9aa0b4" }, { n: "BRONCE", at: 40, c: "#c97a3a" },
+    { n: "PLATA", at: 110, c: "#c9d2dc" }, { n: "ORO", at: 240, c: "#ffd84a" }, { n: "DIAMANTE", at: 450, c: "#7fe6ff" }
+  ];
+  function rankScoreOf(s) { return (s.mastered || 0) * 8 + (s.words || 0) * 3 + (s.games || 0) * 2 + Math.floor((s.kills || 0) / 4) + (s.builds || 0) * 6 + Math.floor((s.playSec || 0) / 120) + (s.isoWave || 0) * 3 + Math.floor((s.best || 0) / 200) + (s.used || 0) * 2; }
+  function rankOf(score) { var i = 0; for (var k = 0; k < RANKS.length; k++) if (score >= RANKS[k].at) i = k; var cur = RANKS[i], nxt = RANKS[i + 1] || null; return { i: i, name: cur.n, col: cur.c, score: score, nextAt: nxt ? nxt.at : null, nextName: nxt ? nxt.n : null, prog: nxt ? Math.max(0, Math.min(1, (score - cur.at) / (nxt.at - cur.at))) : 1 }; }
   function snapshotIso() {
     return {
       games: kpi.games || 0, kills: kpi.kills || 0, words: kpi.wordsLearned || 0,
       bought: kpi.bought || 0, used: kpi.used || 0, playSec: kpi.playSec || 0, deaths: kpi.deaths || 0,
       best: rdNumIso("best", 0), maxWorld: rdNumIso("maxworld", 1),
       cosmetics: rdCountIso("unlocked") + rdCountIso("uface") + rdCountIso("uacc") + rdCountIso("umount"),
-      builds: rdLenIso("mybuilds"), mastered: 0, isoWave: loadWaveRecord()
+      builds: rdLenIso("mybuilds"), mastered: kpi.mastered || 0, isoWave: loadWaveRecord()
     };
   }
+  function curRankIso() { return rankOf(rankScoreOf(snapshotIso())); }
   function achCountIso() { var n = 0; for (var i = 0; i < ACHS.length; i++) if (ach[ACHS[i].id]) n++; return n; }
   function achCheckIso() {
-    var s = snapshotIso(), last = null, changed = false;
-    for (var i = 0; i < ACHS.length; i++) { var a = ACHS[i]; if (!ach[a.id] && a.need(s)) { ach[a.id] = 1; changed = true; last = a; } }
-    if (changed) { saveAchIso(); if (last) showAchToast(last); }
+    var s = snapshotIso(), last = null, changed = false, rew = 0;
+    for (var i = 0; i < ACHS.length; i++) { var a = ACHS[i]; if (!ach[a.id] && a.need(s)) { ach[a.id] = 1; changed = true; last = a; rew += (a.reward || 0); } }
+    if (changed) { saveAchIso(); if (rew > 0) addBank(rew); if (last) showAchToast(last, rew); }
     return changed;
   }
   function histPushIso(entry) {
     try { var key = "pl_" + playerName + "_hist"; var arr = JSON.parse(localStorage.getItem(key) || "[]"); if (!Array.isArray(arr)) arr = []; arr.push(entry); if (arr.length > 30) arr = arr.slice(-30); localStorage.setItem(key, JSON.stringify(arr)); } catch (e) {}
   }
   var _achEl = null, _achTmr = null;
-  function showAchToast(a) {
+  function showAchToast(a, rew) {
     try {
       if (!_achEl) { _achEl = document.createElement("div"); _achEl.style.cssText = "position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:60;background:rgba(12,14,22,0.94);border:2px solid #ffd84a;border-radius:12px;padding:8px 16px;font-family:sans-serif;font-weight:900;color:#fff;text-align:center;pointer-events:none;box-shadow:0 6px 24px rgba(0,0,0,0.5);transition:opacity .3s;opacity:0;max-width:82vw;"; document.body.appendChild(_achEl); }
       _achEl.style.borderColor = a.c || "#ffd84a";
-      _achEl.innerHTML = "<div style='font-size:10px;letter-spacing:1px;color:" + (a.c || "#ffd84a") + "'>LOGRO DESBLOQUEADO</div><div style='font-size:15px'>" + a.name + "</div>";
+      _achEl.innerHTML = "<div style='font-size:10px;letter-spacing:1px;color:" + (a.c || "#ffd84a") + "'>LOGRO DESBLOQUEADO</div><div style='font-size:15px'>" + a.name + "</div>" + (rew ? "<div style='font-size:11px;color:#ffd84a'>+" + rew + " al banco</div>" : "");
       _achEl.style.opacity = "1";
       if (_achTmr) clearTimeout(_achTmr);
-      _achTmr = setTimeout(function () { if (_achEl) _achEl.style.opacity = "0"; }, 3000);
+      _achTmr = setTimeout(function () { if (_achEl) _achEl.style.opacity = "0"; }, 3200);
       try { if (typeof sndPower === "function") sndPower(); } catch (e) {}
     } catch (e) {}
   }
+  // ---- Pantalla LOGROS nativa del 3D (overlay DOM) ----
+  var _logEl = null;
+  function buildLogrosIso() {
+    var rk = curRankIso();
+    var h = "";
+    h += "<button id='logCloseBtn' style='position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);right:14px;z-index:2;border:none;border-radius:10px;padding:8px 14px;font-weight:900;color:#1a2238;background:linear-gradient(180deg,#8fe9ff,#5db4ff);box-shadow:0 4px 0 #2a6ea0;'>CERRAR</button>";
+    h += "<div style='font-size:clamp(20px,6vw,34px);font-weight:900;color:#ffe14d;text-shadow:0 2px 0 #b8651e;margin-bottom:4px'>LOGROS &middot; " + achCountIso() + "/" + ACHS.length + "</div>";
+    h += "<div style='font-size:clamp(13px,3.6vw,17px);font-weight:900;color:" + rk.col + "'>RANGO: " + rk.name + "</div>";
+    var pct = Math.round(rk.prog * 100);
+    h += "<div style='width:min(420px,86vw);height:12px;border-radius:6px;background:#0e1018;margin:6px 0 2px;overflow:hidden'><div style='width:" + pct + "%;height:100%;background:" + rk.col + "'></div></div>";
+    h += "<div style='font-size:11px;color:#aebfe0;margin-bottom:10px'>" + (rk.nextName ? rk.name + " &rarr; " + rk.nextName + "  " + rk.score + "/" + rk.nextAt + " pts" : "RANGO MAXIMO (" + rk.score + " pts)") + " &middot; aprende palabras en el juego normal para subir</div>";
+    h += "<div style='width:min(460px,92vw);max-height:54vh;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:2px'>";
+    for (var i = 0; i < ACHS.length; i++) {
+      var a = ACHS[i], on = !!ach[a.id];
+      h += "<div style='display:flex;align-items:center;gap:8px;background:" + (on ? "rgba(40,46,26,0.9)" : "rgba(22,26,36,0.9)") + ";border:1.5px solid " + (on ? a.c : "#2a2f3c") + ";border-radius:10px;padding:7px 9px;text-align:left;" + (on ? "" : "opacity:0.55;") + "'>";
+      h += "<div style='flex:0 0 auto;width:18px;height:18px;border-radius:50%;background:" + (on ? a.c : "#3a3f4c") + ";color:#15161f;font-size:12px;font-weight:900;display:flex;align-items:center;justify-content:center'>" + (on ? "&#10003;" : "?") + "</div>";
+      h += "<div style='min-width:0'><div style='font-size:11.5px;font-weight:900;color:" + (on ? "#fff" : "#9aa0b4") + ";white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>" + a.name + "</div><div style='font-size:9px;color:" + (on ? a.c : "#778") + "'>" + (on ? "+" + (a.reward || 0) + " mon" : "bloqueado") + "</div></div>";
+      h += "</div>";
+    }
+    h += "</div>";
+    return h;
+  }
+  function openLogrosIso() {
+    if (!_logEl) {
+      _logEl = document.createElement("div");
+      _logEl.className = "overlay";
+      _logEl.style.cssText = "position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:18px;background:radial-gradient(circle at 50% 40%,rgba(13,22,38,0.9),rgba(8,12,24,0.97));";
+      document.body.appendChild(_logEl);
+    }
+    _logEl.innerHTML = buildLogrosIso();
+    _logEl.style.display = "flex";
+    var cb = document.getElementById("logCloseBtn");
+    if (cb) { cb.addEventListener("click", closeLogrosIso); cb.addEventListener("touchend", function (e) { e.preventDefault(); closeLogrosIso(); }, { passive: false }); }
+  }
+  function closeLogrosIso() { if (_logEl) _logEl.style.display = "none"; }
   loadKpiIso(); loadAchIso();
 
   // ============================================================
@@ -2822,6 +2867,11 @@
 
   document.getElementById("startBtn").addEventListener("click", startGame);
   document.getElementById("retryBtn").addEventListener("click", startGame);
+  (function () {
+    var lb = document.getElementById("logrosBtn"), lb2 = document.getElementById("logrosBtn2");
+    function bind(b) { if (!b) return; b.addEventListener("click", openLogrosIso); b.addEventListener("touchend", function (e) { e.preventDefault(); openLogrosIso(); }, { passive: false }); }
+    bind(lb); bind(lb2);
+  })();
 
   // ---- Back button: persist shared bank, then return to main game ----
   function goBack() {

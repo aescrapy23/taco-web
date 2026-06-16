@@ -551,7 +551,10 @@
     { name: "PATINES", speed: 1.35, cost: 20 },
     { name: "PATINETA", speed: 1.5, cost: 35 },
     { name: "SCOOTER", speed: 1.7, cost: 55 },
-    { name: "BICI", speed: 1.9, cost: 85 }
+    { name: "BICI", speed: 1.9, cost: 85 },
+    { name: "TANQUE", speed: 1.55, cost: 110, tank: 1 },
+    { name: "TANQUE BLINDADO", speed: 1.75, cost: 170, tank: 2 },
+    { name: "TANQUE LASER", speed: 2.05, cost: 260, tank: 3 }
   ];
 
   function lookKey(k) { return "pl_" + playerName + "_" + k; }
@@ -715,6 +718,17 @@
       ctx.beginPath(); ctx.moveTo(-s * 0.3, fy); ctx.lineTo(0, fy - s * 0.05); ctx.lineTo(s * 0.3, fy); ctx.lineTo(0, fy); ctx.closePath(); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(s * 0.3, fy); ctx.lineTo(s * 0.34, fy - s * 0.5); ctx.lineTo(s * 0.46, fy - s * 0.5); ctx.stroke();
       wheel(-s * 0.3, s * 0.16); wheel(s * 0.3, s * 0.16);
+    } else if (m >= 5) { // TANQUES DE GUERRA (igual que el juego normal)
+      var lv = m - 4, hull = lv === 1 ? "#5a7a3a" : lv === 2 ? "#6a7280" : "#3a3050", trim = lv === 1 ? "#3e5827" : lv === 2 ? "#454b56" : "#7a4ad6", bx;
+      ctx.fillStyle = "#16161b"; ctx.beginPath(); ctx.roundRect(-s * 0.44, fy - s * 0.04, s * 0.88, s * 0.18, s * 0.07); ctx.fill();
+      ctx.fillStyle = "#3a3b44"; for (kk = -3; kk <= 3; kk++) { ctx.beginPath(); ctx.arc(kk * s * 0.13, fy + s * 0.05, s * 0.045, 0, 7); ctx.fill(); }
+      ctx.fillStyle = hull; ctx.beginPath(); ctx.roundRect(-s * 0.4, fy - s * 0.2, s * 0.8, s * 0.17, s * 0.04); ctx.fill();
+      ctx.fillStyle = trim; ctx.fillRect(-s * 0.4, fy - s * 0.2, s * 0.8, s * 0.035);
+      if (lv === 2) { ctx.fillStyle = "#9aa0ac"; for (bx = -0.32; bx <= 0.32; bx += 0.213) { ctx.beginPath(); ctx.arc(bx * s, fy - s * 0.11, s * 0.022, 0, 7); ctx.fill(); } }
+      ctx.fillStyle = hull; ctx.beginPath(); ctx.roundRect(-s * 0.2, fy - s * 0.33, s * 0.38, s * 0.15, s * 0.05); ctx.fill();
+      ctx.fillStyle = trim; ctx.fillRect(-s * 0.2, fy - s * 0.33, s * 0.38, s * 0.03);
+      ctx.save(); if (lv === 3) { ctx.strokeStyle = "#7fe6ff"; ctx.shadowColor = "#7fe6ff"; ctx.shadowBlur = 8; } else { ctx.strokeStyle = "#23242c"; }
+      ctx.lineWidth = s * 0.075; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(s * 0.12, fy - s * 0.255); ctx.lineTo(s * 0.52, fy - s * 0.255); ctx.stroke(); ctx.restore();
     }
   }
 

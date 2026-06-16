@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v69 - FIXES de la verificacion (47 agentes): (1) CRITICO - ya no se pierden KPIs (tiempo jugado, bono, kills, palabras) al cerrar o mandar a segundo plano: se guardan en visibilitychange/pagehide + flush periodico; (2) fuga de acaTut entre jugadores resuelta (deletePlayer+createPlayer); (3) cosmeticos GRATIS por defecto ya no cuentan como adquiridos (logros FASHIONISTA/COLECCIONISTA, coach y KPI usan conteo de COMPRADOS, web+3D). Sobre v68: multijugador online beta";
+const VERSION = "v70 - TANQUES DE GUERRA que unen los 2 mundos: 3 tanques (TANQUE, BLINDADO, LASER) que compras con el BANCO COMPARTIDO en el vestuario (VEHICULOS) y equipas; se ven y se usan IGUAL en el juego normal 2D y en la DIMENSION 3D (mismo banco, mismo vehiculo equipado por jugador). Sobre v69: fixes de la verificacion (KPIs, acaTut, cosmeticos)";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -211,6 +211,10 @@ const MOUNTS = [
   { name: "PATINETA", speed: 1.5, cost: 35 },
   { name: "SCOOTER", speed: 1.7, cost: 55 },
   { name: "BICI", speed: 1.9, cost: 85 },
+  // TANQUES DE GUERRA: se compran con el banco compartido y se ven en AMBOS mundos (2D + 3D)
+  { name: "TANQUE", speed: 1.55, cost: 110, tank: 1 },
+  { name: "TANQUE BLINDADO", speed: 1.75, cost: 170, tank: 2 },
+  { name: "TANQUE LASER", speed: 2.05, cost: 260, tank: 3 },
 ];
 let face = 0, acc = 1, mount = 0, uFace = { 0: true }, uAcc = { 0: true, 1: true }, uMount = { 0: true };
 let myBuilds = [], builtMarkers = []; // edificios que el jugador construyo (plantados en la ciudad)
@@ -1070,7 +1074,14 @@ function drawMountMini(cx, cy, idx) {
   if (idx === 1) { for (const sg of [-1, 1]) { ctx.fillStyle = "#e0479a"; ctx.beginPath(); ctx.roundRect(cx + sg * 9 - 7, fy - 8, 14, 8, 3); ctx.fill(); wheel(cx + sg * 9 - 3, 3); wheel(cx + sg * 9 + 3, 3); } }
   else if (idx === 2) { ctx.fillStyle = "#3a2a18"; ctx.beginPath(); ctx.roundRect(cx - 16, fy - 3, 32, 5, 3); ctx.fill(); wheel(cx - 10, 5); wheel(cx + 10, 5); }
   else if (idx === 3) { ctx.fillStyle = "#2a2c38"; ctx.fillRect(cx - 14, fy - 2, 28, 4); ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(cx + 12, fy); ctx.lineTo(cx + 15, fy - 20); ctx.lineTo(cx + 22, fy - 20); ctx.stroke(); wheel(cx - 12, 6); wheel(cx + 13, 6); }
-  else { ctx.strokeStyle = "#4aa3e0"; ctx.lineWidth = 2.5; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(cx - 13, fy); ctx.lineTo(cx, fy - 6); ctx.lineTo(cx + 13, fy); ctx.lineTo(cx, fy); ctx.closePath(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx + 13, fy); ctx.lineTo(cx + 15, fy - 18); ctx.lineTo(cx + 22, fy - 18); ctx.stroke(); wheel(cx - 13, 9); wheel(cx + 13, 9); }
+  else if (idx === 4) { ctx.strokeStyle = "#4aa3e0"; ctx.lineWidth = 2.5; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(cx - 13, fy); ctx.lineTo(cx, fy - 6); ctx.lineTo(cx + 13, fy); ctx.lineTo(cx, fy); ctx.closePath(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx + 13, fy); ctx.lineTo(cx + 15, fy - 18); ctx.lineTo(cx + 22, fy - 18); ctx.stroke(); wheel(cx - 13, 9); wheel(cx + 13, 9); }
+  else { // TANQUES (idx 5-7)
+    const lv = idx - 4, hull = lv === 1 ? "#5a7a3a" : lv === 2 ? "#6a7280" : "#3a3050";
+    ctx.fillStyle = "#16161b"; ctx.beginPath(); ctx.roundRect(cx - 16, fy - 1, 32, 9, 3); ctx.fill();
+    ctx.fillStyle = hull; ctx.beginPath(); ctx.roundRect(cx - 14, fy - 9, 28, 8, 2); ctx.fill();
+    ctx.fillStyle = hull; ctx.beginPath(); ctx.roundRect(cx - 6, fy - 16, 14, 7, 2); ctx.fill();
+    ctx.strokeStyle = lv === 3 ? "#7fe6ff" : "#23242c"; ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(cx + 5, fy - 13); ctx.lineTo(cx + 22, fy - 13); ctx.stroke();
+  }
 }
 function drawWardrobe() {
   ctx.fillStyle = "rgba(0,0,0,0.72)"; ctx.fillRect(0, 0, W, H);
@@ -3227,6 +3238,17 @@ function drawMount(m, w, h, s) {
     ctx.beginPath(); ctx.moveTo(-s * 0.3, fy); ctx.lineTo(0, fy - s * 0.05); ctx.lineTo(s * 0.3, fy); ctx.lineTo(0, fy); ctx.closePath(); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(s * 0.3, fy); ctx.lineTo(s * 0.34, fy - s * 0.5); ctx.lineTo(s * 0.46, fy - s * 0.5); ctx.stroke(); // manubrio
     wheel(-s * 0.3, s * 0.16); wheel(s * 0.3, s * 0.16);
+  } else if (m >= 5) { // TANQUES DE GUERRA
+    const lv = m - 4, hull = lv === 1 ? "#5a7a3a" : lv === 2 ? "#6a7280" : "#3a3050", trim = lv === 1 ? "#3e5827" : lv === 2 ? "#454b56" : "#7a4ad6";
+    ctx.fillStyle = "#16161b"; ctx.beginPath(); ctx.roundRect(-s * 0.44, fy - s * 0.04, s * 0.88, s * 0.18, s * 0.07); ctx.fill(); // orugas
+    ctx.fillStyle = "#3a3b44"; for (let k = -3; k <= 3; k++) { ctx.beginPath(); ctx.arc(k * s * 0.13, fy + s * 0.05, s * 0.045, 0, 7); ctx.fill(); }
+    ctx.fillStyle = hull; ctx.beginPath(); ctx.roundRect(-s * 0.4, fy - s * 0.2, s * 0.8, s * 0.17, s * 0.04); ctx.fill(); // casco
+    ctx.fillStyle = trim; ctx.fillRect(-s * 0.4, fy - s * 0.2, s * 0.8, s * 0.035);
+    if (lv === 2) { ctx.fillStyle = "#9aa0ac"; for (const bx of [-0.32, -0.12, 0.12, 0.32]) { ctx.beginPath(); ctx.arc(bx * s, fy - s * 0.11, s * 0.022, 0, 7); ctx.fill(); } }
+    ctx.fillStyle = hull; ctx.beginPath(); ctx.roundRect(-s * 0.2, fy - s * 0.33, s * 0.38, s * 0.15, s * 0.05); ctx.fill(); // torreta
+    ctx.fillStyle = trim; ctx.fillRect(-s * 0.2, fy - s * 0.33, s * 0.38, s * 0.03);
+    ctx.save(); if (lv === 3) { ctx.strokeStyle = "#7fe6ff"; ctx.shadowColor = "#7fe6ff"; ctx.shadowBlur = 8; } else ctx.strokeStyle = "#23242c";
+    ctx.lineWidth = s * 0.075; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(s * 0.12, fy - s * 0.255); ctx.lineTo(s * 0.52, fy - s * 0.255); ctx.stroke(); ctx.restore(); // canon
   }
 }
 function drawTaco(x, y, size, lvl) {

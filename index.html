@@ -700,7 +700,7 @@ addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 canvas.addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; if (state === "mirador" && mirador && mirador.drag && mirador.drag.mouse) { mirador.panX = mirador.drag.px + (e.clientX - mirador.drag.x0); mirador.panY = mirador.drag.py + (e.clientY - mirador.drag.y0); mirClampPan(); } });
 canvas.addEventListener("mousedown", e => {
   mouse.down = true; audioInit();
-  if (state === "title") { const ir = titleIsoRect(); if (e.clientX >= ir.x && e.clientX <= ir.x + ir.w && e.clientY >= ir.y && e.clientY <= ir.y + ir.h) { gotoIso(); return; } const cr = titleContinueRect(); if (loadRun() && e.clientX >= cr.x && e.clientX <= cr.x + cr.w && e.clientY >= cr.y && e.clientY <= cr.y + cr.h) { resumeRun(); mouse.down = false; return; } const w = titleWbRect(); if (e.clientX >= w.x && e.clientX <= w.x + w.w && e.clientY >= w.y && e.clientY <= w.y + w.h) { openWb(); mouse.down = false; return; } const o = titleOptRect(); if (e.clientX >= o.x && e.clientX <= o.x + o.w && e.clientY >= o.y && e.clientY <= o.y + o.h) { openOptions(); mouse.down = false; return; } startOrRestart(); return; }
+  if (state === "title") { titleTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { optTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "menu") { menuTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -738,7 +738,7 @@ const stickL = { id: null, bx: 0, by: 0, x: 0, y: 0 };
 const stickR = { id: null, bx: 0, by: 0, x: 0, y: 0 };
 function onTouchStart(e) {
   e.preventDefault(); audioInit();
-  if (state === "title") { for (const tch of e.changedTouches) { const ir = titleIsoRect(); if (tch.clientX >= ir.x && tch.clientX <= ir.x + ir.w && tch.clientY >= ir.y && tch.clientY <= ir.y + ir.h) { gotoIso(); return; } const cr = titleContinueRect(); if (loadRun() && tch.clientX >= cr.x && tch.clientX <= cr.x + cr.w && tch.clientY >= cr.y && tch.clientY <= cr.y + cr.h) { resumeRun(); return; } const w = titleWbRect(); if (tch.clientX >= w.x && tch.clientX <= w.x + w.w && tch.clientY >= w.y && tch.clientY <= w.y + w.h) { openWb(); return; } const o = titleOptRect(); if (tch.clientX >= o.x && tch.clientX <= o.x + o.w && tch.clientY >= o.y && tch.clientY <= o.y + o.h) { openOptions(); return; } } startOrRestart(); return; }
+  if (state === "title") { for (const tch of e.changedTouches) { if (titleTapAt(tch.clientX, tch.clientY)) return; } return; }
   if (state === "over") { startOrRestart(); return; }
   if (state === "options") { for (const tch of e.changedTouches) optTapAt(tch.clientX, tch.clientY); return; }
   if (state === "menu") { for (const tch of e.changedTouches) menuTapAt(tch.clientX, tch.clientY); return; }
@@ -1142,10 +1142,38 @@ function drawWardrobe() {
   if (ms > 0) { const vh = v.bot - v.top, th = Math.max(26, vh * vh / (vh + ms)), ty = v.top + (wbScroll / ms) * (vh - th); ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.beginPath(); ctx.roundRect(p.x + p.w - 9, ty, 4, th, 2); ctx.fill(); }
   const c = wbCloseRect(); ctx.fillStyle = "#3a2030"; ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 10); ctx.fill(); text("VOLVER", c.x + c.w / 2, c.y + c.h / 2 + 6, 16, "#ff9bb0", "center");
 }
-function titleWbRect() { return { x: W / 2 - 152, y: H / 2 + 140, w: 144, h: 42 }; }
-function titleOptRect() { return { x: W / 2 + 8, y: H / 2 + 140, w: 144, h: 42 }; }
-function titleContinueRect() { return { x: W / 2 - 120, y: H / 2 + 34, w: 240, h: 46 }; }
-function titleIsoRect() { return { x: W / 2 - 120, y: H / 2 + 190, w: 240, h: 40 }; }
+// PANTALLA DE INICIO (elite): 1 boton primario (JUGAR/CONTINUAR) + grilla de opciones.
+function titleButtons() {
+  const cw = Math.min(360, W - 40), cx = W / 2 - cw / 2, gap = 10, colW = (cw - gap) / 2;
+  const ph = 50, sh = 44;
+  let y = H / 2 + 30;
+  const btns = [{ id: "play", x: cx, y, w: cw, h: ph, primary: true, col: "#62e074" }];
+  y += ph + gap + 4;
+  const sec = [
+    { id: "salas", label: "SALAS", col: "#7fd6ff" },
+    { id: "academia", label: "ACADEMIA", col: "#7fb0ff" },
+    { id: "vestuario", label: "VESTUARIO", col: "#f5cd46" },
+    { id: "opciones", label: "OPCIONES", col: "#9fb0c8" },
+    { id: "iso", label: "DIMENSION 3D", col: "#b480ff" },
+    { id: "jugador", label: "CAMBIAR JUGADOR", col: "#9be7c0" },
+  ];
+  for (let i = 0; i < sec.length; i++) { const c = i % 2, r = Math.floor(i / 2); btns.push(Object.assign({}, sec[i], { x: cx + c * (colW + gap), y: y + r * (sh + gap), w: colW, h: sh })); }
+  return btns;
+}
+function titleTapAt(px, py) {
+  for (const b of titleButtons()) if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) {
+    if (b.id === "play") { if (curPlayer && loadRun()) resumeRun(); else startOrRestart(); }
+    else if (b.id === "salas") openOnline("title");
+    else if (b.id === "academia") openAcademia("title");
+    else if (b.id === "vestuario") openWb("title");
+    else if (b.id === "opciones") openOptions("title");
+    else if (b.id === "iso") gotoIso();
+    else if (b.id === "jugador") openPlayers();
+    else return false;
+    sRight(); return true;
+  }
+  return false;
+}
 
 // ---- OPCIONES ----
 function openOptions(back) { uiBack = back || "title"; state = "options"; }
@@ -1574,26 +1602,85 @@ function drawGhosts() {
   ctx.globalAlpha = 1;
 }
 let onlinePanel = null;
-function openOnline(back) { onlinePanel = { back: back || "menu" }; state = "online"; }
-function onRect() { const w = Math.min(420, W - 28), h = 296; return { x: (W - w) / 2, y: Math.max(20 + safeT, (H - h) / 2), w: w, h: h }; }
-function onBtns() { const p = onRect(), bw = p.w - 40, x = p.x + 20; return [{ x: x, y: p.y + 96, w: bw, h: 40, id: "host", label: "CREAR SALA" }, { x: x, y: p.y + 142, w: bw, h: 40, id: "join", label: "UNIRSE A SALA" }, { x: x, y: p.y + 190, w: bw, h: 36, id: "leave", label: "DESCONECTAR" }, { x: x, y: p.y + 236, w: bw, h: 36, id: "back", label: "VOLVER" }]; }
+// SERVIDORES: cada uno es un roomId fijo sobre el P2P (PeerJS). Gratis = 1 toque.
+// PREMIUM (PRO): cupo mayor; se desbloquea con monedas del propio juego (no es pago real).
+const SERVERS = [
+  { id: "caverna", name: "CAVERNA", col: "#6b90e6", premium: false, cap: 8 },
+  { id: "bosque", name: "BOSQUE", col: "#5fd07e", premium: false, cap: 8 },
+  { id: "neon", name: "NEON", col: "#ff86c4", premium: true, cap: 24 },
+  { id: "abismo", name: "ABISMO", col: "#a98cf0", premium: true, cap: 24 },
+];
+const PREMIUM_COST = 500;
+function isPremium() { return lget("premium") === "1"; }
+function tryUnlockPremium() {
+  if (isPremium()) return true;
+  if (bank >= PREMIUM_COST) { bank -= PREMIUM_COST; lset("bank", bank); lset("premium", "1"); sPower(); return true; }
+  return false;
+}
+// Servidor de 1 toque: el primero crea (host); si el id ya existe, se une como cliente.
+function netJoinOrHost(room) {
+  netClose();
+  netLoadLib(() => {
+    net.room = room; net.status = "conectando...";
+    let p; try { p = new Peer(netRoomId(room)); } catch (e) { net.status = "error de red"; return; }
+    net.peer = p; net.host = true;
+    p.on("open", () => { net.status = "SALA " + room + " lista"; });
+    p.on("connection", c => netAddConn(c));
+    p.on("error", e => {
+      if (e && e.type === "unavailable-id") { // ya hay host -> unirse como cliente
+        net.host = false; let p2; try { p2 = new Peer(); } catch (er) { net.status = "error de red"; return; }
+        net.peer = p2;
+        p2.on("open", () => { const c = p2.connect(netRoomId(room)); if (c) netAddConn(c); net.status = "en SALA " + room; });
+        p2.on("connection", c => netAddConn(c));
+        p2.on("error", er => { net.status = "error: " + ((er && er.type) || "red"); });
+      } else net.status = "error: " + ((e && e.type) || "red");
+    });
+  });
+}
+function openOnline(back) { onlinePanel = { back: back || "menu", msg: "", msgUntil: 0 }; state = "online"; }
+function onMsg(m) { if (onlinePanel) { onlinePanel.msg = m; onlinePanel.msgUntil = t + 2.4; } }
+function onRect() { const w = Math.min(440, W - 24), h = Math.min(H - 36, 430); return { x: (W - w) / 2, y: Math.max(18 + safeT, (H - h) / 2), w, h }; }
+function onServerRect(i) { const p = onRect(); return { x: p.x + 18, y: p.y + 92 + i * 50, w: p.w - 36, h: 44 }; }
+function onBtns() {
+  const p = onRect(), bw = (p.w - 48) / 2, x = p.x + 18, y = p.y + p.h - 92;
+  return [
+    { x, y, w: bw, h: 38, id: "host", label: "CREAR PRIVADA", col: "#7fd6ff" },
+    { x: x + bw + 12, y, w: bw, h: 38, id: "join", label: "UNIR POR CODIGO", col: "#7fd6ff" },
+    { x, y: y + 46, w: bw, h: 36, id: "leave", label: "DESCONECTAR", col: "#ff9bb0" },
+    { x: x + bw + 12, y: y + 46, w: bw, h: 36, id: "back", label: "VOLVER", col: "#cfe0ff" },
+  ];
+}
 function onlineTapAt(px, py) {
+  for (let i = 0; i < SERVERS.length; i++) { const r = onServerRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
+    const s = SERVERS[i];
+    if (s.premium && !isPremium()) { if (tryUnlockPremium()) onMsg("PREMIUM desbloqueado!"); else { sWrong(); onMsg("Premium: " + PREMIUM_COST + " oro (tenes " + bank + ")"); } return; }
+    netJoinOrHost(s.id); sPower(); onMsg("Entrando a " + s.name + "..."); return;
+  } }
   for (const b of onBtns()) if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) {
-    if (b.id === "host") { let c = null; try { c = prompt("Codigo de sala (inventalo y compartilo):", "taco1"); } catch (e) {} if (c && c.trim()) { netStart(c.trim(), true); sPower(); } }
-    else if (b.id === "join") { let c = null; try { c = prompt("Codigo de la sala a la que unirte:", ""); } catch (e) {} if (c && c.trim()) { netStart(c.trim(), false); sPower(); } }
-    else if (b.id === "leave") { netClose(); sRight(); }
+    if (b.id === "host") { let c = null; try { c = prompt("Codigo de tu sala privada (compartilo):", "taco1"); } catch (e) {} if (c && c.trim()) { netStart(c.trim(), true); sPower(); } }
+    else if (b.id === "join") { let c = null; try { c = prompt("Codigo de la sala a unirte:", ""); } catch (e) {} if (c && c.trim()) { netStart(c.trim(), false); sPower(); } }
+    else if (b.id === "leave") { netClose(); sRight(); onMsg("desconectado"); }
     else state = onlinePanel.back;
     return;
   }
 }
 function drawOnline() {
-  ctx.fillStyle = "rgba(0,0,0,0.66)"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(0, 0, W, H);
   const p = onRect();
-  ctx.shadowColor = "#7fd6ff"; ctx.shadowBlur = 16; ctx.fillStyle = "#13161f"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 14); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = 3; ctx.stroke();
-  text("JUGAR ONLINE (beta)", W / 2, p.y + 30, 19, "#7fd6ff", "center");
-  text("Crea una sala y comparti el codigo, o uni-te a una.", W / 2, p.y + 52, 11, "#9aa0b4", "center");
-  text("Estado: " + net.status + (net.room ? "  ·  " + netCount() + " online" : ""), W / 2, p.y + 76, 11, net.peer ? "#62e074" : "#9aa0b4", "center");
-  for (const b of onBtns()) { ctx.fillStyle = b.id === "back" ? "#23303a" : "#1b2436"; ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 9); ctx.fill(); ctx.strokeStyle = b.id === "leave" ? "#ff9bb0" : "#7fd6ff"; ctx.lineWidth = 1.5; ctx.stroke(); text(b.label, b.x + b.w / 2, b.y + b.h / 2 + 5, 14, b.id === "leave" ? "#ff9bb0" : "#dfe7fa", "center"); }
+  ctx.shadowColor = "#7fd6ff"; ctx.shadowBlur = 16; ctx.fillStyle = "#12151e"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 14); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = 3; ctx.stroke();
+  text("MULTIJUGADOR  ·  SALAS", W / 2, p.y + 30, 19, "#7fd6ff", "center");
+  text("Estado: " + net.status + (net.room ? "  ·  " + (netCount() + 1) + " online" : ""), W / 2, p.y + 52, 11, net.peer ? "#62e074" : "#9aa0b4", "center");
+  text("Toca un servidor para entrar.  PRO = premium", W / 2, p.y + 72, 11, "#9aa0b4", "center");
+  const prem = isPremium();
+  for (let i = 0; i < SERVERS.length; i++) {
+    const s = SERVERS[i], r = onServerRect(i), locked = s.premium && !prem;
+    ctx.fillStyle = "#1a2030"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 9); ctx.fill();
+    ctx.strokeStyle = s.premium ? "#f5cd46" : s.col; ctx.lineWidth = s.premium ? 2 : 1.4; ctx.stroke();
+    text((s.premium ? "PRO  " : "") + s.name, r.x + 14, r.y + r.h / 2 + 5, 16, s.premium ? "#f5cd46" : "#dfe7fa", "left");
+    text(locked ? ("abrir: " + PREMIUM_COST + " oro") : ("cupo " + s.cap + "  ·  unir"), r.x + r.w - 14, r.y + r.h / 2 + 5, 12, locked ? "#ffcf6b" : "#9aa0b4", "right");
+  }
+  for (const b of onBtns()) { ctx.fillStyle = "#1b2436"; ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 9); ctx.fill(); ctx.strokeStyle = b.col; ctx.lineWidth = 1.5; ctx.stroke(); text(b.label, b.x + b.w / 2, b.y + b.h / 2 + 5, fitFont(b.label, b.w - 10, 13), b.col, "center"); }
+  if (onlinePanel && onlinePanel.msg && t < onlinePanel.msgUntil) { ctx.globalAlpha = Math.min(1, (onlinePanel.msgUntil - t) / 0.5); text(onlinePanel.msg, W / 2, p.y + p.h - 6, 12, "#ffd84a", "center"); ctx.globalAlpha = 1; }
 }
 function menuRows() {
   return [
@@ -3685,30 +3772,30 @@ function render() {
   if (state === "players") drawPlayers();
   if (paused && state === "play") { ctx.fillStyle = "rgba(6,6,12,0.6)"; ctx.fillRect(0, 0, W, H); text("PAUSA", W / 2, H / 2, 48, "#f5cd46", "center"); text("toca II para seguir", W / 2, H / 2 + 40, 16, "#9a9ab0", "center"); drawButtons(); }
   if (state === "title") {
-    ctx.fillStyle = "rgba(8,8,16,0.62)"; ctx.fillRect(0, 0, W, H);
-    drawTaco(W / 2, H / 2 - 140, Math.min(70, W / 6), 7); // taco evolucionado de muestra
-    text("CATACOMB", W / 2, H / 2 - 50, Math.min(72, W / 7), "#f5cd46", "center");
-    text("el taco en la catacumba", W / 2, H / 2 - 8, 18, "#96c8eb", "center");
-    if (profile) text("Hola " + profile.name + "  ·  Ingles " + LESSONS.EN.levels[profile.eng].tag + "  ·  Chino " + LESSONS.ZH.levels[profile.zh].tag, W / 2, H / 2 + 18, 13, "#9be7c0", "center");
+    ctx.fillStyle = "rgba(8,8,16,0.66)"; ctx.fillRect(0, 0, W, H);
+    const top = Math.max(36 + safeT, H / 2 - 176);
+    drawTaco(W / 2, top, Math.min(54, W / 7.5), 7); // taco evolucionado de muestra
+    text("CATACOMB", W / 2, top + 74, Math.min(62, W / 7.5), "#f5cd46", "center");
+    text("el taco que aprende jugando", W / 2, top + 104, 15, "#96c8eb", "center");
+    // cinta de perfil: identidad + progreso + monedas, visibles desde el inicio
+    const cw = Math.min(360, W - 40), cx = W / 2 - cw / 2, ribY = top + 120;
+    ctx.fillStyle = "rgba(18,22,32,0.92)"; ctx.beginPath(); ctx.roundRect(cx, ribY, cw, 28, 9); ctx.fill(); ctx.strokeStyle = "#2c3242"; ctx.lineWidth = 1; ctx.stroke();
+    let pinfo = (curPlayer || "JUGADOR");
+    if (profile) pinfo += "  ·  EN " + LESSONS.EN.levels[profile.eng].tag + "  ·  ZH " + LESSONS.ZH.levels[profile.zh].tag;
+    pinfo += "  ·  oro " + bank;
+    text(pinfo, W / 2, ribY + 19, fitFont(pinfo, cw - 18, 13), "#9be7c0", "center");
+    // botones (primario grande + grilla de opciones)
     const trun = curPlayer ? loadRun() : null;
-    if (trun && trun.level) {
-      const cr = titleContinueRect(); const pulse = 0.5 + 0.5 * Math.sin(t * 4);
-      ctx.shadowColor = "#62e074"; ctx.shadowBlur = 8 + pulse * 8; ctx.fillStyle = "#16341f"; ctx.beginPath(); ctx.roundRect(cr.x, cr.y, cr.w, cr.h, 12); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#62e074"; ctx.lineWidth = 3; ctx.stroke();
-      text("CONTINUAR  ·  Mundo " + trun.level, cr.x + cr.w / 2, cr.y + cr.h / 2 + 7, 19, "#9be7c0", "center");
-      text("tocá la pantalla = NUEVA partida", W / 2, cr.y + cr.h + 22, 13, "#8a8aa0", "center");
-    } else text("TOCA PARA JUGAR", W / 2, H / 2 + 52, 22, "#f5cd46", "center");
-    text("izq: mover (doble-toque = esquive) · der: apuntar/disparar", W / 2, H / 2 + 88, 14, "#8a8aa0", "center");
-    text("dimensiones, tiendas, minimapa · aprende INGLES y CHINO (frases)", W / 2, H / 2 + 112, 13, "#7a7a90", "center");
-    const wr = titleWbRect();
-    ctx.fillStyle = "#2a2030"; ctx.strokeStyle = "#f5cd46"; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(wr.x, wr.y, wr.w, wr.h, 10); ctx.fill(); ctx.stroke();
-    text("VESTUARIO", wr.x + wr.w / 2, wr.y + wr.h / 2 + 6, 15, "#f5cd46", "center");
-    const orr = titleOptRect();
-    ctx.fillStyle = "#1f2a30"; ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(orr.x, orr.y, orr.w, orr.h, 10); ctx.fill(); ctx.stroke();
-    text("OPCIONES", orr.x + orr.w / 2, orr.y + orr.h / 2 + 6, 15, "#7fd6ff", "center");
-    const ir = titleIsoRect(); const ip = 0.5 + 0.5 * Math.sin(t * 4);
-    ctx.shadowColor = "#b480ff"; ctx.shadowBlur = 6 + ip * 8; ctx.fillStyle = "#241a33"; ctx.strokeStyle = "#b480ff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(ir.x, ir.y, ir.w, ir.h, 10); ctx.fill(); ctx.shadowBlur = 0; ctx.stroke();
-    text("DIMENSION 3D (ISO)  ·  tu banco viaja con vos", ir.x + ir.w / 2, ir.y + ir.h / 2 + 5, fitFont("DIMENSION 3D (ISO)  ·  tu banco viaja con vos", ir.w - 12, 13), "#c8a0ff", "center");
-    text("build " + VERSION, W / 2, H - 14 - safeB, 11, "#586", "center");
+    for (const b of titleButtons()) {
+      if (b.primary) { const pl = 0.5 + 0.5 * Math.sin(t * 4); ctx.shadowColor = b.col; ctx.shadowBlur = 8 + pl * 10; }
+      ctx.fillStyle = b.primary ? "#143420" : "#1b1f2e"; ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 11); ctx.fill(); ctx.shadowBlur = 0;
+      ctx.strokeStyle = b.col; ctx.lineWidth = b.primary ? 3 : 1.6; ctx.stroke();
+      let lbl = b.label;
+      if (b.id === "play") lbl = (trun && trun.level) ? "CONTINUAR  ·  Mundo " + trun.level : "JUGAR";
+      text(lbl, b.x + b.w / 2, b.y + b.h / 2 + (b.primary ? 7 : 5), b.primary ? 21 : fitFont(lbl, b.w - 12, 15), b.col, "center");
+    }
+    text("izq: mover (doble-toque esquiva)  ·  der: apuntar/disparar", W / 2, H - 28 - safeB, 12, "#7a7a90", "center");
+    text("build " + VERSION.split(" ")[0], W / 2, H - 13 - safeB, 11, "#586", "center");
   }
   if (state === "over") {
     ctx.fillStyle = "rgba(6,6,12,0.8)"; ctx.fillRect(0, 0, W, H);
@@ -3744,6 +3831,9 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
     loadPlayerData(); state = "title";
   }
 })();
+
+// Harness de verificacion (inocuo en uso normal): #salas abre el panel de salas para capturas headless.
+try { if ((location.hash || "") === "#salas") openOnline("title"); } catch (e) {}
 
 let last = performance.now();
 function frame(now) { let dt = (now - last) / 1000; last = now; if (dt > 0.05) dt = 0.05; update(dt); render(); requestAnimationFrame(frame); }

@@ -25,7 +25,7 @@
 <canvas id="c"></canvas>
 <script>
 "use strict";
-const VERSION = "v70 - TANQUES DE GUERRA que unen los 2 mundos: 3 tanques (TANQUE, BLINDADO, LASER) que compras con el BANCO COMPARTIDO en el vestuario (VEHICULOS) y equipas; se ven y se usan IGUAL en el juego normal 2D y en la DIMENSION 3D (mismo banco, mismo vehiculo equipado por jugador). Sobre v69: fixes de la verificacion (KPIs, acaTut, cosmeticos)";
+const VERSION = "v71 - los TANQUES ahora DISPARAN + CAMUFLAJE por mundo: si vas montado en un tanque, su CANON AUTOMATICO dispara proyectiles explosivos al enemigo mas cercano (cadencia y dano por tier; en 2D y en 3D); el casco del tanque cambia de CAMUFLAJE segun el MUNDO (bosque/desierto/urbano/nieve/noche/lava). Mejoras: explosion del tanque mas suave (sin flash spam), las kills de explosion cuentan al KPI. Sobre v70: tanques que unen los 2 mundos";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
@@ -216,6 +216,9 @@ const MOUNTS = [
   { name: "TANQUE BLINDADO", speed: 1.75, cost: 170, tank: 2 },
   { name: "TANQUE LASER", speed: 2.05, cost: 260, tank: 3 },
 ];
+// CAMUFLAJE del tanque por MUNDO (bosque, desierto, urbano, nieve, noche, lava); rota por mundo
+const TANK_CAMO = ["#3e5827", "#b89a55", "#5a6270", "#cfd6e0", "#2a2438", "#7a2f2f"];
+function tankCamoFor(w) { return TANK_CAMO[(Math.max(1, w | 0) - 1) % TANK_CAMO.length]; }
 let face = 0, acc = 1, mount = 0, uFace = { 0: true }, uAcc = { 0: true, 1: true }, uMount = { 0: true };
 let myBuilds = [], builtMarkers = []; // edificios que el jugador construyo (plantados en la ciudad)
 let inv = {}; // BODEGA: items que compraste y podes usar cuando los necesites (por jugador)
@@ -474,7 +477,7 @@ function eduExit() {
 }
 let peds = [], cars = [], props = [], mission = null; // mundo vivo (gente, autos, casas) + mision
 let cityBlocks = []; // manzanas (rectangulos) para dibujar edificios 3D
-let pShield = 0, pTriple = 0, pRapid = 0, weapon = 0;
+let pShield = 0, pTriple = 0, pRapid = 0, weapon = 0, tankCD = 0;
 let shop = null, shopLock = false, coins = 0; // tienda + monedas (divisa)
 let dashT = 0, dashCD = 0, dashDir = { x: 1, y: 0 }, lastMoveX = 1, lastMoveY = 0, lastLeftTap = 0; // esquive
 let driving = null; // auto que el taco esta manejando (o null)
@@ -975,9 +978,22 @@ function fire(ax, ay) {
   player.aimx = ax; player.aimy = ay; player.fire = w.cd * (pRapid > 0 ? 0.45 : 1);
   addParts(player.x + ax * 20, player.y + ay * 20, 3, "#ffaa3c", 60); sShoot();
 }
+// CANON del TANQUE: dispara un proyectil explosivo al enemigo mas cercano (solo si vas en tanque)
+function tankFire() {
+  let best = null, bd = 1e9;
+  for (const e of enemies) { const d = len(e.x - player.x, e.y - player.y); if (d < bd) { bd = d; best = e; } }
+  if (!best || bd > 920) return false;
+  const tier = mount - 4, ang = Math.atan2(best.y - player.y, best.x - player.x), dx = Math.cos(ang), dy = Math.sin(ang);
+  const dmg = tier === 1 ? 7 : tier === 2 ? 10 : 14, spd = 540 + tier * 40;
+  bullets.push({ x: player.x + dx * 26, y: player.y + dy * 26, vx: dx * spd, vy: dy * spd, life: 1.7, dmg: dmg, r: 8 + tier * 2, explosive: true, tank: true });
+  player.aimx = dx; player.aimy = dy;
+  addParts(player.x + dx * 26, player.y + dy * 26, 9, "#ffd24a", 220); shake = Math.min(shake + 3, 14);
+  try { beep(120, 0.13, "sawtooth", 0.08); setTimeout(() => beep(80, 0.1, "square", 0.06), 40); } catch (e) {}
+  return true;
+}
 // Explosion de la bazuca: dano en area a los enemigos cercanos
-function explode(x, y, dmg) {
-  addParts(x, y, 32, "#ff9030", 380); addRing(x, y, "#ff7a3c", 130); shake = Math.min(shake + 10, 18); flash("255,150,60", 0.22); sKill();
+function explode(x, y, dmg, light) {
+  addParts(x, y, light ? 16 : 32, "#ff9030", light ? 260 : 380); addRing(x, y, "#ff7a3c", light ? 90 : 130); shake = Math.min(shake + (light ? 4 : 10), 18); if (!light) flash("255,150,60", 0.22); sKill();
   for (let j = enemies.length - 1; j >= 0; j--) {
     const e = enemies[j]; if (len(e.x - x, e.y - y) > 80) continue;
     e.hp -= dmg; e.flash = 0.12;
@@ -986,7 +1002,7 @@ function explode(x, y, dmg) {
       score += gain; coins += e.boss ? 15 : 2; if (mission && mission.type === 1) mission.prog++;
       floatText(e.x, e.y, "+" + gain, "#ffb060"); addParts(e.x, e.y, 18, "#ffa040", 260);
       if (e.boss) { for (let k = 0; k < 5; k++) heals.push({ x: e.x + rand(-50, 50), y: e.y + rand(-50, 50) }); } else if (Math.random() < 0.25) heals.push({ x: e.x, y: e.y });
-      enemies.splice(j, 1);
+      kpiBump("kills"); enemies.splice(j, 1);
     }
   }
 }
@@ -1758,6 +1774,8 @@ function update(dt) {
   if (ai.t > 0) ai.t -= dt; ai.evalT += dt; if (ai.evalT > 5) { ai.evalT = 0; aiEval(); } // asistente IA (mas seguido)
   player.fire -= dt;
   if (!driving && inp.firing && player.fire <= 0) fire(inp.ax, inp.ay);
+  // CANON AUTOMATICO del TANQUE: si vas montado en un tanque, dispara solo al enemigo mas cercano
+  if (mount >= 5 && !driving) { tankCD -= dt; if (tankCD <= 0) { tankCD = tankFire() ? (mount === 5 ? 2.0 : mount === 6 ? 1.5 : 1.1) : 0.4; } }
 
   for (let i = gems.length - 1; i >= 0; i--) if (len(gems[i].x - player.x, gems[i].y - player.y) < player.r + 14) { addParts(gems[i].x, gems[i].y, 10, "#5eead4", 150); floatText(gems[i].x, gems[i].y, "+10", "#5eead4"); gems.splice(i, 1); score += 10; coins += 1; sGem(); }
   // gente caminando (mundo vivo) + rescate (mision)
@@ -1843,7 +1861,7 @@ function update(dt) {
         dead = true; break;
       }
     }
-    if (dead) { if (b.explosive) explode(b.x, b.y, b.dmg); bullets.splice(i, 1); }
+    if (dead) { if (b.explosive) explode(b.x, b.y, b.dmg, b.tank); bullets.splice(i, 1); }
   }
 
   for (let i = parts.length - 1; i >= 0; i--) { const p = parts[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.92; p.vy *= 0.92; if (p.life <= 0) parts.splice(i, 1); }
@@ -3243,6 +3261,11 @@ function drawMount(m, w, h, s) {
     ctx.fillStyle = "#16161b"; ctx.beginPath(); ctx.roundRect(-s * 0.44, fy - s * 0.04, s * 0.88, s * 0.18, s * 0.07); ctx.fill(); // orugas
     ctx.fillStyle = "#3a3b44"; for (let k = -3; k <= 3; k++) { ctx.beginPath(); ctx.arc(k * s * 0.13, fy + s * 0.05, s * 0.045, 0, 7); ctx.fill(); }
     ctx.fillStyle = hull; ctx.beginPath(); ctx.roundRect(-s * 0.4, fy - s * 0.2, s * 0.8, s * 0.17, s * 0.04); ctx.fill(); // casco
+    // CAMUFLAJE por mundo: manchas del color del mundo actual sobre el casco
+    ctx.save(); ctx.beginPath(); ctx.roundRect(-s * 0.4, fy - s * 0.2, s * 0.8, s * 0.17, s * 0.04); ctx.clip();
+    ctx.fillStyle = tankCamoFor(level); ctx.globalAlpha = 0.7;
+    for (const cm of [[-0.28, -0.14, 0.08], [-0.05, -0.08, 0.06], [0.18, -0.15, 0.07], [0.3, -0.06, 0.05]]) { ctx.beginPath(); ctx.ellipse(cm[0] * s, fy + cm[1] * s, cm[2] * s, cm[2] * s * 0.7, 0, 0, 7); ctx.fill(); }
+    ctx.restore();
     ctx.fillStyle = trim; ctx.fillRect(-s * 0.4, fy - s * 0.2, s * 0.8, s * 0.035);
     if (lv === 2) { ctx.fillStyle = "#9aa0ac"; for (const bx of [-0.32, -0.12, 0.12, 0.32]) { ctx.beginPath(); ctx.arc(bx * s, fy - s * 0.11, s * 0.022, 0, 7); ctx.fill(); } }
     ctx.fillStyle = hull; ctx.beginPath(); ctx.roundRect(-s * 0.2, fy - s * 0.33, s * 0.38, s * 0.15, s * 0.05); ctx.fill(); // torreta

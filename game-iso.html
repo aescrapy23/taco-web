@@ -566,8 +566,11 @@
     var rawAcc = null; try { rawAcc = localStorage.getItem(lookKey("acc")); } catch (e) {}
     look.acc = clampI(rawAcc == null ? 1 : (parseInt(rawAcc, 10) || 0), 0, ACCS.length - 1);
     look.mount = clampI(rd("mount", 0), 0, MOUNTS.length - 1);
+    look.world = Math.max(1, rd("maxworld", 1)); // para el camuflaje del tanque por mundo
   }
   loadLook();
+  // CAMUFLAJE del tanque por MUNDO (mismo orden que el juego normal)
+  var TANK_CAMO = ["#3e5827", "#b89a55", "#5a6270", "#cfd6e0", "#2a2438", "#7a2f2f"];
 
   // ---- color helpers used ONLY by the copied taco art ----
   // NOTE: index.html's shade(hex,f) is a *multiplier*; the iso file already
@@ -723,6 +726,11 @@
       ctx.fillStyle = "#16161b"; ctx.beginPath(); ctx.roundRect(-s * 0.44, fy - s * 0.04, s * 0.88, s * 0.18, s * 0.07); ctx.fill();
       ctx.fillStyle = "#3a3b44"; for (kk = -3; kk <= 3; kk++) { ctx.beginPath(); ctx.arc(kk * s * 0.13, fy + s * 0.05, s * 0.045, 0, 7); ctx.fill(); }
       ctx.fillStyle = hull; ctx.beginPath(); ctx.roundRect(-s * 0.4, fy - s * 0.2, s * 0.8, s * 0.17, s * 0.04); ctx.fill();
+      ctx.save(); ctx.beginPath(); ctx.roundRect(-s * 0.4, fy - s * 0.2, s * 0.8, s * 0.17, s * 0.04); ctx.clip();
+      ctx.fillStyle = TANK_CAMO[(Math.max(1, look.world | 0) - 1) % TANK_CAMO.length]; ctx.globalAlpha = 0.7;
+      var camo = [[-0.28, -0.14, 0.08], [-0.05, -0.08, 0.06], [0.18, -0.15, 0.07], [0.3, -0.06, 0.05]], ci;
+      for (ci = 0; ci < camo.length; ci++) { ctx.beginPath(); ctx.ellipse(camo[ci][0] * s, fy + camo[ci][1] * s, camo[ci][2] * s, camo[ci][2] * s * 0.7, 0, 0, 7); ctx.fill(); }
+      ctx.restore();
       ctx.fillStyle = trim; ctx.fillRect(-s * 0.4, fy - s * 0.2, s * 0.8, s * 0.035);
       if (lv === 2) { ctx.fillStyle = "#9aa0ac"; for (bx = -0.32; bx <= 0.32; bx += 0.213) { ctx.beginPath(); ctx.arc(bx * s, fy - s * 0.11, s * 0.022, 0, 7); ctx.fill(); } }
       ctx.fillStyle = hull; ctx.beginPath(); ctx.roundRect(-s * 0.2, fy - s * 0.33, s * 0.38, s * 0.15, s * 0.05); ctx.fill();
@@ -1023,6 +1031,7 @@
   };
 
   var bullets = [];   // {tx,ty,vx,vy,life,dmg}
+  var tankCDIso = 0;  // cooldown del canon del tanque (si vas montado en uno)
   var enemies = [];   // {tx,ty,hp,maxHp,wob,hurt,die}
   var gems = [];      // {tx,ty,phase,collected}
   var powerups = [];  // {tx,ty,kind,phase,life}
@@ -2134,6 +2143,19 @@
     // ---- day/night clock ----
     computeDayNight(dt);
     kpi.playSec = (kpi.playSec || 0) + dt; // suma al tiempo jugado compartido
+    // CANON AUTOMATICO del TANQUE (mismo poder que en el juego normal)
+    if (look.mount >= 5) {
+      tankCDIso -= dt;
+      if (tankCDIso <= 0) {
+        var _be = null, _bd = 1e9, _ti;
+        for (_ti = 0; _ti < enemies.length; _ti++) { var _e = enemies[_ti]; var _d = Math.hypot(_e.tx - taco.tx, _e.ty - taco.ty); if (_d < _bd) { _bd = _d; _be = _e; } }
+        if (_be && _bd < 8.5) {
+          var _tier = look.mount - 4, _ang = Math.atan2(_be.ty - taco.ty, _be.tx - taco.tx);
+          bullets.push({ tx: taco.tx + Math.cos(_ang) * 0.3, ty: taco.ty + Math.sin(_ang) * 0.3, vx: Math.cos(_ang) * 10, vy: Math.sin(_ang) * 10, life: 1.2, dmg: _tier === 1 ? 6 : _tier === 2 ? 9 : 13, col: "#ffd24a", tank: true });
+          taco.aimAngle = _ang; tankCDIso = _tier === 1 ? 2.0 : _tier === 2 ? 1.5 : 1.1; addShake(2.5);
+        } else { tankCDIso = 0.4; }
+      }
+    }
     if (mallEnterCd > 0) mallEnterCd -= dt;
 
     // ---- player move ----

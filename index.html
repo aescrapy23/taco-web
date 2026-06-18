@@ -123,7 +123,7 @@ function weaponUnlocked(i) { return (WEAPONS[i].unlock || 1) <= maxWorld; }
 function nextWeapon() { let i = weapon; for (let k = 0; k < WEAPONS.length; k++) { i = (i + 1) % WEAPONS.length; if (weaponUnlocked(i)) { weapon = i; return; } } }
 
 // OPCIONES (ajustes elite)
-let settings = { sound: true, vibrate: true, quality: 1, difficulty: 1, gorro: 1, ai: 1, elite: 0 };
+let settings = { sound: true, vibrate: true, quality: 1, difficulty: 1, gorro: 1, ai: 1, elite: 0, reduceMotion: 0 };
 let ai = { msg: "", col: "#7fd6ff", t: 0, evalT: 0, last: -99, lastKey: "" }; // asistente IA (apoyo)
 try { Object.assign(settings, JSON.parse(localStorage.getItem("catacomb_settings") || "{}")); } catch (e) {}
 mute = !settings.sound;
@@ -1184,6 +1184,8 @@ function optRows() {
     { label: "GRAFICOS", val: settings.quality ? "ALTA" : "BAJA", act: () => { settings.quality = settings.quality ? 0 : 1; } },
     { label: "ASISTENTE IA", val: settings.ai ? "SI" : "NO", act: () => { settings.ai = settings.ai ? 0 : 1; ai.t = 0; } },
     { label: "MODO ELITE (cine)", val: settings.elite ? "SI" : "NO", act: () => { settings.elite = settings.elite ? 0 : 1; } },
+    { label: "REDUCIR MOVIMIENTO", val: settings.reduceMotion ? "SI" : "NO", act: () => { settings.reduceMotion = settings.reduceMotion ? 0 : 1; } },
+    { label: "TACO PRO (premium)", val: isPremium() ? "ACTIVO" : (PREMIUM_COST + " oro"), act: () => { if (!isPremium()) { if (!tryUnlockPremium()) sWrong(); } } },
     { label: "DIFICULTAD", val: ["FACIL", "NORMAL", "DIFICIL"][settings.difficulty], act: () => { settings.difficulty = (settings.difficulty + 1) % 3; } },
     { label: "IDIOMA", val: lang === "ZH" ? "CHINO" : "INGLES", act: () => { cycleLang(); } },
     { label: "PANTALLA COMPLETA", val: "►", act: () => { try { if (!document.fullscreenElement) (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen).call(document.documentElement); else document.exitFullscreen(); } catch (e) {} } },
@@ -1670,7 +1672,7 @@ function drawOnline() {
   ctx.shadowColor = "#7fd6ff"; ctx.shadowBlur = 16; ctx.fillStyle = "#12151e"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 14); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#7fd6ff"; ctx.lineWidth = 3; ctx.stroke();
   text("MULTIJUGADOR  ·  SALAS", W / 2, p.y + 30, 19, "#7fd6ff", "center");
   text("Estado: " + net.status + (net.room ? "  ·  " + (netCount() + 1) + " online" : ""), W / 2, p.y + 52, 11, net.peer ? "#62e074" : "#9aa0b4", "center");
-  text("Toca un servidor para entrar.  PRO = premium", W / 2, p.y + 72, 11, "#9aa0b4", "center");
+  text(isPremium() ? "PRO ACTIVO: salas premium + doble oro + aura dorada" : ("PRO (" + PREMIUM_COST + " oro): salas premium + doble oro + aura"), W / 2, p.y + 72, 11, isPremium() ? "#ffd24a" : "#9aa0b4", "center");
   const prem = isPremium();
   for (let i = 0; i < SERVERS.length; i++) {
     const s = SERVERS[i], r = onServerRect(i), locked = s.premium && !prem;
@@ -1773,7 +1775,7 @@ function drawPlayers() {
 function hurt(d) {
   if (player.inv > 0 || pShield > 0) return;
   player.hp -= d; player.inv = 0.7; shake = Math.min(shake + 8, 14); flash("235,80,64", 0.22); vib(70); sHurt(); addParts(player.x, player.y, 14, "#eb5040", 200);
-  if (player.hp <= 0) { player.hp = 0; combo = 0; best = Math.max(best, score); lset("best", best); bank += coins; saveWardrobe(); clearRun(); ai.deaths = (ai.deaths || 0) + 1; kpiBump("deaths"); saveKpi(); histPush({ s: score, w: words, lvl: level }); achCheck(); state = "over"; }
+  if (player.hp <= 0) { player.hp = 0; combo = 0; best = Math.max(best, score); lset("best", best); bank += isPremium() ? coins * 2 : coins; saveWardrobe(); clearRun(); ai.deaths = (ai.deaths || 0) + 1; kpiBump("deaths"); saveKpi(); histPush({ s: score, w: words, lvl: level }); achCheck(); state = "over"; }
 }
 
 function update(dt) {
@@ -3676,7 +3678,7 @@ function render() {
   ctx.fillStyle = bgGlow; ctx.fillRect(0, 0, W, H);
   // MUNDO con camara
   ctx.save();
-  let _ox = camX, _oy = camY; if (shake > 0) { _ox -= rand(-shake, shake); _oy -= rand(-shake, shake); }
+  let _ox = camX, _oy = camY; if (shake > 0 && !settings.reduceMotion) { _ox -= rand(-shake, shake); _oy -= rand(-shake, shake); }
   ctx.translate(-_ox, -_oy);
   if (dcanvas.width > 0) ctx.drawImage(dcanvas, 0, 0, cols * TS, rows * TS);
   for (const pr of props) drawProp(pr);
@@ -3716,6 +3718,7 @@ function render() {
   }
   for (const rg of rings) { ctx.globalAlpha = clamp(rg.life, 0, 1) * 0.7; ctx.strokeStyle = rg.col; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(rg.x, rg.y, rg.r, 0, 7); ctx.stroke(); }
   ctx.globalAlpha = 1;
+  if (isPremium() && state === "play") { const ap = 0.5 + 0.5 * Math.sin(t * 3); ctx.globalAlpha = 0.22 + 0.22 * ap; ctx.strokeStyle = "#ffd24a"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(player.x, player.y - (driving ? 8 : 0), player.r + 15 + ap * 3, 0, 7); ctx.stroke(); ctx.globalAlpha = 1; } // aura PRO (TACO PREMIUM)
   if (!(player.inv > 0 && Math.floor(t * 20) % 2)) drawTaco(player.x, player.y - (driving ? 8 : 0), player.r * (driving ? 1.5 : 2.2), level);
   if (!driving) { const cd = dashCD <= 0 ? 1 : 1 - dashCD / 0.9; ctx.globalAlpha = dashCD <= 0 ? 0.3 + 0.22 * Math.sin(t * 6) : 0.55; ctx.strokeStyle = "#5eead4"; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(player.x, player.y, player.r + 11, -Math.PI / 2, -Math.PI / 2 + cd * 2 * Math.PI); ctx.stroke(); ctx.globalAlpha = 1; }
   for (const p of parts) { ctx.globalAlpha = clamp(p.life / p.max, 0, 1); ctx.fillStyle = p.col; ctx.fillRect(p.x - p.r / 2, p.y - p.r / 2, p.r, p.r); }
@@ -3783,7 +3786,8 @@ function render() {
     let pinfo = (curPlayer || "JUGADOR");
     if (profile) pinfo += "  ·  EN " + LESSONS.EN.levels[profile.eng].tag + "  ·  ZH " + LESSONS.ZH.levels[profile.zh].tag;
     pinfo += "  ·  oro " + bank;
-    text(pinfo, W / 2, ribY + 19, fitFont(pinfo, cw - 18, 13), "#9be7c0", "center");
+    if (isPremium()) pinfo += "  ·  PRO";
+    text(pinfo, W / 2, ribY + 19, fitFont(pinfo, cw - 18, 13), isPremium() ? "#ffd24a" : "#9be7c0", "center");
     // botones (primario grande + grilla de opciones)
     const trun = curPlayer ? loadRun() : null;
     for (const b of titleButtons()) {
@@ -3833,7 +3837,7 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
 })();
 
 // Harness de verificacion (inocuo en uso normal): #salas abre el panel de salas para capturas headless.
-try { if ((location.hash || "") === "#salas") openOnline("title"); } catch (e) {}
+try { const _h = location.hash || ""; if (_h === "#salas") openOnline("title"); else if (_h === "#opciones") openOptions("title"); } catch (e) {}
 
 let last = performance.now();
 function frame(now) { let dt = (now - last) / 1000; last = now; if (dt > 0.05) dt = 0.05; update(dt); render(); requestAnimationFrame(frame); }

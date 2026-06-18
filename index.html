@@ -190,6 +190,12 @@ const OUTFITS = [
   { name: "PIRATA", c1: "#6a3030", c2: "#c01a2a", suit: "pirata", cost: 68 },
   { name: "BUZO", c1: "#1aa0a0", c2: "#0e6a6a", suit: "buzo", cost: 66 },
   { name: "CONSTRUCTOR", c1: "#ff7a1a", c2: "#f2c200", suit: "obra", cost: 64 },
+  // TRAJES UNICOS DEL TACO (tematicos, render especial)
+  { name: "LUCHADOR", c1: "#1f5fd6", c2: "#f5cd46", suit: "lucha", cost: 70 },
+  { name: "MARIACHI", c1: "#3a2418", c2: "#f5cd46", suit: "mariachi", cost: 74 },
+  { name: "CHEF TACO", c1: "#ffffff", c2: "#d62828", suit: "chef", cost: 66 },
+  { name: "REY TACO", c1: "#f5cd46", c2: "#ffd24a", suit: "rey", cost: 95 },
+  { name: "DIABLO PICANTE", c1: "#c01a2a", c2: "#ffae42", suit: "diablo", cost: 88 },
 ];
 let bank = 0, outfit = 0, unlocked = { 0: true };
 function saveWardrobe() { lset("bank", bank); lset("outfit", outfit); lset("unlocked", JSON.stringify(unlocked)); }
@@ -3323,6 +3329,36 @@ function drawSuitFront(suit, w, h, s, O) {
     ctx.fillStyle = "#7a8088"; ctx.fillRect(-w * 0.46, h * 0.02, w * 0.92, h * 0.012);
     // casco de obra amarillo
     const ty = hy + w * 0.14; ctx.fillStyle = "#f2c200"; ctx.beginPath(); ctx.arc(0, ty, w * 0.32, Math.PI, 0, false); ctx.fill(); ctx.fillRect(-w * 0.38, ty - 2, w * 0.76, w * 0.07); ctx.fillStyle = "#d9a800"; ctx.fillRect(-w * 0.05, ty - w * 0.32, w * 0.1, w * 0.2); ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.beginPath(); ctx.arc(-w * 0.1, ty - w * 0.12, w * 0.08, Math.PI, Math.PI * 1.5); ctx.fill();
+  } else if (suit === "lucha") {
+    // LUCHADOR: mascara de lucha libre mexicana (cubre la cara, aberturas para los ojos)
+    ctx.fillStyle = O.c1 || "#1f5fd6"; ctx.beginPath(); ctx.roundRect(-w * 0.34, ey - w * 0.24, w * 0.68, w * 0.5, 11); ctx.fill();
+    ctx.fillStyle = O.c2 || "#f5cd46"; ctx.beginPath(); ctx.moveTo(0, ey - w * 0.24); ctx.lineTo(w * 0.07, ey + w * 0.26); ctx.lineTo(-w * 0.07, ey + w * 0.26); ctx.closePath(); ctx.fill(); // franja central
+    for (const sg of [-1, 1]) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.ellipse(sg * ex, ey, w * 0.075, w * 0.055, 0, 0, 7); ctx.fill(); ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.arc(sg * ex, ey, w * 0.032, 0, 7); ctx.fill(); ctx.strokeStyle = O.c2 || "#f5cd46"; ctx.lineWidth = w * 0.022; ctx.beginPath(); ctx.ellipse(sg * ex, ey, w * 0.095, w * 0.072, 0, 0, 7); ctx.stroke(); }
+  } else if (suit === "mariachi") {
+    // MARIACHI: sombrero charro grande
+    const ty = hy + w * 0.12; ctx.fillStyle = O.c1 || "#3a2418";
+    ctx.beginPath(); ctx.ellipse(0, ty, w * 0.62, w * 0.16, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-w * 0.22, ty); ctx.quadraticCurveTo(-w * 0.16, ty - w * 0.36, 0, ty - w * 0.38); ctx.quadraticCurveTo(w * 0.16, ty - w * 0.36, w * 0.22, ty); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = O.c2 || "#f5cd46"; ctx.beginPath(); ctx.ellipse(0, ty - w * 0.02, w * 0.62, w * 0.045, 0, 0, 7); ctx.fill();
+    for (let k = -5; k <= 5; k++) { ctx.beginPath(); ctx.arc(k * w * 0.115, ty + w * 0.13, w * 0.018, 0, 7); ctx.fill(); }
+  } else if (suit === "chef") {
+    // CHEF TACO: gorro de cocinero
+    const ty = hy + w * 0.18; ctx.fillStyle = "#ffffff";
+    ctx.beginPath(); ctx.roundRect(-w * 0.26, ty - w * 0.02, w * 0.52, w * 0.13, 4); ctx.fill();
+    for (const dx of [-0.18, 0, 0.18]) { ctx.beginPath(); ctx.arc(dx * w, ty - w * 0.16, w * 0.17, 0, 7); ctx.fill(); }
+    ctx.fillStyle = O.c2 || "#d62828"; ctx.fillRect(-w * 0.26, ty + w * 0.07, w * 0.52, w * 0.02);
+  } else if (suit === "rey") {
+    // REY TACO: corona dorada con joyas
+    const ty = hy + w * 0.2, gold = O.c1 || "#f5cd46";
+    ctx.fillStyle = gold; ctx.beginPath(); ctx.moveTo(-w * 0.3, ty); ctx.lineTo(-w * 0.3, ty - w * 0.16); ctx.lineTo(-w * 0.15, ty - w * 0.02); ctx.lineTo(0, ty - w * 0.24); ctx.lineTo(w * 0.15, ty - w * 0.02); ctx.lineTo(w * 0.3, ty - w * 0.16); ctx.lineTo(w * 0.3, ty); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = shade(gold, 0.82); ctx.fillRect(-w * 0.3, ty - w * 0.02, w * 0.6, w * 0.04);
+    ctx.fillStyle = "#ff5c7a"; ctx.beginPath(); ctx.arc(0, ty - w * 0.03, w * 0.032, 0, 7); ctx.fill();
+    ctx.fillStyle = "#7fd6ff"; for (const sg of [-1, 1]) { ctx.beginPath(); ctx.arc(sg * w * 0.3, ty - w * 0.13, w * 0.026, 0, 7); ctx.fill(); }
+  } else if (suit === "diablo") {
+    // DIABLO PICANTE: cuernos rojos + cejas furiosas
+    const ty = hy + w * 0.22; ctx.fillStyle = O.c1 || "#c01a2a";
+    for (const sg of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sg * w * 0.16, ty); ctx.quadraticCurveTo(sg * w * 0.34, ty - w * 0.08, sg * w * 0.27, ty - w * 0.3); ctx.quadraticCurveTo(sg * w * 0.2, ty - w * 0.12, sg * w * 0.08, ty - w * 0.02); ctx.closePath(); ctx.fill(); }
+    ctx.strokeStyle = O.c2 || "#ffae42"; ctx.lineWidth = w * 0.03; ctx.lineCap = "round"; for (const sg of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sg * ex - w * 0.07, ey - w * 0.09); ctx.lineTo(sg * ex + w * 0.06, ey - w * 0.02); ctx.stroke(); }
   }
 }
 // VEHICULO (mount) bajo el taco: ruedas que giran al moverse
@@ -3837,7 +3873,7 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
 })();
 
 // Harness de verificacion (inocuo en uso normal): #salas abre el panel de salas para capturas headless.
-try { const _h = location.hash || ""; if (_h === "#salas") openOnline("title"); else if (_h === "#opciones") openOptions("title"); } catch (e) {}
+try { const _h = location.hash || ""; if (_h === "#salas") openOnline("title"); else if (_h === "#opciones") openOptions("title"); else if (_h.indexOf("#taco=") === 0) { outfit = clamp(parseInt(_h.slice(6)) || 0, 0, OUTFITS.length - 1); } } catch (e) {}
 
 let last = performance.now();
 function frame(now) { let dt = (now - last) / 1000; last = now; if (dt > 0.05) dt = 0.05; update(dt); render(); requestAnimationFrame(frame); }

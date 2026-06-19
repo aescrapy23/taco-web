@@ -708,7 +708,7 @@ canvas.addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.cli
 canvas.addEventListener("mousedown", e => {
   mouse.down = true; audioInit();
   if (state === "title") { titleTapAt(e.clientX, e.clientY); mouse.down = false; return; }
-  if (state === "over") { startOrRestart(); return; }
+  if (state === "over") { overTap(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "options") { optTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "menu") { menuTapAt(e.clientX, e.clientY); mouse.down = false; return; }
   if (state === "bodega") { bodegaTapAt(e.clientX, e.clientY); mouse.down = false; return; }
@@ -746,7 +746,7 @@ const stickR = { id: null, bx: 0, by: 0, x: 0, y: 0 };
 function onTouchStart(e) {
   e.preventDefault(); audioInit();
   if (state === "title") { for (const tch of e.changedTouches) { if (titleTapAt(tch.clientX, tch.clientY)) return; } return; }
-  if (state === "over") { startOrRestart(); return; }
+  if (state === "over") { for (const tch of e.changedTouches) overTap(tch.clientX, tch.clientY); return; }
   if (state === "options") { for (const tch of e.changedTouches) optTapAt(tch.clientX, tch.clientY); return; }
   if (state === "menu") { for (const tch of e.changedTouches) menuTapAt(tch.clientX, tch.clientY); return; }
   if (state === "bodega") { for (const tch of e.changedTouches) bodegaTapAt(tch.clientX, tch.clientY); return; }
@@ -1610,6 +1610,21 @@ function drawGhosts() {
   }
   ctx.globalAlpha = 1;
 }
+// ===== COMPARTIR (viral): Web Share API nativa + fallback al portapapeles =====
+let shareMsg = "", shareUntil = 0;
+function toast(m) { shareMsg = m; shareUntil = t + 2.6; }
+function gameLink() { try { return location.origin + location.pathname; } catch (e) { return "https://aescrapy23.github.io/taco-web/"; } }
+function shareIt(text, url) {
+  url = url || gameLink();
+  try { if (navigator.share) { navigator.share({ title: "TACO CITY", text: text, url: url }).then(() => toast("gracias por compartir!")).catch(() => {}); return; } } catch (e) {}
+  try { navigator.clipboard.writeText(text + "  " + url).then(() => toast("LINK COPIADO! pegalo donde quieras")).catch(() => { try { prompt("Copia y comparti:", url); } catch (e2) {} }); return; } catch (e) {}
+  try { prompt("Copia y comparti:", url); } catch (e) {}
+}
+function shareScore() { shareIt("Hice " + score + " puntos en TACO CITY (el taco que aprende jugando). Jugalo gratis:"); }
+function overShareRect() { const w = Math.min(300, W - 60); return { x: W / 2 - w / 2, y: H / 2 + 92, w, h: 46 }; }
+function overTap(px, py) { const r = overShareRect(); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) shareScore(); else startOrRestart(); }
+function drawToast() { if (!shareMsg || t >= shareUntil) return; const a = Math.min(1, (shareUntil - t) / 0.6); ctx.globalAlpha = a; const tw = Math.min(W - 40, shareMsg.length * 8.5 + 36); ctx.fillStyle = "rgba(18,38,26,0.96)"; ctx.beginPath(); ctx.roundRect(W / 2 - tw / 2, H - 104 - safeB, tw, 34, 9); ctx.fill(); ctx.strokeStyle = "#62e074"; ctx.lineWidth = 1.5; ctx.stroke(); text(shareMsg, W / 2, H - 104 - safeB + 22, fitFont(shareMsg, tw - 16, 13), "#bfeccb", "center"); ctx.globalAlpha = 1; }
+
 let onlinePanel = null;
 // SERVIDORES: cada uno es un roomId fijo sobre el P2P (PeerJS). Gratis = 1 toque.
 // PREMIUM (PRO): cupo mayor; se desbloquea con monedas del propio juego (no es pago real).
@@ -1648,15 +1663,16 @@ function netJoinOrHost(room) {
 }
 function openOnline(back) { onlinePanel = { back: back || "menu", msg: "", msgUntil: 0 }; state = "online"; }
 function onMsg(m) { if (onlinePanel) { onlinePanel.msg = m; onlinePanel.msgUntil = t + 2.4; } }
-function onRect() { const w = Math.min(440, W - 24), h = Math.min(H - 36, 430); return { x: (W - w) / 2, y: Math.max(18 + safeT, (H - h) / 2), w, h }; }
-function onServerRect(i) { const p = onRect(); return { x: p.x + 18, y: p.y + 92 + i * 50, w: p.w - 36, h: 44 }; }
+function onRect() { const w = Math.min(440, W - 24), h = Math.min(H - 24, 470); return { x: (W - w) / 2, y: Math.max(18 + safeT, (H - h) / 2), w, h }; }
+function onServerRect(i) { const p = onRect(); return { x: p.x + 18, y: p.y + 88 + i * 46, w: p.w - 36, h: 42 }; }
 function onBtns() {
-  const p = onRect(), bw = (p.w - 48) / 2, x = p.x + 18, y = p.y + p.h - 92;
+  const p = onRect(), bw = (p.w - 48) / 2, x = p.x + 18, y = p.y + p.h - 130;
   return [
-    { x, y, w: bw, h: 38, id: "host", label: "CREAR PRIVADA", col: "#7fd6ff" },
-    { x: x + bw + 12, y, w: bw, h: 38, id: "join", label: "UNIR POR CODIGO", col: "#7fd6ff" },
-    { x, y: y + 46, w: bw, h: 36, id: "leave", label: "DESCONECTAR", col: "#ff9bb0" },
-    { x: x + bw + 12, y: y + 46, w: bw, h: 36, id: "back", label: "VOLVER", col: "#cfe0ff" },
+    { x, y, w: p.w - 36, h: 38, id: "invite", label: net.room ? "INVITAR A ESTA SALA" : "COMPARTIR EL JUEGO", col: "#62e074" },
+    { x, y: y + 44, w: bw, h: 34, id: "host", label: "CREAR PRIVADA", col: "#7fd6ff" },
+    { x: x + bw + 12, y: y + 44, w: bw, h: 34, id: "join", label: "UNIR POR CODIGO", col: "#7fd6ff" },
+    { x, y: y + 82, w: bw, h: 32, id: "leave", label: "DESCONECTAR", col: "#ff9bb0" },
+    { x: x + bw + 12, y: y + 82, w: bw, h: 32, id: "back", label: "VOLVER", col: "#cfe0ff" },
   ];
 }
 function onlineTapAt(px, py) {
@@ -1666,7 +1682,8 @@ function onlineTapAt(px, py) {
     netJoinOrHost(s.id); sPower(); onMsg("Entrando a " + s.name + "..."); return;
   } }
   for (const b of onBtns()) if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) {
-    if (b.id === "host") { let c = null; try { c = prompt("Codigo de tu sala privada (compartilo):", "taco1"); } catch (e) {} if (c && c.trim()) { netStart(c.trim(), true); sPower(); } }
+    if (b.id === "invite") { if (net.room) shareIt("Entra a mi sala en TACO CITY! Codigo: " + net.room, gameLink() + "?sala=" + encodeURIComponent(net.room)); else shareIt("Jugemos TACO CITY (el taco que aprende jugando). Gratis:"); }
+    else if (b.id === "host") { let c = null; try { c = prompt("Codigo de tu sala privada (compartilo):", "taco1"); } catch (e) {} if (c && c.trim()) { netStart(c.trim(), true); sPower(); } }
     else if (b.id === "join") { let c = null; try { c = prompt("Codigo de la sala a unirte:", ""); } catch (e) {} if (c && c.trim()) { netStart(c.trim(), false); sPower(); } }
     else if (b.id === "leave") { netClose(); sRight(); onMsg("desconectado"); }
     else state = onlinePanel.back;
@@ -3839,15 +3856,19 @@ function render() {
     text("build " + VERSION.split(" ")[0], W / 2, H - 13 - safeB, 11, "#586", "center");
   }
   if (state === "over") {
-    ctx.fillStyle = "rgba(6,6,12,0.8)"; ctx.fillRect(0, 0, W, H);
-    text("GAME OVER", W / 2, H / 2 - 30, Math.min(64, W / 8), "#eb5040", "center");
+    ctx.fillStyle = "rgba(6,6,12,0.82)"; ctx.fillRect(0, 0, W, H);
+    text("GAME OVER", W / 2, H / 2 - 58, Math.min(60, W / 8), "#eb5040", "center");
     let mAll = 0, tAll = 0; for (const lk of LANGS) { const md = masteredTotalL(LESSONS[lk]); mAll += md[0]; tAll += md[1]; }
-    text("PUNTAJE  " + score, W / 2, H / 2 + 22, 26, "#fff", "center");
-    text("APRENDIDAS " + words + "    DOMINADAS " + mAll + "/" + tAll + " (EN+ZH)", W / 2, H / 2 + 52, 15, "#60d050", "center");
-    text("RECORD  " + best, W / 2, H / 2 + 76, 15, "#9a9ab0", "center");
-    text("LOGROS  " + achCount() + "/" + ACHS.length + "   ·   KPIS en menu casa", W / 2, H / 2 + 98, 13, "#ffd84a", "center");
-    text("TOCA PARA REINTENTAR", W / 2, H / 2 + 128, 20, "#f5cd46", "center");
+    if (score >= best && score > 0) { ctx.globalAlpha = 0.55 + 0.45 * Math.sin(t * 5); text("NUEVO RECORD!", W / 2, H / 2 - 22, 18, "#ffd84a", "center"); ctx.globalAlpha = 1; }
+    text("PUNTAJE  " + score, W / 2, H / 2 + 12, 26, "#fff", "center");
+    text("APRENDIDAS " + words + "   ·   DOMINADAS " + mAll + "/" + tAll, W / 2, H / 2 + 42, 14, "#60d050", "center");
+    text("RECORD  " + best + "   ·   LOGROS " + achCount() + "/" + ACHS.length, W / 2, H / 2 + 64, 13, "#9a9ab0", "center");
+    const sr = overShareRect(), sp = 0.5 + 0.5 * Math.sin(t * 4);
+    ctx.shadowColor = "#62e074"; ctx.shadowBlur = 6 + sp * 8; ctx.fillStyle = "#143420"; ctx.beginPath(); ctx.roundRect(sr.x, sr.y, sr.w, sr.h, 11); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#62e074"; ctx.lineWidth = 2.5; ctx.stroke();
+    text("COMPARTIR MI PUNTAJE", sr.x + sr.w / 2, sr.y + sr.h / 2 + 6, fitFont("COMPARTIR MI PUNTAJE", sr.w - 18, 16), "#9be7c0", "center");
+    text("toca la pantalla para REINTENTAR", W / 2, sr.y + sr.h + 26, 13, "#f5cd46", "center");
   }
+  drawToast();
 }
 
 // roundRect fallback (navegadores viejos)
@@ -3874,7 +3895,9 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
 })();
 
 // Harness de verificacion (inocuo en uso normal): #salas abre el panel de salas para capturas headless.
-try { const _h = location.hash || ""; if (_h === "#salas") openOnline("title"); else if (_h === "#opciones") openOptions("title"); else if (_h.indexOf("#taco=") === 0) { outfit = clamp(parseInt(_h.slice(6)) || 0, 0, OUTFITS.length - 1); } } catch (e) {}
+try { const _h = location.hash || ""; if (_h === "#salas") openOnline("title"); else if (_h === "#opciones") openOptions("title"); else if (_h.indexOf("#taco=") === 0) { outfit = clamp(parseInt(_h.slice(6)) || 0, 0, OUTFITS.length - 1); } else if (_h === "#over") { score = 980; words = 42; state = "over"; } } catch (e) {}
+// VIRAL: si abris un link con ?sala=CODIGO, te unis directo a esa sala
+try { const _sala = new URLSearchParams(location.search).get("sala"); if (_sala) { openOnline("title"); netJoinOrHost(_sala); toast("uniendote a la sala " + _sala + "..."); } } catch (e) {}
 
 let last = performance.now();
 function frame(now) { let dt = (now - last) / 1000; last = now; if (dt > 0.05) dt = 0.05; update(dt); render(); requestAnimationFrame(frame); }

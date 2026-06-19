@@ -493,6 +493,7 @@ let weather = { kind: "sol", temp: 24 }; // clima + temperatura
 let rain = [], cityLamps = [], cityBeacons = []; // lluvia + faroles + balizas de landmarks (parpadean)
 let camX = 0, camY = 0; // camara (recorre el mundo grande)
 let shake = 0, t = 0;
+let _vg = null, _vgKey = "", _bg = null, _bgKey = ""; // cache de gradientes de render (perf)
 function camClamp() { const tx = clamp(player.x - W / 2, 0, Math.max(0, cols * TS - W)), ty = clamp(player.y - H / 2, 0, Math.max(0, rows * TS - H)); return { tx, ty }; }
 let quiz = null; // {prompt, options[], correct, sel, fb}
 // Juice 4D: texto flotante, combo de bajas, destello de pantalla
@@ -970,7 +971,7 @@ function pronounceTapAt(px, py) {
   if (!SR || (quiz.tries || 0) >= 2) { const s = pronSaidRect(); if (px >= s.x && px <= s.x + s.w && py >= s.y && py <= s.y + s.h) { quiz.micState = "ok"; quiz.okT = 0.4; sRight(); } }
 }
 
-function addParts(x, y, n, col, spd) { for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, s = spd * (0.3 + Math.random()); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.5, max: 0.5, col, r: 2 + Math.random() * 3 }); } }
+function addParts(x, y, n, col, spd) { n = Math.min(n, Math.max(0, 560 - parts.length)); for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, s = spd * (0.3 + Math.random()); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.5, max: 0.5, col, r: 2 + Math.random() * 3 }); } }
 
 function fire(ax, ay) {
   const w = WEAPONS[weapon];
@@ -3709,9 +3710,9 @@ function drawPronounce() {
 function render() {
   // fondo (espacio de pantalla)
   ctx.fillStyle = theme.floor; ctx.fillRect(0, 0, W, H);
-  const bgGlow = ctx.createRadialGradient(W / 2, H * 0.42, 40, W / 2, H * 0.42, Math.max(W, H) * 0.62);
-  bgGlow.addColorStop(0, hexA(theme.stud, 0.12)); bgGlow.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = bgGlow; ctx.fillRect(0, 0, W, H);
+  const _bk = theme.stud + W + "x" + H; // perf: el glow solo cambia con el mundo o el tamano
+  if (_bgKey !== _bk) { _bg = ctx.createRadialGradient(W / 2, H * 0.42, 40, W / 2, H * 0.42, Math.max(W, H) * 0.62); _bg.addColorStop(0, hexA(theme.stud, 0.12)); _bg.addColorStop(1, "rgba(0,0,0,0)"); _bgKey = _bk; }
+  ctx.fillStyle = _bg; ctx.fillRect(0, 0, W, H);
   // MUNDO con camara
   ctx.save();
   let _ox = camX, _oy = camY; if (shake > 0 && !settings.reduceMotion) { _ox -= rand(-shake, shake); _oy -= rand(-shake, shake); }
@@ -3762,14 +3763,14 @@ function render() {
   ctx.globalAlpha = 1;
   ctx.restore();
   // polvo de ambiente (solo graficos ALTA)
-  if (glowOn()) { for (const a of ambient) { ctx.globalAlpha = 0.2 + 0.26 * (0.5 + 0.5 * Math.sin(t * 2 + a.tw)); ctx.fillStyle = theme.stud; ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, 7); ctx.fill(); } ctx.globalAlpha = 1; }
+  if (glowOn() && !settings.reduceMotion) { for (const a of ambient) { ctx.globalAlpha = 0.2 + 0.26 * (0.5 + 0.5 * Math.sin(t * 2 + a.tw)); ctx.fillStyle = theme.stud; ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, 7); ctx.fill(); } ctx.globalAlpha = 1; }
   // dia/noche + clima (faroles, sol/luna, lluvia)
   if (state === "play" || state === "quiz" || state === "shop") drawWeatherSky();
 
   // Viñeta + destello (4D)
-  const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.38, W / 2, H / 2, Math.max(W, H) * 0.74);
-  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.28)");
-  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  const _vk = W + "x" + H; // perf: la vinieta solo depende del tamano de pantalla
+  if (_vgKey !== _vk) { _vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.38, W / 2, H / 2, Math.max(W, H) * 0.74); _vg.addColorStop(0, "rgba(0,0,0,0)"); _vg.addColorStop(1, "rgba(0,0,0,0.28)"); _vgKey = _vk; }
+  ctx.fillStyle = _vg; ctx.fillRect(0, 0, W, H);
   if (flashT > 0) { ctx.fillStyle = "rgba(" + flashCol + "," + (0.4 * flashT / flashMax) + ")"; ctx.fillRect(0, 0, W, H); }
   // pulso rojo con poca vida (tension)
   if (state === "play" && player.hp < MAXHP * 0.3) { const pz = 0.1 + 0.12 * (0.5 + 0.5 * Math.sin(t * 8)); const vg2 = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.7); vg2.addColorStop(0, "rgba(0,0,0,0)"); vg2.addColorStop(1, "rgba(220,40,40," + pz + ")"); ctx.fillStyle = vg2; ctx.fillRect(0, 0, W, H); }

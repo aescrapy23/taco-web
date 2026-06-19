@@ -1763,7 +1763,8 @@ function drawMenu() {
       const it = o.it, locked = maxWorld < (it.lv || 1);
       ctx.globalAlpha = locked ? 0.5 : 1;
       ctx.fillStyle = "#1b1f2b"; ctx.beginPath(); ctx.roundRect(o.x, o.y, o.w, o.h, 9); ctx.fill(); ctx.strokeStyle = locked ? "#343a4e" : it.col; ctx.lineWidth = 1.4; ctx.stroke();
-      text(it.label, o.x + o.w / 2, o.y + o.h / 2 + 5, fitFont(it.label, o.w - 16, 14), locked ? "#8088a0" : it.col, "center");
+      if (!locked) { ctx.fillStyle = it.col; ctx.beginPath(); ctx.roundRect(o.x + 4, o.y + 7, 3, o.h - 14, 2); ctx.fill(); } // acento de color por item
+      text(it.label, o.x + o.w / 2 + 4, o.y + o.h / 2 + 5, fitFont(it.label, o.w - 24, 14), locked ? "#8088a0" : it.col, "center");
       if (locked) drawLock(o.x + o.w - 15, o.y + o.h / 2 + 1, "#aab0c4");
       ctx.globalAlpha = 1;
     }
@@ -3926,7 +3927,7 @@ function frame(now) { let dt = (now - last) / 1000; last = now; if (dt > 0.05) d
 requestAnimationFrame(frame);
 
 // PWA: instalable + offline + actualiza solo (network-first)
-if ("serviceWorker" in navigator) { try { navigator.serviceWorker.register("sw.js"); } catch (e) {} }
+if ("serviceWorker" in navigator) { try { navigator.serviceWorker.register("sw.js"); let _refreshing = false; navigator.serviceWorker.addEventListener("controllerchange", () => { if (_refreshing) return; _refreshing = true; location.reload(); }); } catch (e) {} }
 // guardar la partida en curso al ocultar/cerrar (para CONTINUAR donde se quedo)
 document.addEventListener("visibilitychange", () => { if (document.hidden) { if (state === "play") saveRun(); try { saveKpi(); } catch (e) {} } });
 window.addEventListener("pagehide", () => { if (state === "play") saveRun(); try { saveKpi(); } catch (e) {} });

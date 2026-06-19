@@ -1708,45 +1708,67 @@ function drawOnline() {
   for (const b of onBtns()) { ctx.fillStyle = "#1b2436"; ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 9); ctx.fill(); ctx.strokeStyle = b.col; ctx.lineWidth = 1.5; ctx.stroke(); text(b.label, b.x + b.w / 2, b.y + b.h / 2 + 5, fitFont(b.label, b.w - 10, 13), b.col, "center"); }
   if (onlinePanel && onlinePanel.msg && t < onlinePanel.msgUntil) { ctx.globalAlpha = Math.min(1, (onlinePanel.msgUntil - t) / 0.5); text(onlinePanel.msg, W / 2, p.y + p.h - 6, 12, "#ffd84a", "center"); ctx.globalAlpha = 1; }
 }
-function menuRows() {
+// MENU agrupado por categorias (elite + neural): menos cargado, grilla 2-col por grupo.
+function menuGroups() {
   return [
-    { label: "CONTINUAR", col: "#5eead4", lv: 1, act: () => { state = "play"; } },
-    { label: "JUGAR ONLINE (beta)", col: "#7fd6ff", lv: 1, act: () => { openOnline("menu"); } },
-    { label: "ACADEMIA (tu tutor neural)", col: "#7fb0ff", lv: 1, act: () => { openAcademia("menu"); } },
-    { label: "BODEGA (items + accesorios)", col: "#ffd84a", lv: 1, act: () => { openBodega("play"); } },
-    { label: "VESTUARIO", col: "#f5cd46", lv: 1, act: () => { openWb("menu"); } },
-    { label: "KPIS + LOGROS (" + achCount() + "/" + ACHS.length + ")", col: "#7fd6ff", lv: 2, act: () => { openKpis("menu"); } },
-    { label: "MIRADOR (panorama + infrarrojo)", col: "#7fe6ff", lv: MIR_PANO_LV, act: () => { openMirador("menu"); } },
-    { label: "DIMENSION 3D (ISO)", col: "#b480ff", lv: ISO_LV, act: () => { gotoIso(); } },
-    { label: "OPCIONES", col: "#7fd6ff", lv: 1, act: () => { openOptions("menu"); } },
-    { label: "CAMBIAR JUGADOR", col: "#9be7c0", lv: 1, act: () => { openPlayers(); } },
-    { label: "SALIR AL TITULO", col: "#ff9bb0", lv: 1, act: () => { state = "title"; } },
+    { title: "JUGAR", items: [
+      { label: "CONTINUAR", col: "#62e074", lv: 1, act: () => { state = "play"; } },
+      { label: "SALAS", col: "#7fd6ff", lv: 1, act: () => { openOnline("menu"); } },
+    ] },
+    { title: "APRENDER", items: [
+      { label: "ACADEMIA", col: "#7fb0ff", lv: 1, act: () => { openAcademia("menu"); } },
+      { label: "DIMENSION 3D", col: "#b480ff", lv: ISO_LV, act: () => { gotoIso(); } },
+    ] },
+    { title: "TU TACO", items: [
+      { label: "VESTUARIO", col: "#f5cd46", lv: 1, act: () => { openWb("menu"); } },
+      { label: "BODEGA", col: "#ffd84a", lv: 1, act: () => { openBodega("play"); } },
+    ] },
+    { title: "PROGRESO", items: [
+      { label: "LOGROS / KPIS", col: "#7fd6ff", lv: 2, act: () => { openKpis("menu"); } },
+      { label: "MIRADOR", col: "#7fe6ff", lv: MIR_PANO_LV, act: () => { openMirador("menu"); } },
+    ] },
+    { title: "AJUSTES", items: [
+      { label: "OPCIONES", col: "#9fb0c8", lv: 1, act: () => { openOptions("menu"); } },
+      { label: "JUGADOR", col: "#9be7c0", lv: 1, act: () => { openPlayers(); } },
+      { label: "SALIR", col: "#ff9bb0", lv: 1, act: () => { state = "title"; } },
+    ] },
   ];
 }
 function drawLock(x, y, col) { ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y - 3, 4, Math.PI, 0); ctx.stroke(); ctx.fillStyle = col; ctx.beginPath(); ctx.roundRect(x - 6, y, 12, 9, 2); ctx.fill(); }
-function menuRowH() { const n = menuRows().length; return Math.max(38, Math.min(58, (H - 116 - safeT) / n)); }
-function menuRect() { const n = menuRows().length, w = Math.min(420, W - 36), rh = menuRowH(), h = 64 + n * rh; return { x: (W - w) / 2, y: Math.max(16 + safeT, (H - h) / 2), w, h }; }
-function menuRowRect(i) { const p = menuRect(), rh = menuRowH(); return { x: p.x + 22, y: p.y + 56 + i * rh, w: p.w - 44, h: rh - 9 }; }
-function menuTapAt(px, py) { const rows = menuRows(); for (let i = 0; i < rows.length; i++) { const r = menuRowRect(i); if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) { const lv = rows[i].lv || 1; if (maxWorld < lv) { sWrong(); menuMsg = "Se desbloquea en el MUNDO " + lv; menuMsgT = 1.8; } else { rows[i].act(); sRight(); } return; } } }
-function drawMenu() {
-  ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, W, H);
-  const p = menuRect();
-  ctx.shadowColor = "#5eead4"; ctx.shadowBlur = 18; ctx.fillStyle = "#15161f"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#5eead4"; ctx.lineWidth = 3; ctx.stroke();
-  drawHouse(W / 2 - 52, p.y + 36, 11); text("MENU", W / 2 + 6, p.y + 44, 24, "#fff", "center");
-  const rows = menuRows();
-  for (let i = 0; i < rows.length; i++) {
-    const r = menuRowRect(i), row = rows[i], locked = maxWorld < (row.lv || 1);
-    ctx.globalAlpha = locked ? 0.55 : 1;
-    ctx.fillStyle = "#23273a"; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.strokeStyle = locked ? "#343a4e" : "#3a3f55"; ctx.lineWidth = 1.5; ctx.stroke();
-    if (locked) {
-      text(row.label, r.x + 16, r.y + r.h / 2 + 6, 15, "#8088a0", "left");
-      const lx = r.x + r.w - 70, ly = r.y + r.h / 2; drawLock(lx, ly, "#aab0c4"); text("Mundo " + (row.lv || 1), lx + 13, ly + 5, 11, "#aab0c4", "left");
-    } else {
-      text(row.label, W / 2, r.y + r.h / 2 + 6, 17, row.col, "center");
-    }
-    ctx.globalAlpha = 1;
+function menuRect() { const w = Math.min(420, W - 28), h = Math.min(H - 14, 496); return { x: (W - w) / 2, y: Math.max(10 + safeT, (H - h) / 2), w, h }; }
+function menuLayout() {
+  const groups = menuGroups(), p = menuRect(), x = p.x + 20, fullW = p.w - 40, gap = 8, colW = (fullW - gap) / 2;
+  let y = p.y + 60; const out = [];
+  for (const g of groups) {
+    out.push({ type: "header", title: g.title, x, y, w: fullW });
+    y += 22;
+    for (let i = 0; i < g.items.length; i++) { const c = i % 2, row = Math.floor(i / 2); out.push({ type: "item", it: g.items[i], x: x + c * (colW + gap), y: y + row * (36 + gap), w: colW, h: 36 }); }
+    y += Math.ceil(g.items.length / 2) * (36 + gap) + 4;
   }
-  if (menuMsgT > 0) { ctx.globalAlpha = Math.min(1, menuMsgT / 0.4); text(menuMsg, W / 2, p.y + p.h - 10, 13, "#ffba6b", "center"); ctx.globalAlpha = 1; }
+  return out;
+}
+function menuTapAt(px, py) {
+  for (const o of menuLayout()) { if (o.type !== "item") continue; if (px >= o.x && px <= o.x + o.w && py >= o.y && py <= o.y + o.h) { const lv = o.it.lv || 1; if (maxWorld < lv) { sWrong(); menuMsg = "Se desbloquea en el MUNDO " + lv; menuMsgT = 1.8; } else { o.it.act(); sRight(); } return; } }
+}
+function drawMenu() {
+  ctx.fillStyle = "rgba(0,0,0,0.64)"; ctx.fillRect(0, 0, W, H);
+  const p = menuRect();
+  ctx.shadowColor = "#5eead4"; ctx.shadowBlur = 18; ctx.fillStyle = "#13141d"; ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 16); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = "#5eead4"; ctx.lineWidth = 2.5; ctx.stroke();
+  drawHouse(W / 2 - 50, p.y + 34, 10); text("MENU", W / 2 + 8, p.y + 42, 22, "#fff", "center");
+  for (const o of menuLayout()) {
+    if (o.type === "header") {
+      text(o.title, o.x + 2, o.y + 12, 11, "#5fd6e0", "left");
+      ctx.strokeStyle = "rgba(95,214,224,0.22)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(o.x + 2 + o.title.length * 7 + 12, o.y + 7); ctx.lineTo(o.x + o.w, o.y + 7); ctx.stroke();
+    } else {
+      const it = o.it, locked = maxWorld < (it.lv || 1);
+      ctx.globalAlpha = locked ? 0.5 : 1;
+      ctx.fillStyle = "#1b1f2b"; ctx.beginPath(); ctx.roundRect(o.x, o.y, o.w, o.h, 9); ctx.fill(); ctx.strokeStyle = locked ? "#343a4e" : it.col; ctx.lineWidth = 1.4; ctx.stroke();
+      text(it.label, o.x + o.w / 2, o.y + o.h / 2 + 5, fitFont(it.label, o.w - 16, 14), locked ? "#8088a0" : it.col, "center");
+      if (locked) drawLock(o.x + o.w - 15, o.y + o.h / 2 + 1, "#aab0c4");
+      ctx.globalAlpha = 1;
+    }
+  }
+  if (menuMsgT > 0) { ctx.globalAlpha = Math.min(1, menuMsgT / 0.4); text(menuMsg, W / 2, p.y + p.h - 9, 12, "#ffba6b", "center"); ctx.globalAlpha = 1; }
 }
 function drawHouse(cx, cy, r) {
   ctx.fillStyle = "#f5cd46";
@@ -3895,7 +3917,7 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
 })();
 
 // Harness de verificacion (inocuo en uso normal): #salas abre el panel de salas para capturas headless.
-try { const _h = location.hash || ""; if (_h === "#salas") openOnline("title"); else if (_h === "#opciones") openOptions("title"); else if (_h.indexOf("#taco=") === 0) { outfit = clamp(parseInt(_h.slice(6)) || 0, 0, OUTFITS.length - 1); } else if (_h === "#over") { score = 980; words = 42; state = "over"; } } catch (e) {}
+try { const _h = location.hash || ""; if (_h === "#salas") openOnline("title"); else if (_h === "#opciones") openOptions("title"); else if (_h.indexOf("#taco=") === 0) { outfit = clamp(parseInt(_h.slice(6)) || 0, 0, OUTFITS.length - 1); } else if (_h === "#over") { score = 980; words = 42; state = "over"; } else if (_h === "#menu") { state = "menu"; } } catch (e) {}
 // VIRAL: si abris un link con ?sala=CODIGO, te unis directo a esa sala
 try { const _sala = new URLSearchParams(location.search).get("sala"); if (_sala) { openOnline("title"); netJoinOrHost(_sala); toast("uniendote a la sala " + _sala + "..."); } } catch (e) {}
 
